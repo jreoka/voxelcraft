@@ -1,0 +1,12 @@
+{
+  "name": "voxelcraft-server",
+  "version": "2.1.0",
+  "description": "Zero-dependency VoxelCraft Multiplayer Server with built-in Anti-Cheat and HTTP client hosting.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
