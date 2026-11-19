@@ -317,7 +317,7 @@ html, body {
   transition: width 0.2s;
 }
 #xpLevel {
-  position: absolute; left: 50%; top: -15px; transform: translateX(-50%);
+  position: absolute; left: 50%; top: -19px; transform: translateX(-50%);
   font-size: 13px; font-weight: 900; color: #96ff6b;
   text-shadow: 0 1px 4px #000, 0 0 8px rgba(80,255,80,0.45);
 }
@@ -336,6 +336,7 @@ html, body {
   cursor: pointer; transition: border-color 0.08s, background 0.08s;
 }
 .slot:hover { border-color: rgba(255,255,255,0.42); background: rgba(32, 40, 54, 0.88); }
+.slot.drag-target { border-color: rgba(255,255,255,0.7); background: rgba(70, 82, 104, 0.9); }
 .slot.selected {
   border: 2px solid #96ff7e;
   background: var(--slot-hi);
@@ -466,12 +467,6 @@ html, body {
   font-size: 11px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--muted); margin: 8px 0 5px;
 }
-#pointerPrompt {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  background: rgba(12,16,24,0.82); border: 1px solid var(--border-hi);
-  padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 700;
-  z-index: 20; display: none; pointer-events: none;
-}
 
 /* Enchanted slot glow & quick-action toolbar */
 .slot.enchanted {
@@ -484,7 +479,27 @@ html, body {
   flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(4, 50px);
   gap: 5px; align-content: start; padding-right: 4px;
 }
-.ench-options { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.ench-wrap { display: flex; gap: 16px; width: 100%; align-items: flex-start; }
+.ench-left { display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 120px; }
+.ench-book { position: relative; width: 70px; height: 46px; perspective: 200px; margin-top: 4px; }
+.ench-book span { position: absolute; top: 0; width: 35px; height: 46px; background: linear-gradient(180deg, #7a3b22, #4f2312); border: 2px solid #2c140a; border-radius: 3px; transition: transform 0.5s; }
+.ench-book span:first-child { left: 0; transform-origin: right center; transform: rotateY(60deg); }
+.ench-book span:last-child { right: 0; transform-origin: left center; transform: rotateY(-60deg); }
+.ench-book.open span { background: linear-gradient(180deg, #f1e7cc, #d9caa0); border-color: #7a3b22; animation: enchBob 2.2s ease-in-out infinite; }
+.ench-book.open span:first-child { transform: rotateY(18deg); }
+.ench-book.open span:last-child { transform: rotateY(-18deg); }
+@keyframes enchBob { 0%,100% { margin-top: 0; } 50% { margin-top: -5px; } }
+.ench-slot-row { display: flex; gap: 6px; }
+.ench-power { font-size: 11px; color: var(--muted); }
+.ench-power b { color: #c78aff; }
+.ench-hint { font-size: 12px; color: var(--muted); margin-top: 10px; width: 100%; }
+.ench-options { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.ench-runes { display: block; font-size: 11px; color: rgba(190, 160, 255, 0.55); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ench-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ench-text b { font-size: 13px; }
+.ench-lapis-ct { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 5px; background: #2b55c7; color: #fff; font-weight: 800; font-size: 12px; }
+.ench-btn { gap: 10px; min-height: 52px; }
+.ench-cost.short { color: #ff6b6b; }
 .ench-btn {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px; border-radius: 9px; text-align: left;
@@ -493,7 +508,7 @@ html, body {
 }
 .ench-btn:hover:not(:disabled) { border-color: #c58cff; background: rgba(54, 34, 92, 0.72); }
 .ench-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.ench-cost { font-size: 12px; color: #96ff6b; font-weight: 700; }
+.ench-cost { font-size: 15px; color: #96ff6b; font-weight: 800; text-shadow: 0 1px 0 #1b3a10; }
 .trade-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 12px; border-radius: 9px; background: rgba(12,18,28,0.8);
@@ -642,7 +657,6 @@ html, body {
 <div id="lavaOverlay"></div>
 <div id="damageFlash"></div>
 <div id="nametagLayer"></div>
-<div id="pointerPrompt">Click anywhere to resume mouse look (ESC to pause)</div>
 
 <!-- HUD -->
 <div id="hud">
@@ -914,7 +928,7 @@ html, body {
   <div class="menu-card">
     <div class="menu-title">Controls &amp; Keybindings</div>
     <p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">
-      Click any binding button and press a new key. Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Right-Drag distribute, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, Tab shows Players, F3 toggles Debug HUD.
+      Click any binding button and press a new key. Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Right-Click take half / place one, Left-Drag split evenly, Right-Drag place one per slot, Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Middle-Click (Creative) clone stack, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, Tab shows Players, F3 toggles Debug HUD.
     </p>
     <div class="controls-grid" id="controlsList"></div>
     <div class="btn-row">
@@ -1288,14 +1302,15 @@ class SettingsManager {
       quality: 'high',
       shadows: 'high',
       brightness: 50,
+      keysV2: true,
       keys: {
         forward: 'KeyW',
         backward: 'KeyS',
         left: 'KeyA',
         right: 'KeyD',
         jump: 'Space',
-        sprint: 'ShiftLeft',
-        crouch: 'ControlLeft',
+        sprint: 'ControlLeft',
+        crouch: 'ShiftLeft',
         inventory: 'KeyE',
         drop: 'KeyQ',
         debug: 'F3'
@@ -1308,6 +1323,12 @@ class SettingsManager {
       const raw = localStorage.getItem('voxelcraft_settings_v1');
       if (!raw) return structuredClone(this.defaults);
       const parsed = JSON.parse(raw);
+      if (parsed.keys && !parsed.keysV2) {
+        if (parsed.keys.sprint === 'ShiftLeft' && parsed.keys.crouch === 'ControlLeft') {
+          parsed.keys.sprint = 'ControlLeft'; parsed.keys.crouch = 'ShiftLeft';
+        }
+        parsed.keysV2 = true;
+      }
       return {
         ...this.defaults,
         ...parsed,
@@ -1721,7 +1742,7 @@ class ItemRegistry {
     add(IT.COOKED_CHICKEN, 'Roast Chicken', { category: 'food', food: 6, sat: 7.2, color: '#b87235', iconType: 'meat' });
     add(IT.RAW_FISH, 'Raw Fish', { category: 'food', food: 2, sat: 1, color: '#68a2b5', iconType: 'meat' });
     add(IT.COOKED_FISH, 'Cooked Fish', { category: 'food', food: 6, sat: 7, color: '#c2986b', iconType: 'meat' });
-    add(IT.BREAD, 'Bread', { category: 'food', food: 5, sat: 6, color: '#c99342', iconType: 'ingot' });
+    add(IT.BREAD, 'Bread', { category: 'food', food: 5, sat: 6, color: '#c99342', iconType: 'bread' });
     add(IT.MUSHROOM_STEW, 'Mushroom Stew', { category: 'food', food: 7, sat: 8, stack: 16, color: '#a66b4e', iconType: 'orb' });
     add(IT.GOLDEN_APPLE, 'Golden Apple', { category: 'food', food: 6, sat: 12, heal: 8, color: '#ffd940', iconType: 'orb' });
 
@@ -2060,6 +2081,109 @@ class CraftingSystem {
 const CRAFTING = new CraftingSystem();
 
 // Procedural 512x512 Voxel Texture Atlas + Procedural 2D Inventory Icon Generator
+// ============================================================================
+// ENCHANTMENTS: registry, multi-enchant stacks, helpers
+// ============================================================================
+const ENCHANTS = {
+  'Sharpness':             { max: 5, w: 10, kinds: ['sword', 'axe'], group: 'dmg', desc: 'Extra melee damage' },
+  'Smite':                 { max: 5, w: 5,  kinds: ['sword', 'axe'], group: 'dmg', desc: 'Big damage vs undead' },
+  'Knockback':             { max: 2, w: 5,  kinds: ['sword'], desc: 'Knocks enemies farther' },
+  'Fire Aspect':           { max: 2, w: 2,  kinds: ['sword'], desc: 'Sets targets on fire' },
+  'Looting':               { max: 3, w: 2,  kinds: ['sword'], desc: 'More mob drops' },
+  'Efficiency':            { max: 5, w: 10, kinds: ['pickaxe', 'axe', 'shovel', 'hoe'], desc: 'Faster mining' },
+  'Fortune':               { max: 3, w: 2,  kinds: ['pickaxe', 'axe', 'shovel', 'hoe'], group: 'drop', desc: 'More ore drops' },
+  'Silk Touch':            { max: 1, w: 1,  kinds: ['pickaxe', 'axe', 'shovel', 'hoe'], group: 'drop', desc: 'Mined blocks drop themselves' },
+  'Unbreaking':            { max: 3, w: 5,  kinds: ['sword', 'axe', 'pickaxe', 'shovel', 'hoe', 'bow', 'armor', 'shield'], desc: 'Durability lasts longer' },
+  'Protection':            { max: 4, w: 10, kinds: ['armor'], group: 'prot', desc: 'Reduces all damage' },
+  'Fire Protection':       { max: 4, w: 5,  kinds: ['armor'], group: 'prot', desc: 'Reduces fire & lava damage' },
+  'Blast Protection':      { max: 4, w: 2,  kinds: ['armor'], group: 'prot', desc: 'Reduces explosion damage' },
+  'Projectile Protection': { max: 4, w: 5,  kinds: ['armor'], group: 'prot', desc: 'Reduces arrow damage' },
+  'Feather Falling':       { max: 4, w: 5,  kinds: ['boots'], desc: 'Reduces fall damage' },
+  'Respiration':           { max: 3, w: 2,  kinds: ['helmet'], desc: 'Breathe longer underwater' },
+  'Thorns':                { max: 3, w: 1,  kinds: ['chestplate'], desc: 'Hurts attackers' },
+  'Power':                 { max: 5, w: 10, kinds: ['bow'], desc: 'Extra arrow damage' },
+  'Punch':                 { max: 2, w: 2,  kinds: ['bow'], desc: 'Arrow knockback' },
+  'Flame':                 { max: 1, w: 2,  kinds: ['bow'], desc: 'Flaming arrows' },
+  'Infinity':              { max: 1, w: 1,  kinds: ['bow'], desc: 'Shooting uses no arrows' }
+};
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const ARMOR_KIND = ['helmet', 'chestplate', 'leggings', 'boots'];
+
+// Which enchant "kinds" an item counts as (empty = not enchantable)
+function enchKindsOf(it) {
+  if (!it) return [];
+  if (it.toolType && ['sword', 'axe', 'pickaxe', 'shovel', 'hoe', 'bow'].includes(it.toolType)) return [it.toolType];
+  if (it.category === 'armor') {
+    if (it.armorSlot === 4) return ['shield'];
+    if (it.armorSlot >= 0 && it.armorSlot < 4) return ['armor', ARMOR_KIND[it.armorSlot]];
+  }
+  return [];
+}
+function enchList(stack) {
+  const e = stack && stack.enchant;
+  if (!e) return [];
+  return e.list || [{ name: e.name, lvl: e.lvl }];
+}
+function enchLvl(stack, name) {
+  const e = stack && stack.enchant;
+  if (!e) return 0;
+  if (!e.list) return e.name === name ? e.lvl : 0;
+  for (const x of e.list) if (x.name === name) return x.lvl;
+  return 0;
+}
+function makeEnchant(list) {
+  return { name: list[0].name, lvl: list[0].lvl, list: list.map(x => ({ name: x.name, lvl: x.lvl })) };
+}
+function enchLabel(x) { return `${x.name} ${ROMAN[x.lvl] || x.lvl}`; }
+function enchSummary(stack) { return enchList(stack).map(enchLabel).join(', '); }
+
+// Roll a set of enchantments for an item at a given enchanting-table level cost
+function rollEnchants(it, cost, rng) {
+  const kinds = enchKindsOf(it);
+  const pool = Object.entries(ENCHANTS).filter(([, d]) => d.kinds.some(k => kinds.includes(k)));
+  if (!pool.length) return [];
+  const result = [];
+  const usedGroups = new Set();
+  const pick = () => {
+    const cand = pool.filter(([n, d]) => !result.some(r => r.name === n) && !(d.group && usedGroups.has(d.group)));
+    if (!cand.length) return null;
+    let tot = 0; for (const [, d] of cand) tot += d.w;
+    let r = rng() * tot;
+    for (const [n, d] of cand) {
+      r -= d.w;
+      if (r <= 0) {
+        // Level scales with cost (1..30) with a little randomness
+        const frac = clamp((cost + rng() * 6 - 3) / 30, 0, 1);
+        const lvl = clamp(Math.round(1 + frac * (d.max - 1) + (rng() - 0.5) * 0.8), 1, d.max);
+        if (d.group) usedGroups.add(d.group);
+        return { name: n, lvl };
+      }
+    }
+    return null;
+  };
+  const first = pick();
+  if (!first) return [];
+  result.push(first);
+  let chance = (cost + 1) / 50;
+  while (rng() < chance) {
+    const nx = pick();
+    if (!nx) break;
+    result.push(nx);
+    chance *= 0.5;
+  }
+  return result;
+}
+function seededRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 class TextureAtlas {
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -2439,10 +2563,34 @@ class TextureAtlas {
       for (let y = 10; y < 32; y++) for (let x = 13; x < 19; x++) p(x, y, 134, 94, 48);
       for (let y = 4; y < 12; y++) for (let x = 12; x < 20; x++) p(x, y, 255, y < 8 ? 242 : 164, 48);
     });
-    this._drawTile(T.LANTERN, (p) => {
-      for (let y = 6; y < 28; y++) for (let x = 8; x < 24; x++) {
-        const edge = y < 10 || y > 24 || x < 11 || x > 20;
-        p(x, y, edge ? 52 : 255, edge ? 58 : 216, edge ? 66 : 96);
+    this._drawTile(T.LANTERN, (p, rng) => {
+      // Zone A (x0-15, y0-17): body side — iron frame around glowing glass with a center bar
+      for (let y = 0; y < 18; y++) for (let x = 0; x < 16; x++) {
+        const frame = x < 2 || x > 13 || y < 2 || y > 15;
+        if (frame) {
+          const v = (rng.next() - 0.5) * 10 + (y < 2 ? 14 : 0);
+          p(x, y, 58 + v, 62 + v, 72 + v);
+        } else if (x === 7 || x === 8) {
+          p(x, y, 70, 66, 64);
+        } else {
+          const dx = Math.min(Math.abs(x - 4.5), Math.abs(x - 11.5));
+          const dy = Math.abs(y - 9);
+          const g = Math.max(0, 1 - (dx * 0.12 + dy * 0.07));
+          p(x, y, 250, 168 + g * 70, 60 + g * 90);
+        }
+      }
+      // Zone B (x16-31, y0-15): dark iron for cap, base and handle
+      for (let y = 0; y < 16; y++) for (let x = 16; x < 32; x++) {
+        const v = (rng.next() - 0.5) * 12;
+        const edge = x === 16 || x === 31 || y === 0 || y === 15;
+        p(x, y, (edge ? 40 : 66) + v, (edge ? 44 : 70) + v, (edge ? 52 : 80) + v);
+      }
+      // Zone C (x0-15, y18-31): body top/bottom — iron plate with a warm glow vent in the middle
+      for (let y = 18; y < 32; y++) for (let x = 0; x < 16; x++) {
+        const v = (rng.next() - 0.5) * 10;
+        const vent = x >= 5 && x <= 10 && y >= 22 && y <= 27;
+        if (vent) p(x, y, 255, 200, 110);
+        else p(x, y, 58 + v, 62 + v, 72 + v);
       }
     });
     this._drawTile(T.BED_TOP, (p) => {
@@ -2867,7 +3015,16 @@ class TextureAtlas {
 
     if (it.blockId && BLOCKS.get(it.blockId)) {
       const b = BLOCKS.get(it.blockId);
-      if (b.shape === 'door') {
+      if (it.blockId === B.LANTERN) {
+        const f = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+        f(15, 3, 6, 2, '#3a3f48'); f(14, 5, 2, 4, '#3a3f48'); f(20, 5, 2, 4, '#3a3f48');   // handle loop
+        f(12, 9, 12, 4, '#4a505c'); f(12, 9, 12, 1, '#6a7280');                           // cap
+        f(10, 13, 16, 18, '#3e434d');                                                      // frame
+        f(12, 15, 5, 14, '#ffc35a'); f(19, 15, 5, 14, '#ffc35a');                          // glass
+        f(13, 18, 3, 7, '#ffe9a8'); f(20, 18, 3, 7, '#ffe9a8');                            // glow core
+        f(17, 15, 2, 14, '#55504c');                                                       // center bar
+        f(10, 31, 16, 2, '#2c3038');                                                       // base
+      } else if (b.shape === 'door') {
         const [tx, ty] = this._tileOrigin(b.tex[3] !== undefined ? b.tex[3] : b.tex[2]);
         const [bx, by] = this._tileOrigin(b.tex[2]);
         ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 10, 2, 16, 16);
@@ -2958,6 +3115,23 @@ class TextureAtlas {
           px(6, 4, 6, 10, col); px(4, 6, 10, 6, col); px(7, 6, 3, 3, '#ffffff66'); break;
         case 'orb':
           px(5, 5, 8, 8, col); px(6, 4, 6, 10, col); px(4, 6, 10, 6, col); px(7, 6, 2, 2, '#ffffff66'); break;
+        case 'bread': {
+          // Rounded golden loaf with dark crust rim, glossy top and scored cuts
+          const rows = [[5, 5, 12], [6, 3, 14], [7, 2, 15], [8, 2, 15], [9, 2, 15], [10, 2, 15], [11, 2, 15], [12, 3, 14], [13, 4, 13]];
+          for (const [y, a, b] of rows) {
+            for (let x = a; x <= b; x++) {
+              const rim = x === a || x === b || y === 5 || y === 13;
+              let c = '#c98a3c';
+              if (rim) c = '#6e4118';
+              else if (y <= 7) c = '#dda24c';
+              else if (y >= 11) c = '#a46a2a';
+              px(x, y, 1, 1, c);
+            }
+          }
+          px(4, 6, 3, 1, '#f2c872'); px(3, 7, 2, 1, '#f2c872');
+          for (const g of [5, 8, 11]) { px(g, 7, 1, 1, '#f6e0a6'); px(g + 1, 8, 1, 1, '#f6e0a6'); px(g + 1, 7, 1, 1, '#9a6226'); }
+          break;
+        }
         case 'meat':
           px(4, 6, 10, 7, col); px(6, 5, 7, 2, col); px(11, 8, 2, 2, '#f5efe6'); break;
         case 'dust':
@@ -4870,6 +5044,26 @@ class VoxelMesher {
             } else {
               this._emitBox(false, x, y+0.82, z, x+1, y+1, z+1, blk, col, sky, bl, flags);
             }
+          } else if (id === B.LANTERN) {
+            // Proper lantern model: glowing glass body, iron cap, base trim and loop handle (sub-UV atlas zones)
+            const boxUV = (x0, y0, z0, x1, y1, z1, side, cap, f) => {
+              const q = (r) => [r[0], r[3], r[2], r[3], r[2], r[1], r[0], r[1]];
+              const su = q(side), cu = q(cap);
+              this._emitQuad(false, [x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0], [0,1,0], cu, T.LANTERN, col, sky, bl, ones, f);
+              this._emitQuad(false, [x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1], [0,-1,0], cu, T.LANTERN, col, sky, bl, ones, f);
+              this._emitQuad(false, [x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1], [0,0,1], su, T.LANTERN, col, sky, bl, ones, f);
+              this._emitQuad(false, [x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0], [0,0,-1], su, T.LANTERN, col, sky, bl, ones, f);
+              this._emitQuad(false, [x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1], [1,0,0], su, T.LANTERN, col, sky, bl, ones, f);
+              this._emitQuad(false, [x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0], [-1,0,0], su, T.LANTERN, col, sky, bl, ones, f);
+            };
+            const BODY = [0.01, 0.01, 0.49, 0.55], VENT = [0.01, 0.57, 0.49, 0.99], IRON = [0.52, 0.01, 0.98, 0.49];
+            const glow = flags | 2;
+            boxUV(x+0.3125, y,        z+0.3125, x+0.6875, y+0.4375, z+0.6875, BODY, VENT, glow);
+            boxUV(x+0.3750, y+0.4375, z+0.3750, x+0.6250, y+0.5625, z+0.6250, IRON, IRON, flags);
+            // Loop handle: two posts and a top bar
+            boxUV(x+0.4375, y+0.5625, z+0.4844, x+0.4688, y+0.6875, z+0.5156, IRON, IRON, flags);
+            boxUV(x+0.5313, y+0.5625, z+0.4844, x+0.5625, y+0.6875, z+0.5156, IRON, IRON, flags);
+            boxUV(x+0.4375, y+0.6875, z+0.4844, x+0.5625, y+0.7188, z+0.5156, IRON, IRON, flags);
           } else if (blk.shape === 'torch') {
             const w = id === B.LANTERN ? 0.22 : 0.09;
             const h = id === B.LANTERN ? 0.65 : 0.72;
@@ -7416,6 +7610,20 @@ class Renderer {
           tpitch = 0.06 - sw * 0.65 + swayY * 0.7;
           troll = 0.04 + strafeRoll + breathR;
         }
+        if (vm.eating >= 0) {
+          // Raise the food to the mouth, then chew-bob rapidly
+          const et = vm.eating;
+          const k = clamp(et / 0.22, 0, 1);
+          const ek = k * k * (3 - 2 * k);
+          const chew = et > 0.25 ? Math.abs(Math.sin(et * Math.PI * 4.8)) * 0.045 : 0;
+          const jitter = et > 0.25 ? Math.sin(et * 37) * 0.006 : 0;
+          gx = lerp(gx, 0.16 + jitter, ek);
+          gy = lerp(gy, -0.36 + chew, ek);
+          gz = lerp(gz, -0.56, ek);
+          tyaw = lerp(tyaw, -0.35, ek);
+          tpitch = lerp(tpitch, 0.55, ek);
+          troll = lerp(troll, -0.25 + jitter * 4, ek);
+        }
         const R = this._rot(tyaw, tpitch, troll);
         const s = isTool || isSword ? 0.56 : isTorch ? 0.44 : 0.40;
         // Offset sprite center from its bottom-left handle grip (-0.30, -0.30) so it pivots in the hand!
@@ -7891,9 +8099,8 @@ class Inventory {
   damageHeldTool(amt = 1) {
     const s = this.slots[this.selected];
     if (!s || s.dur === undefined) return;
-    if (s.enchant && s.enchant.name === 'Unbreaking') {
-      if (Math.random() < (s.enchant.lvl / (s.enchant.lvl + 1))) return;
-    }
+    const ub = enchLvl(s, 'Unbreaking');
+    if (ub > 0 && Math.random() < (ub / (ub + 1))) return;
     s.dur -= amt;
     if (s.dur <= 0) this.slots[this.selected] = null;
   }
@@ -7905,16 +8112,37 @@ class Inventory {
       if (!a) continue;
       const it = ITEMS.get(a.id);
       if (it && it.defense) def += it.defense;
-      if (a.enchant && a.enchant.name === 'Protection') def += a.enchant.lvl * 1.25;
     }
     return def;
+  }
+
+  // Enchantment Protection Factor for a damage kind ('fall' | 'fire' | 'blast' | 'projectile' | 'generic')
+  getEnchantProtection(kind) {
+    let epf = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = this.armor[i];
+      if (!a) continue;
+      epf += enchLvl(a, 'Protection');
+      if (kind === 'fire') epf += enchLvl(a, 'Fire Protection') * 2;
+      if (kind === 'blast') epf += enchLvl(a, 'Blast Protection') * 2;
+      if (kind === 'projectile') epf += enchLvl(a, 'Projectile Protection') * 2;
+      if (kind === 'fall') epf += enchLvl(a, 'Feather Falling') * 3;
+    }
+    return Math.min(20, epf);
+  }
+
+  armorEnchLvl(name) {
+    let best = 0;
+    for (let i = 0; i < 4; i++) best = Math.max(best, enchLvl(this.armor[i], name));
+    return best;
   }
 
   damageArmor(amt = 1) {
     for (let i = 0; i < 4; i++) {
       const a = this.armor[i];
       if (a && a.dur !== undefined) {
-        if (a.enchant && a.enchant.name === 'Unbreaking' && Math.random() < 0.5) continue;
+        const ub = enchLvl(a, 'Unbreaking');
+        if (ub > 0 && Math.random() < ub / (ub + 2)) continue;
         a.dur -= amt;
         if (a.dur <= 0) this.armor[i] = null;
       }
@@ -8053,7 +8281,11 @@ class Player {
     if (this.mode === 'creative' || this.dead || this.hurtCooldown > 0) return false;
     const def = this.inventory.getDefense();
     const shieldMul = (this.blocking && this.inventory.armor[4]) ? 0.35 : 1.0;
-    const reduced = Math.max(0.5, dmg * (1 - Math.min(0.80, def * 0.032)) * shieldMul);
+    const rs = String(reason || '');
+    const dmgKind = /Fell/.test(rs) ? 'fall' : /explosion/i.test(rs) ? 'blast' : /Shot/.test(rs) ? 'projectile'
+      : /lava|Magma|burn|fire/i.test(rs) ? 'fire' : 'generic';
+    const epf = this.inventory.getEnchantProtection(dmgKind);
+    const reduced = Math.max(0.5, dmg * (1 - Math.min(0.80, def * 0.032)) * shieldMul * (1 - epf * 0.04));
     this.health = Math.max(0, this.health - reduced);
     this.hurtCooldown = 0.52;
     // Physical knockback & directional damage camera jolt
@@ -8251,7 +8483,7 @@ class PlayerPhysics {
     player.strafeInput = clamp(str, -1, 1);
     player.crouching = input.isAction('crouch') && !player.flying;
     const wantsSprint = input.isAction('sprint') && fwd > 0.2 && !player.crouching && (player.hunger > 6 || player.mode === 'creative');
-    player.sprinting = wantsSprint;
+    player.sprinting = wantsSprint && !player.eating;
 
     const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
     let moveX = -sy * fwd + cy * str;
@@ -8265,6 +8497,7 @@ class PlayerPhysics {
     const onMud = player.onGround && surfId === B.MUD;
 
     let speed = player.flying ? 12.5 : player.crouching ? 2.3 : player.sprinting ? 6.8 : 4.5;
+    if (player.eating && !player.flying) speed *= 0.35;
     if (onMud) speed *= 0.72;
     if (player.inWater && !player.flying) speed *= 0.62;
     if (player.inLava && !player.flying) speed *= 0.42;
@@ -8356,7 +8589,8 @@ class PlayerPhysics {
     } else {
       player.vy -= (player.inCobweb ? 6.0 : 26.5) * dt;
       player.vy = Math.max(player.vy, player.inCobweb ? -1.8 : -46);
-      if (player.jumpBuffer > 0 && (player.coyoteTimer > 0 || player.ladderCoyote > 0)) {
+      const jumpHeldOnGround = player.onGround && input.isAction('jump') && !player.inCobweb;
+      if ((player.jumpBuffer > 0 && (player.coyoteTimer > 0 || player.ladderCoyote > 0)) || jumpHeldOnGround) {
         player.vy = 9.0;
         // Authentic sprint-jump forward momentum impulse
         if (player.sprinting && mLen > 0.1) {
@@ -8522,7 +8756,7 @@ class PlayerPhysics {
     // Survival Mechanics: Drowning, Lava, Hunger, Regeneration
     if (player.mode === 'survival') {
       if (player.submerged === 1) {
-        player.air = Math.max(0, player.air - dt * 0.85);
+        player.air = Math.max(0, player.air - dt * 0.85 / (1 + player.inventory.armorEnchLvl('Respiration')));
         if (player.air <= 0) player.hurt(2, 'Drowned underwater.', audio, ui);
       } else {
         player.air = Math.min(player.maxAir, player.air + dt * 3.5);
@@ -8806,9 +9040,8 @@ class MiningSystem {
         if (p.mode === 'creative') speed = 999;
         else if (heldIt && heldIt.toolType === blk.tool) {
           speed = heldIt.speed || 2.0;
-          if (held && held.enchant && held.enchant.name === 'Efficiency') {
-            speed *= (1 + held.enchant.lvl * 0.32);
-          }
+          const eff = enchLvl(held, 'Efficiency');
+          if (eff > 0) speed *= (1 + eff * 0.32);
         } else if (blk.minTier > 0) speed = 0.28;
 
         const mineTime = Math.max(0.06, blk.hardness / speed);
@@ -8832,8 +9065,42 @@ class MiningSystem {
       this.minePos = null;
     }
 
+    // Hold-to-eat progress: cancels if right-click is released or the held item changes
+    if (p.eating) {
+      const e = p.eating;
+      const cur = p.inventory.getHeld();
+      if (!input.mouseRight || p.dead || p.inventory.selected !== e.slot || !cur || cur.id !== e.id) {
+        p.eating = null;
+      } else {
+        e.t += dt; e.tick += dt;
+        const it = ITEMS.get(e.id);
+        if (e.t > 0.25 && e.tick >= 0.21) {
+          e.tick = 0;
+          this.audio.playSound('eat');
+          let col = [0.8, 0.6, 0.4];
+          if (it && it.color) {
+            const h = it.color.replace('#', '');
+            col = [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255];
+          }
+          this.particles.spawnBurst(eye.x + dir.x * 0.42, eye.y - 0.22 + dir.y * 0.3, eye.z + dir.z * 0.42, col, 5, 1.8, 0.06);
+        }
+        if (e.t >= e.dur) {
+          p.eating = null;
+          if (it && it.food) {
+            p.hunger = Math.min(p.maxHunger, p.hunger + it.food);
+            p.saturation = Math.min(20, p.saturation + (it.sat || 2));
+            if (it.heal) p.health = Math.min(p.maxHealth, p.health + it.heal);
+            if (p.mode === 'survival') p.inventory.consumeSlot(p.inventory.selected, 1);
+            this.audio.playSound('burp');
+            this.ui.refreshHotbar();
+          }
+          this.placeCooldown = 0.25;
+        }
+      }
+    }
+
     // Right-Click: Interact Trader, Feed Animal, Interact Functional Block, Hoe/Seed/BoneMeal, Eat, Shoot, Bucket, Place
-    if (input.mouseRightJustPressed && this.placeCooldown <= 0) {
+    if (input.mouseRightJustPressed && this.placeCooldown <= 0 && !p.eating) {
       this.placeCooldown = 0.20;
       this._handleRightClick(held, heldIt, eye, dir, dayNight);
     }
@@ -8897,10 +9164,14 @@ class MiningSystem {
     if (this.player.mode === 'survival') {
       const toolTier = (heldIt && heldIt.toolType === blk.tool) ? (heldIt.tier || 0) : 0;
       const canDrop = blk.minTier === 0 || toolTier >= blk.minTier;
-      const fortuneLvl = (held && held.enchant && held.enchant.name === 'Fortune') ? held.enchant.lvl : 0;
+      const fortuneLvl = enchLvl(held, 'Fortune');
+      const silk = enchLvl(held, 'Silk Touch') > 0;
+      const silkOk = silk && blk.shape === 'cube' && !blk.liquid && ITEMS.get(blk.id) && blk.drop !== blk.id;
 
       if (canDrop) {
-        if (blk.isLeaf) {
+        if (silkOk) {
+          this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, blk.id, 1);
+        } else if (blk.isLeaf) {
           const r = Math.random();
           if (r < 0.11) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.APPLE, 1);
           else if (r < 0.17) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.SWEET_BERRIES, 1);
@@ -8925,7 +9196,7 @@ class MiningSystem {
           this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, blk.drop, cnt);
         }
         // Grant XP for ores
-        if (blk.id >= B.COAL_ORE && blk.id <= B.ANCIENT_DEBRIS) {
+        if (!silkOk && blk.id >= B.COAL_ORE && blk.id <= B.ANCIENT_DEBRIS) {
           if (this.player.addXP(4)) this.audio.playSound('levelup');
         }
       }
@@ -8963,7 +9234,7 @@ class MiningSystem {
         return;
       }
       if (t.id === B.ENCHANT_TABLE) {
-        this.ui.openContainer('enchant', null);
+        this.ui.openContainer('enchant', { x: t.x, y: t.y, z: t.z, enchTable: true });
         return;
       }
       if (t.id === B.FURNACE || t.id === B.FURNACE_LIT) {
@@ -9111,14 +9382,10 @@ class MiningSystem {
       }
     }
 
-    // 3. Eat Food
+    // 3. Eat Food (hold right-click until finished, like Minecraft)
     if (heldIt && heldIt.food && (p.hunger < p.maxHunger || heldIt.heal)) {
-      p.hunger = Math.min(p.maxHunger, p.hunger + heldIt.food);
-      p.saturation = Math.min(20, p.saturation + (heldIt.sat || 2));
-      if (heldIt.heal) p.health = Math.min(p.maxHealth, p.health + heldIt.heal);
-      if (p.mode === 'survival') p.inventory.consumeSlot(p.inventory.selected, 1);
-      this.audio.playSound('eat');
-      this.ui.refreshHotbar();
+      const fast = heldIt.id === IT.SWEET_BERRIES || heldIt.id === IT.COOKIE || heldIt.id === IT.MELON_SLICE;
+      p.eating = { slot: p.inventory.selected, id: held.id, t: 0, tick: 0, dur: fast ? 1.1 : 1.6 };
       return;
     }
 
@@ -9127,11 +9394,13 @@ class MiningSystem {
       let arrowSlot = -1;
       for (let i = 0; i < 36; i++) if (p.inventory.slots[i] && p.inventory.slots[i].id === IT.ARROW) { arrowSlot = i; break; }
       if (arrowSlot !== -1 || p.mode === 'creative') {
+        const pow = enchLvl(held, 'Power');
+        const arrowExtra = { punch: enchLvl(held, 'Punch'), flame: enchLvl(held, 'Flame') > 0 };
         if (p.mode === 'survival') {
-          p.inventory.consumeSlot(arrowSlot, 1);
+          if (!enchLvl(held, 'Infinity')) p.inventory.consumeSlot(arrowSlot, 1);
           p.inventory.damageHeldTool(1);
         }
-        this.mobMgr.spawnArrow(eye.x + dir.x*0.5, eye.y + dir.y*0.5, eye.z + dir.z*0.5, dir.x*28, dir.y*28 + 2.2, dir.z*28, 'player', 8);
+        this.mobMgr.spawnArrow(eye.x + dir.x*0.5, eye.y + dir.y*0.5, eye.z + dir.z*0.5, dir.x*28, dir.y*28 + 2.2, dir.z*28, 'player', 8 * (pow ? 1 + 0.25 * (pow + 1) : 1), arrowExtra);
         this.audio.playSound('bow');
         this.ui.refreshHotbar();
         return;
@@ -9333,8 +9602,8 @@ class MobManager {
     return m;
   }
 
-  spawnArrow(x, y, z, vx, vy, vz, owner, dmg) {
-    this.projectiles.push({ x, y, z, vx, vy, vz, owner, dmg, life: 4.5 });
+  spawnArrow(x, y, z, vx, vy, vz, owner, dmg, extra = null) {
+    this.projectiles.push({ x, y, z, vx, vy, vz, owner, dmg, life: 4.5, ...(extra || {}) });
   }
 
   tryInteractTrader(player, eye, dir) {
@@ -9364,10 +9633,17 @@ class MobManager {
     const held = player.inventory.getHeld();
     const it = held ? ITEMS.get(held.id) : null;
     let dmg = (it && it.dmg) ? it.dmg : 2;
-    if (held && held.enchant && held.enchant.name === 'Sharpness') dmg += held.enchant.lvl * 1.5;
+    const bestDef = MOB_DEFS[best.type];
+    dmg += enchLvl(held, 'Sharpness') * 1.25;
+    if (bestDef && bestDef.burnsDay) dmg += enchLvl(held, 'Smite') * 2.5;
     const crit = !player.onGround && player.vy < -1.0;
     if (crit) dmg = Math.round(dmg * 1.5);
-    this._damageMob(best, dmg, dir.x * 6, 4.8, dir.z * 6, player, particles, audio, ui);
+    const kbMul = 1 + enchLvl(held, 'Knockback') * 0.9;
+    best.lootingLvl = enchLvl(held, 'Looting');
+    const fa = enchLvl(held, 'Fire Aspect');
+    if (fa > 0) best.fireTimer = Math.max(best.fireTimer || 0, fa * 4);
+    if (enchList(held).length) particles.spawnBurst(best.x, best.y + bestDef.h * 0.6, best.z, [0.66, 0.42, 1.0], 8, 2.6, 0.08);
+    this._damageMob(best, dmg, dir.x * 6 * kbMul, 4.8 + (kbMul - 1) * 1.5, dir.z * 6 * kbMul, player, particles, audio, ui);
     if (it && it.maxDur && player.mode === 'survival') {
       player.inventory.damageHeldTool(1);
       ui.refreshHotbar();
@@ -9396,6 +9672,39 @@ class MobManager {
     return false;
   }
 
+  // True if a melee strike from point A can reach point B without passing through walls or closed doors/trapdoors
+  _meleeClear(ax, ay, az, bx, by, bz) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const len = Math.hypot(dx, dy, dz);
+    const steps = Math.max(2, Math.ceil(len / 0.05));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const x = ax + dx * t, y = ay + dy * t, z = az + dz * t;
+      const fx = Math.floor(x), fy = Math.floor(y), fz = Math.floor(z);
+      const id = this.world.getBlock(fx, fy, fz);
+      if (id === 0) continue;
+      const b = BLOCKS.blocks[id];
+      if (!b || !b.solid) continue;
+      if (b.shape === 'fence' || b.shape === 'ladder') continue;
+      const meta = this.world.getMeta(fx, fy, fz);
+      const lx = x - fx, ly = y - fy, lz = z - fz;
+      if (b.shape === 'door') {
+        if (meta & 4) continue;
+        const facing = meta & 3;
+        const inside = facing === 0 ? lz >= 0.70 : facing === 1 ? lx >= 0.70 : facing === 2 ? lz <= 0.30 : lx <= 0.30;
+        if (inside) return false;
+        continue;
+      }
+      if (b.shape === 'fence_gate') { if (meta & 4) continue; return false; }
+      if (b.shape === 'trapdoor') { if ((meta & 4) || ly < 0.75) continue; return false; }
+      if (b.shape === 'slab') { const top = (meta & 8) !== 0; if (top ? ly >= 0.5 : ly < 0.5) return false; continue; }
+      if (b.shape === 'enchant_table') { if (ly < 0.76) return false; continue; }
+      if (b.shape === 'campfire') { if (ly < 0.4) return false; continue; }
+      return false;
+    }
+    return true;
+  }
+
   _damageMob(m, dmg, kx, ky, kz, player, particles, audio, ui) {
     if (m.dying) return;
     m.hp -= dmg;
@@ -9410,7 +9719,8 @@ class MobManager {
       m.deathTimer = 0;
       const def = MOB_DEFS[m.type];
       if (player.miningRef) {
-        for (const [id, cnt] of def.drops) player.miningRef.spawnDrop(m.x, m.y + 0.5, m.z, id, cnt);
+        const loot = m.lootingLvl || 0;
+        for (const [id, cnt] of def.drops) player.miningRef.spawnDrop(m.x, m.y + 0.5, m.z, id, cnt + (loot ? Math.floor(Math.random() * (loot + 1)) : 0));
       }
       if (player.addXP(def.xp)) audio.playSound('levelup');
     }
@@ -9462,6 +9772,16 @@ class MobManager {
 
       if (m.hurtTimer > 0) m.hurtTimer -= dt;
       if (m.attackCd > 0) m.attackCd -= dt;
+      if (m.fireTimer > 0) {
+        m.fireTimer -= dt;
+        m.fireTick = (m.fireTick || 0) + dt;
+        if (Math.random() < dt * 14) particles.spawnBurst(m.x + (Math.random() - 0.5) * 0.6, m.y + Math.random() * (def.h || 1), m.z + (Math.random() - 0.5) * 0.6, [1.0, 0.55 + Math.random() * 0.3, 0.12], 1, 1.2, 0.08);
+        if (m.fireTick >= 1.0) {
+          m.fireTick = 0;
+          this._damageMob(m, 1, 0, 0.5, 0, player, particles, audio, ui);
+          if (m.dying) continue;
+        }
+      }
       if (m.fleeTimer > 0) m.fleeTimer -= dt;
       if (m.loveTimer > 0) m.loveTimer -= dt;
 
@@ -9506,10 +9826,15 @@ class MobManager {
           }
         } else {
           moveSpd = dist > 1.35 ? def.spd : 0;
-          if (dist < 1.85 && m.attackCd <= 0) {
+          if (dist < 1.85 && m.attackCd <= 0 && this._meleeClear(m.x, m.y + (def.h || 1.8) * 0.72, m.z, player.x, player.y + 1.0, player.z)) {
             m.attackCd = 1.05;
             const hd = Math.hypot(dx, dz) || 1;
-            player.hurt(def.dmg * dmgScale, `Slain by a ${m.type}.`, audio, ui, (dx / hd) * 6.5, 4.4, (dz / hd) * 6.5);
+            const landed = player.hurt(def.dmg * dmgScale, `Slain by a ${m.type}.`, audio, ui, (dx / hd) * 6.5, 4.4, (dz / hd) * 6.5);
+            const th = player.inventory.armorEnchLvl('Thorns');
+            if (landed && th > 0 && Math.random() < th * 0.15) {
+              this._damageMob(m, 1 + Math.floor(Math.random() * 4), -(dx / hd) * 3, 2.5, -(dz / hd) * 3, player, particles, audio, ui);
+              if (m.dying) continue;
+            }
           }
         }
       } else {
@@ -9640,7 +9965,9 @@ class MobManager {
           if (m.dying) continue;
           const def = MOB_DEFS[m.type];
           if (Math.hypot(m.x - pr.x, m.y + def.h * 0.5 - pr.y, m.z - pr.z) < 0.95) {
-            this._damageMob(m, pr.dmg, pr.vx * 0.25, 3.8, pr.vz * 0.25, player, particles, audio, ui);
+            const pm = 1 + (pr.punch || 0) * 0.8;
+            if (pr.flame) m.fireTimer = Math.max(m.fireTimer || 0, 5);
+            this._damageMob(m, pr.dmg, pr.vx * 0.25 * pm, 3.8 + (pr.punch || 0), pr.vz * 0.25 * pm, player, particles, audio, ui);
             hit = true; break;
           }
         }
@@ -9860,6 +10187,7 @@ class AudioSystem {
       case 'hurt': this._tone(150, 62, 0.18, 0.26, 'sawtooth'); break;
       case 'bow': this._tone(420, 180, 0.12, 0.18, 'triangle'); break;
       case 'eat': this._noiseBurst(0.10, 1200, 1.2, 0.18); this._tone(240, 180, 0.06, 0.10); break;
+      case 'burp': this._tone(140, 80, 0.22, 0.20, 'sawtooth'); this._noiseBurst(0.12, 500, 0.8, 0.10); break;
       case 'click': this._tone(640, 520, 0.04, 0.10, 'square'); break;
       case 'chest': this._tone(190, 290, 0.16, 0.16, 'triangle'); break;
       case 'door': this._tone(180, 110, 0.12, 0.18, 'square'); break;
@@ -10121,6 +10449,7 @@ class InputManager {
         return;
       }
 
+      if (e.ctrlKey && this.engine.state === 'playing' && e.code !== 'F3') e.preventDefault();
       if (e.code === k.jump && !this.keys.has(e.code)) this.jumpJustPressed = true;
       this.keys.add(e.code);
 
@@ -10138,7 +10467,7 @@ class InputManager {
         }
         if (this.engine.state === 'playing') {
           this.engine.pause();
-        } else if (this.engine.state === 'paused') {
+        } else if (this.engine.state === 'paused' && performance.now() - (this.engine._pausedAt || 0) > 300) {
           this.engine.resume();
         }
         return;
@@ -10188,8 +10517,8 @@ class InputManager {
 
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = (document.pointerLockElement === this.canvas);
-      const prompt = document.getElementById('pointerPrompt');
-      prompt.style.display = (this.engine.state === 'playing' && !this.pointerLocked && !this.engine.ui.chatOpen) ? 'block' : 'none';
+      // Esc releases pointer lock (the browser swallows that keypress), so treat losing lock mid-game as a pause
+      if (!this.pointerLocked && this.engine.state === 'playing' && !this.engine.ui.chatOpen) this.engine.pause();
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -10244,6 +10573,7 @@ class UIManager {
     this._rightDragPainted = false;
     this.showCreativeCatalog = false;
     this.enchantTargetSlot = null;
+    this.enchSlots = [null, null]; // [item, lapis]
     this.chatOpen = false;
     this.pendingDeleteWorld = null;
     this.mpAuthMode = 'login';
@@ -10259,7 +10589,6 @@ class UIManager {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     if (id) this._el(id).classList.add('active');
     this._el('hud').classList.toggle('active', !id || id === 'containerScreen');
-    if (id) this._el('pointerPrompt').style.display = 'none';
   }
 
   toast(msg) {
@@ -10316,7 +10645,6 @@ class UIManager {
     if (this.chatOpen) return;
     this.chatOpen = true;
     this.engine.input.exitLock();
-    this._el('pointerPrompt').style.display = 'none';
     const box = this._el('chatBox');
     const wrap = this._el('chatInputWrap');
     const inp = this._el('chatInput');
@@ -10671,7 +10999,7 @@ class UIManager {
     }
     const held = inv.getHeld();
     const it = held ? ITEMS.get(held.id) : null;
-    const enchStr = (held && held.enchant) ? ` [${held.enchant.name} ${'I'.repeat(held.enchant.lvl)}]` : '';
+    const enchStr = (held && held.enchant) ? ` [${enchSummary(held)}]` : '';
     this._el('heldLabel').textContent = it ? (it.name + enchStr) : '';
   }
 
@@ -10683,24 +11011,7 @@ class UIManager {
       const n = document.createElement('span'); n.className = 'slot-num'; n.textContent = numLabel;
       el.appendChild(n);
     }
-    if (stack) {
-      const img = document.createElement('img');
-      img.src = this.atlas.getItemIcon(stack.id);
-      el.appendChild(img);
-      if (stack.count > 1) {
-        const c = document.createElement('span'); c.className = 'cnt'; c.textContent = stack.count;
-        el.appendChild(c);
-      }
-      const it = ITEMS.get(stack.id);
-      if (it && it.maxDur && stack.dur !== undefined && stack.dur < it.maxDur) {
-        const bar = document.createElement('div'); bar.className = 'dur-bar';
-        const fill = document.createElement('div'); fill.className = 'dur-fill';
-        const pct = clamp((stack.dur / it.maxDur) * 100, 0, 100);
-        fill.style.width = pct + '%';
-        fill.style.background = pct > 50 ? '#5be356' : pct > 22 ? '#f0c43c' : '#e64949';
-        bar.appendChild(fill); el.appendChild(bar);
-      }
-    }
+    this._renderSlotContents(el, stack);
     return el;
   }
 
@@ -10771,7 +11082,7 @@ class UIManager {
       if (bf) bf.style.width = clamp((ent.burnTime / (ent.burnMax || 1)) * 100, 0, 100) + '%';
       if (sf) sf.style.width = clamp((ent.progress / 4.0) * 100, 0, 100) + '%';
       const outCnt = ent.output ? ent.output.count : 0;
-      if (this._lastFurnaceOut !== outCnt) {
+      if (this._lastFurnaceOut !== outCnt && !this._drag) {
         this._lastFurnaceOut = outCnt;
         this.renderContainer();
       }
@@ -10799,6 +11110,17 @@ class UIManager {
 
   closeContainer() {
     const inv = this.engine.player.inventory;
+    for (let i = 0; i < 2; i++) {
+      const es = this.enchSlots[i];
+      if (es) {
+        const left = inv.addItem(es.id, es.count, es.dur, es.enchant);
+        if (left > 0 && this.engine.mining) {
+          const p = this.engine.player;
+          this.engine.mining.spawnDrop(p.x, p.y + 1.2, p.z, es.id, left, es.dur, es.enchant);
+        }
+        this.enchSlots[i] = null;
+      }
+    }
     for (let i = 0; i < 9; i++) {
       if (this.craftGrid[i]) {
         inv.addItem(this.craftGrid[i].id, this.craftGrid[i].count, this.craftGrid[i].dur, this.craftGrid[i].enchant);
@@ -10823,6 +11145,7 @@ class UIManager {
     this.hoveredSlot = null;
     this._slotDragThrow = false;
     this._rightDragPainted = false;
+    this._drag = null;
     this.engine.state = 'playing';
     this.showScreen(null);
     this.refreshHotbar();
@@ -10883,7 +11206,7 @@ class UIManager {
     }
 
     // 2. From Furnace slot / Crafting grid / Armor -> Player Inventory
-    if (opts.zone === 'furnace' || opts.zone === 'craft' || opts.zone === 'armor') {
+    if (opts.zone === 'furnace' || opts.zone === 'craft' || opts.zone === 'armor' || opts.zone === 'enchant') {
       let rem = this._moveStackInto(cur, inv.slots, 0, 9);
       if (rem) rem = this._moveStackInto(rem, inv.slots, 9, 36);
       setStack(rem);
@@ -10897,6 +11220,22 @@ class UIManager {
         const rem = this._moveStackInto(cur, this.containerRef.ent.slots, 0, 27);
         setStack(rem);
         return true;
+      }
+      // If Enchanting Table is open -> lapis to lapis slot, enchantable gear to item slot
+      if (type === 'enchant') {
+        if (cur.id === IT.LAPIS) {
+          const ls = this.enchSlots[1];
+          if (!ls) { this.enchSlots[1] = cur; setStack(null); return true; }
+          const add = Math.min(64 - ls.count, cur.count);
+          if (add > 0) { ls.count += add; cur.count -= add; setStack(cur.count > 0 ? cur : null); return true; }
+          return false;
+        }
+        if (!this.enchSlots[0] && enchKindsOf(ITEMS.get(cur.id)).length && !cur.enchant) {
+          this.enchSlots[0] = { ...cur, count: 1 };
+          cur.count -= 1;
+          setStack(cur.count > 0 ? cur : null);
+          return true;
+        }
       }
       // If Furnace is open -> smart route to Ore Input or Fuel!
       if (type === 'furnace' && this.containerRef) {
@@ -10941,7 +11280,7 @@ class UIManager {
   }
 
   handleHoverHotbarSwap(hbIdx) {
-    if (!this.hoveredSlot || this.hoveredSlot.opts.onCraftTake || this.hoveredSlot.opts.accept) return;
+    if (this._drag || !this.hoveredSlot || this.hoveredSlot.opts.onCraftTake || this.hoveredSlot.opts.accept) return;
     const inv = this.engine.player.inventory;
     const cur = this.hoveredSlot.getStack();
     const hb = inv.slots[hbIdx];
@@ -10953,7 +11292,7 @@ class UIManager {
   }
 
   handleHoverDrop(fullStack = false) {
-    if (!this.hoveredSlot || this.hoveredSlot.opts.onCraftTake) return;
+    if (this._drag || !this.hoveredSlot || this.hoveredSlot.opts.onCraftTake) return;
     const cur = this.hoveredSlot.getStack();
     if (!cur) return;
     const amt = fullStack ? cur.count : 1;
@@ -11005,35 +11344,149 @@ class UIManager {
     }
   }
 
+  // ---- Minecraft-style slot interaction ----
+  // Left click: pick up / place / merge / swap.  Right click: take half, or place one.
+  // Hold left + drag across slots: split cursor stack evenly.  Hold right + drag: place one per slot.
+  // Double-click: gather matching items.  Shift-click: quick move.  Middle-click (Creative): clone full stack.
+  _maxStackOf(id) { const d = ITEMS.get(id); return (d && d.stack) || 64; }
+
+  _canStackOnto(cur, st) {
+    return cur && st && cur.id === st.id && !cur.enchant && !st.enchant && cur.count < this._maxStackOf(cur.id);
+  }
+
+  _renderSlotContents(el, stack) {
+    for (const ch of Array.from(el.children)) if (!ch.classList.contains('slot-num')) ch.remove();
+    el.classList.toggle('has-item', !!stack);
+    el.classList.toggle('enchanted', !!(stack && stack.enchant));
+    if (!stack) return;
+    const img = document.createElement('img');
+    img.src = this.atlas.getItemIcon(stack.id);
+    el.appendChild(img);
+    if (stack.count > 1) {
+      const c = document.createElement('span'); c.className = 'cnt'; c.textContent = stack.count;
+      el.appendChild(c);
+    }
+    const it = ITEMS.get(stack.id);
+    if (it && it.maxDur && stack.dur !== undefined && stack.dur < it.maxDur) {
+      const bar = document.createElement('div'); bar.className = 'dur-bar';
+      const fill = document.createElement('div'); fill.className = 'dur-fill';
+      const pct = clamp((stack.dur / it.maxDur) * 100, 0, 100);
+      fill.style.width = pct + '%';
+      fill.style.background = pct > 50 ? '#5be356' : pct > 22 ? '#f0c43c' : '#e64949';
+      bar.appendChild(fill); el.appendChild(bar);
+    }
+  }
+
+  _slotLeftClick(cur, setStack, opts) {
+    if (!this.cursorStack) {
+      if (cur) { this.cursorStack = cur; setStack(null); }
+      return;
+    }
+    if (opts.accept && !opts.accept(this.cursorStack)) return;
+    if (!cur) { setStack(this.cursorStack); this.cursorStack = null; return; }
+    if (cur.id === this.cursorStack.id && !cur.enchant && !this.cursorStack.enchant) {
+      const add = Math.min(this._maxStackOf(cur.id) - cur.count, this.cursorStack.count);
+      if (add > 0) {
+        cur.count += add; this.cursorStack.count -= add;
+        if (this.cursorStack.count <= 0) this.cursorStack = null;
+      }
+      return;
+    }
+    const tmp = cur; setStack(this.cursorStack); this.cursorStack = tmp;
+  }
+
+  _slotRightClick(cur, setStack, opts) {
+    if (!this.cursorStack) {
+      if (!cur) return;
+      const half = Math.ceil(cur.count / 2);
+      this.cursorStack = { ...cur, count: half };
+      cur.count -= half;
+      if (cur.count <= 0) setStack(null);
+      return;
+    }
+    if (opts.accept && !opts.accept(this.cursorStack)) return;
+    if (!cur) {
+      setStack({ ...this.cursorStack, count: 1 });
+    } else if (this._canStackOnto(cur, this.cursorStack)) {
+      cur.count++;
+    } else if (cur.id !== this.cursorStack.id || cur.enchant || this.cursorStack.enchant) {
+      const tmp = cur; setStack(this.cursorStack); this.cursorStack = tmp; // different item: swap
+      return;
+    } else return;
+    this.cursorStack.count--;
+    if (this.cursorStack.count <= 0) this.cursorStack = null;
+  }
+
+  _dragEligible(slot) {
+    const d = this._drag;
+    if (!d || slot.opts.onCraftTake) return false;
+    if (slot.opts.accept && !slot.opts.accept(d.start)) return false;
+    if (d.slots.some(s => s.el === slot.el)) return false;
+    if (d.slots.length >= d.start.count) return false; // can't spread thinner than 1 per slot
+    const cur = slot.getStack();
+    return !cur || this._canStackOnto(cur, d.start);
+  }
+
+  _computeDrag() {
+    const d = this._drag;
+    const cs = d.start, maxS = this._maxStackOf(cs.id);
+    const per = d.button === 0 ? Math.floor(cs.count / d.slots.length) : 1;
+    let remaining = cs.count;
+    const results = d.slots.map(s => {
+      const cur = s.getStack();
+      const existing = cur ? cur.count : 0;
+      const add = Math.max(0, Math.min(per, maxS - existing, remaining));
+      remaining -= add;
+      if (add <= 0) return cur;
+      return cur ? { ...cur, count: existing + add } : { ...cs, count: add };
+    });
+    return { results, remaining };
+  }
+
+  _previewDrag() {
+    const d = this._drag;
+    if (!d || d.slots.length < 2) return;
+    const { results, remaining } = this._computeDrag();
+    d.slots.forEach((s, i) => { this._renderSlotContents(s.el, results[i]); s.el.classList.add('drag-target'); });
+    const ci = this._el('cursorItem');
+    if (remaining <= 0) ci.style.display = 'none';
+    else { ci.style.display = 'block'; ci.querySelector('.cnt').textContent = remaining > 1 ? remaining : ''; }
+  }
+
+  // Called on mouseup: commit a drag, or treat it as a normal click if only one slot was touched.
+  _finishDrag() {
+    const d = this._drag;
+    this._drag = null;
+    if (!d) return;
+    if (d.slots.length <= 1) {
+      const s = d.slots[0] || d.origin;
+      if (s) {
+        const cur = s.getStack();
+        if (d.button === 0) this._slotLeftClick(cur, s.setStack, s.opts);
+        else this._slotRightClick(cur, s.setStack, s.opts);
+      }
+    } else {
+      const { results, remaining } = this._computeDrag();
+      d.slots.forEach((s, i) => s.setStack(results[i]));
+      this.cursorStack = remaining > 0 ? { ...this.cursorStack, count: remaining } : null;
+      this.engine.audio.playSound('click');
+    }
+    this._updateCursorEl();
+    this.renderContainer();
+    this.refreshHotbar();
+  }
+
   _bindSlotEvents(el, getStack, setStack, opts = {}) {
+    const slot = { el, getStack, setStack, opts };
     el.addEventListener('mouseenter', () => {
       this.hoveredSlot = { getStack, setStack, opts };
-      // Right-drag paint 1 item across slots!
-      if (this.engine.input.containerRightDragging && this.cursorStack && !opts.onCraftTake) {
-        if (!opts.accept || opts.accept(this.cursorStack)) {
-          const cur = getStack();
-          const maxS = ITEMS.get(this.cursorStack.id)?.stack || 64;
-          if (!cur) {
-            setStack({ ...this.cursorStack, count: 1 });
-            this.cursorStack.count--;
-            if (this.cursorStack.count <= 0) this.cursorStack = null;
-            this._rightDragPainted = true;
-            this._updateCursorEl();
-            this.renderContainer();
-            this.refreshHotbar();
-            return;
-          } else if (cur.id === this.cursorStack.id && !cur.enchant && !this.cursorStack.enchant && cur.count < maxS) {
-            cur.count++;
-            this.cursorStack.count--;
-            if (this.cursorStack.count <= 0) this.cursorStack = null;
-            this._rightDragPainted = true;
-            this._updateCursorEl();
-            this.renderContainer();
-            this.refreshHotbar();
-            return;
-          }
-        }
+      if (this._drag && this._dragEligible(slot)) {
+        this._drag.slots.push(slot);
+        this._previewDrag();
+        this._el('itemTooltip').style.display = 'none';
+        return;
       }
+      if (this._drag) return;
 
       const s = getStack();
       const tt = this._el('itemTooltip');
@@ -11049,7 +11502,8 @@ class UIManager {
       tt.querySelector('.tt-sub').textContent = parts.join(' · ') || it.category;
       const enchEl = tt.querySelector('.tt-ench');
       if (enchEl) {
-        enchEl.textContent = s.enchant ? `✦ ${s.enchant.name} ${'I'.repeat(s.enchant.lvl)}` : '';
+        enchEl.textContent = s.enchant ? enchList(s).map(x => `✦ ${enchLabel(x)}`).join('\n') : '';
+        enchEl.style.whiteSpace = 'pre-line';
         enchEl.style.display = s.enchant ? 'block' : 'none';
       }
       tt.style.display = 'block';
@@ -11058,26 +11512,21 @@ class UIManager {
       if (this.hoveredSlot && this.hoveredSlot.getStack === getStack) this.hoveredSlot = null;
       this._el('itemTooltip').style.display = 'none';
     });
-
-    el.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      if (opts.onCraftTake) return;
-      if (this.cursorStack) {
-        this._gatherMatchingToCursor(this.cursorStack.id);
-        this._updateCursorEl();
-        this.renderContainer();
-        this.refreshHotbar();
-      }
-    });
+    el.addEventListener('dblclick', (e) => e.preventDefault());
 
     el.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      this.engine.audio.playSound('click');
+      if (this._drag) return; // ignore extra buttons mid-drag
       const cur = getStack();
-      if (opts.onCraftTake) { opts.onCraftTake(e.shiftKey); return; }
+      this.engine.audio.playSound('click');
 
-      // Universal Smart Shift-Click!
-      if (e.shiftKey && cur) {
+      if (opts.onCraftTake) {
+        if (e.button === 0 || e.button === 2) opts.onCraftTake(e.shiftKey);
+        return;
+      }
+
+      // Shift-click quick move
+      if (e.shiftKey && cur && !this.cursorStack && e.button === 0) {
         if (this._shiftMoveFromSlot(cur, setStack, opts)) {
           this.renderContainer();
           this.refreshHotbar();
@@ -11085,45 +11534,44 @@ class UIManager {
         }
       }
 
-      if (e.button === 0) {
-        if (!this.cursorStack && cur) {
-          this.cursorStack = cur; setStack(null);
-        } else if (this.cursorStack && !cur) {
-          if (opts.accept && !opts.accept(this.cursorStack)) return;
-          setStack(this.cursorStack); this.cursorStack = null;
-        } else if (this.cursorStack && cur) {
-          if (opts.accept && !opts.accept(this.cursorStack)) return;
-          const maxS = ITEMS.get(cur.id).stack || 64;
-          if (cur.id === this.cursorStack.id && !cur.enchant && !this.cursorStack.enchant && maxS > 1 && cur.count < maxS) {
-            const add = Math.min(maxS - cur.count, this.cursorStack.count);
-            cur.count += add; this.cursorStack.count -= add;
-            if (this.cursorStack.count <= 0) this.cursorStack = null;
-          } else {
-            const tmp = cur; setStack(this.cursorStack); this.cursorStack = tmp;
-          }
+      // Middle-click in Creative: clone a full stack onto the cursor
+      if (e.button === 1) {
+        if (this.engine.player.mode === 'creative' && cur && !this.cursorStack) {
+          this.cursorStack = { ...cur, count: this._maxStackOf(cur.id) };
+          if (cur.enchant) this.cursorStack.enchant = { ...cur.enchant };
+          this._updateCursorEl();
         }
-      } else if (e.button === 2) {
-        this.engine.input.containerRightDragging = true;
-        if (!this.cursorStack && cur) {
-          const half = Math.ceil(cur.count / 2);
-          this.cursorStack = { ...cur, count: half };
-          cur.count -= half;
-          if (cur.count <= 0) setStack(null);
-        } else if (this.cursorStack) {
-          if (opts.accept && !opts.accept(this.cursorStack)) return;
-          if (!cur) {
-            setStack({ ...this.cursorStack, count: 1 });
-            this.cursorStack.count--;
-            if (this.cursorStack.count <= 0) this.cursorStack = null;
-          } else if (cur.id === this.cursorStack.id && !cur.enchant && !this.cursorStack.enchant && cur.count < (ITEMS.get(cur.id).stack || 64)) {
-            cur.count++;
-            this.cursorStack.count--;
-            if (this.cursorStack.count <= 0) this.cursorStack = null;
-          }
-        }
+        return;
       }
+      if (e.button !== 0 && e.button !== 2) return;
+
+      // Double-click (left): gather all matching items onto the cursor
+      const now = performance.now();
+      if (e.button === 0 && this.cursorStack && this._lastPickup &&
+          now - this._lastPickup.t < 320 && this._lastPickup.id === this.cursorStack.id &&
+          Math.abs(e.clientX - this._lastPickup.x) < 12 && Math.abs(e.clientY - this._lastPickup.y) < 12) {
+        this._lastPickup = null;
+        this._gatherMatchingToCursor(this.cursorStack.id);
+        this._updateCursorEl();
+        this.renderContainer();
+        this.refreshHotbar();
+        return;
+      }
+
+      if (this.cursorStack) {
+        // Start a potential drag; resolved on mouseup (single slot = normal click)
+        this._drag = { button: e.button, start: { ...this.cursorStack }, slots: [], origin: slot };
+        if (this._dragEligible(slot)) this._drag.slots.push(slot);
+        this._el('itemTooltip').style.display = 'none';
+        return;
+      }
+
+      // Empty cursor: pick up whole stack (left) or half (right)
+      if (e.button === 0) {
+        this._slotLeftClick(cur, setStack, opts);
+        if (this.cursorStack) this._lastPickup = { t: now, id: this.cursorStack.id, x: e.clientX, y: e.clientY };
+      } else this._slotRightClick(cur, setStack, opts);
       this._slotDragThrow = !!this.cursorStack;
-      this._rightDragPainted = false;
       this._updateCursorEl();
       this.renderContainer();
       this.refreshHotbar();
@@ -11182,17 +11630,42 @@ class UIManager {
       this._bindSlotEvents(outEl, () => outStack, () => {}, {
         onCraftTake: (bulk) => {
           if (!match) return;
-          const times = bulk ? 64 : 1;
-          for (let t = 0; t < times; t++) {
-            const curMatch = CRAFTING.matchGrid(this.craftGrid.slice(0, n), hasTable);
-            if (!curMatch || curMatch.outId !== match.outId) break;
+          const consumeGrid = () => {
             for (let i = 0; i < n; i++) {
               if (this.craftGrid[i]) {
                 this.craftGrid[i].count--;
                 if (this.craftGrid[i].count <= 0) this.craftGrid[i] = null;
               }
             }
-            inv.addItem(curMatch.outId, curMatch.outCount);
+          };
+          if (bulk) {
+            // Shift-click: craft as many as possible straight into the inventory
+            for (let t = 0; t < 64; t++) {
+              const curMatch = CRAFTING.matchGrid(this.craftGrid.slice(0, n), hasTable);
+              if (!curMatch || curMatch.outId !== match.outId) break;
+              const left = inv.addItem(curMatch.outId, curMatch.outCount);
+              if (left > 0) { // inventory full: put the overflow back on the cursor or the ground
+                if (!this.cursorStack) this.cursorStack = { id: curMatch.outId, count: left };
+                else if (this.cursorStack.id === curMatch.outId && !this.cursorStack.enchant) this.cursorStack.count += left;
+                else this.engine.throwItem({ id: curMatch.outId, count: left }, left);
+                consumeGrid();
+                break;
+              }
+              consumeGrid();
+            }
+          } else {
+            // Normal click: result goes onto the cursor (stacking with a matching held item)
+            const maxS = this._maxStackOf(match.outId);
+            const def = ITEMS.get(match.outId);
+            if (!this.cursorStack) {
+              this.cursorStack = { id: match.outId, count: match.outCount };
+              if (def && def.maxDur) this.cursorStack.dur = def.maxDur;
+            } else if (this.cursorStack.id === match.outId && !this.cursorStack.enchant &&
+                       this.cursorStack.count + match.outCount <= maxS) {
+              this.cursorStack.count += match.outCount;
+            } else return;
+            consumeGrid();
+            this._updateCursorEl();
           }
           this.engine.audio.playSound('pickup');
           this.renderContainer();
@@ -11232,60 +11705,137 @@ class UIManager {
       top.appendChild(cg);
     } else if (type === 'enchant') {
       const p = this.engine.player;
-      const held = inv.getHeld();
-      const it = held ? ITEMS.get(held.id) : null;
-      const canEnch = held && it && (it.category === 'tool' || it.category === 'weapon' || it.category === 'armor');
-      let lapisCnt = 0;
-      for (const s of inv.slots) if (s && s.id === IT.LAPIS) lapisCnt += s.count;
+      const creative = p.mode === 'creative';
+      const itemSt = this.enchSlots[0], lapisSt = this.enchSlots[1];
+      const it = itemSt ? ITEMS.get(itemSt.id) : null;
+      const canEnch = !!(it && enchKindsOf(it).length && !itemSt.enchant);
+      const lapisCnt = lapisSt ? lapisSt.count : 0;
+
+      // Bookshelf power: shelves in the 5x5 ring around the table (1 block gap), at table level and one above
+      let power = 0;
+      const ref = this.containerRef;
+      if (ref && ref.enchTable) {
+        const w = this.engine.world;
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+          if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
+          for (let dy = 0; dy <= 1; dy++) {
+            if (w.getBlock(ref.x + dx, ref.y + dy, ref.z + dz) !== B.BOOKSHELF) continue;
+            // Gap block between table and shelf must be air
+            const gap = w.getBlock(Math.abs(dx) === 2 ? ref.x + Math.sign(dx) : ref.x + dx, ref.y + dy, Math.abs(dz) === 2 ? ref.z + Math.sign(dz) : ref.z + dz);
+            if (gap === B.AIR || gap === 0) power++;
+          }
+        }
+      }
+      power = Math.min(15, power);
+      if (p.enchSeed === undefined) p.enchSeed = (Math.random() * 4294967296) >>> 0;
 
       const wrap = document.createElement('div');
-      wrap.style.width = '100%';
-      const info = document.createElement('div');
-      info.style.cssText = 'font-size:13px;color:var(--muted);margin-bottom:10px';
-      info.textContent = canEnch
-        ? `Enchanting held item: ${it.name} · Your XP Level: ${p.level} · Lapis Lazuli: ${lapisCnt}`
-        : 'Hold a Tool, Weapon, or Armor piece in your active hotbar slot to enchant it!';
-      wrap.appendChild(info);
+      wrap.className = 'ench-wrap';
 
-      if (canEnch) {
-        const opts = document.createElement('div');
-        opts.className = 'ench-options';
-        const pool = it.category === 'armor'
-          ? [['Protection', 1, 2, 1], ['Unbreaking', 2, 4, 2], ['Protection', 3, 6, 3]]
-          : it.toolType === 'sword'
-            ? [['Sharpness', 1, 2, 1], ['Unbreaking', 2, 4, 2], ['Sharpness', 3, 6, 3]]
-            : [['Efficiency', 1, 2, 1], ['Fortune', 2, 4, 2], ['Efficiency', 3, 6, 3]];
+      // Left: book + item/lapis slots
+      const left = document.createElement('div');
+      left.className = 'ench-left';
+      const book = document.createElement('div');
+      book.className = 'ench-book' + (canEnch ? ' open' : '');
+      book.innerHTML = '<span></span><span></span>';
+      left.appendChild(book);
+      const slotRow = document.createElement('div');
+      slotRow.className = 'ench-slot-row';
+      const itemEl = this._makeSlotEl(itemSt, null, 'ench-item-slot', 'Item');
+      this._bindSlotEvents(itemEl, () => this.enchSlots[0], (v) => { this.enchSlots[0] = v; }, {
+        zone: 'enchant',
+        accept: (st) => !!(st && enchKindsOf(ITEMS.get(st.id)).length && st.count === 1)
+      });
+      const lapEl = this._makeSlotEl(lapisSt, null, 'ench-lapis-slot', 'Lapis');
+      this._bindSlotEvents(lapEl, () => this.enchSlots[1], (v) => { this.enchSlots[1] = v; }, {
+        zone: 'enchant',
+        accept: (st) => !!(st && st.id === IT.LAPIS)
+      });
+      slotRow.appendChild(itemEl); slotRow.appendChild(lapEl);
+      left.appendChild(slotRow);
+      const pw = document.createElement('div');
+      pw.className = 'ench-power';
+      pw.innerHTML = `Bookshelves: <b>${power}</b>/15`;
+      pw.title = 'Place bookshelves in a ring 2 blocks from the table (with an air gap) for stronger enchantments.';
+      left.appendChild(pw);
+      wrap.appendChild(left);
 
-        for (const [eName, eLvl, xpCost, lapCost] of pool) {
-          const btn = document.createElement('button');
-          btn.className = 'ench-btn';
-          const ok = p.mode === 'creative' || (p.level >= xpCost && lapisCnt >= lapCost);
-          btn.disabled = !ok;
-          btn.innerHTML = `<span>✦ <b>${eName} ${'I'.repeat(eLvl)}</b></span><span class="ench-cost">${xpCost} XP Lvl + ${lapCost} Lapis</span>`;
-          btn.onclick = () => {
-            if (p.mode !== 'creative') {
-              if (p.level < xpCost || lapisCnt < lapCost) return;
-              p.level -= xpCost;
-              let rem = lapCost;
-              for (let i = 0; i < 36 && rem > 0; i++) {
-                if (inv.slots[i] && inv.slots[i].id === IT.LAPIS) {
-                  const take = Math.min(inv.slots[i].count, rem);
-                  inv.slots[i].count -= take; rem -= take;
-                  if (inv.slots[i].count <= 0) inv.slots[i] = null;
-                }
-              }
-            }
-            held.enchant = { name: eName, lvl: eLvl };
-            this.engine.audio.playSound('enchant');
-            this.toast(`Enchanted ${it.name} with ${eName} ${'I'.repeat(eLvl)}!`);
-            this.renderContainer();
-            this.refreshHotbar();
-          };
-          opts.appendChild(btn);
+      // Right: three offers
+      const opts = document.createElement('div');
+      opts.className = 'ench-options';
+      const runes = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ';
+      const runeText = (rng) => {
+        let out = '';
+        const words = 2 + Math.floor(rng() * 3);
+        for (let wi = 0; wi < words; wi++) {
+          const len = 2 + Math.floor(rng() * 4);
+          for (let k = 0; k < len; k++) out += runes[Math.floor(rng() * runes.length)];
+          out += ' ';
         }
-        wrap.appendChild(opts);
+        return out.trim();
+      };
+
+      let offers = [];
+      if (canEnch) {
+        const rng = seededRng(p.enchSeed ^ (itemSt.id * 2654435761));
+        const base = 1 + Math.floor(rng() * 8) + Math.floor(power / 2) + Math.floor(rng() * (power + 1));
+        const costs = [Math.max(1, Math.floor(base / 3)), Math.floor(base * 2 / 3) + 1, Math.max(base, power * 2)];
+        offers = costs.map((cost, i) => ({ cost: Math.min(30, cost), lapis: i + 1, list: rollEnchants(it, Math.min(30, cost), seededRng((p.enchSeed + i * 7919 + itemSt.id) >>> 0)) }));
       }
+
+      for (let i = 0; i < 3; i++) {
+        const off = offers[i];
+        const btn = document.createElement('button');
+        btn.className = 'ench-btn';
+        const rng = seededRng((p.enchSeed + i * 104729) >>> 0);
+        if (!off || !off.list.length) {
+          btn.disabled = true;
+          btn.innerHTML = `<span class="ench-runes">${canEnch ? runeText(rng) : '&nbsp;'}</span>`;
+          opts.appendChild(btn);
+          continue;
+        }
+        const ok = creative || (p.level >= off.cost && lapisCnt >= off.lapis);
+        btn.disabled = !ok;
+        const clue = off.list[0];
+        const more = off.list.length > 1 ? ' . . . ?' : '';
+        btn.innerHTML =
+          `<span class="ench-lapis-ct">${off.lapis}</span>` +
+          `<span class="ench-text"><span class="ench-runes">${runeText(rng)}</span>` +
+          `<b>${enchLabel(clue)}${more}</b></span>` +
+          `<span class="ench-cost${!creative && p.level < off.cost ? ' short' : ''}">${off.cost}</span>`;
+        btn.title = `${ENCHANTS[clue.name].desc}. Requires level ${off.cost}; costs ${off.lapis} level${off.lapis > 1 ? 's' : ''} + ${off.lapis} Lapis Lazuli.`;
+        btn.onclick = () => {
+          const st = this.enchSlots[0];
+          if (!st || st.enchant) return;
+          if (!creative) {
+            const ls = this.enchSlots[1];
+            if (p.level < off.cost || !ls || ls.count < off.lapis) return;
+            p.level = Math.max(0, p.level - off.lapis);
+            ls.count -= off.lapis;
+            if (ls.count <= 0) this.enchSlots[1] = null;
+          }
+          st.enchant = makeEnchant(off.list);
+          p.enchSeed = (Math.random() * 4294967296) >>> 0;
+          this.engine.audio.playSound('enchant');
+          const pp = this.engine.player;
+          if (this.engine.particles) this.engine.particles.spawnBurst(pp.x, pp.y + 1.4, pp.z, [0.72, 0.45, 1.0], 18, 2.4, 0.1);
+          this.toast(`Enchanted ${it.name}: ${enchSummary(st)}`);
+          this.renderContainer();
+          this.refreshHotbar();
+        };
+        opts.appendChild(btn);
+      }
+      wrap.appendChild(opts);
       top.appendChild(wrap);
+
+      const hint = document.createElement('div');
+      hint.className = 'ench-hint';
+      hint.textContent = !itemSt
+        ? 'Place a tool, weapon, bow or armor piece in the left slot and Lapis Lazuli in the right slot.'
+        : itemSt.enchant ? 'This item is already enchanted.'
+        : !canEnch ? 'This item cannot be enchanted.'
+        : `Your level: ${p.level}${creative ? ' (Creative: free)' : ''}. Green number = level required; purple = Lapis & levels spent.`;
+      top.appendChild(hint);
     } else if (type === 'trader') {
       const trades = [
         { give: [IT.WHEAT_ITEM, 12], get: [IT.EMERALD, 1] },
@@ -11641,12 +12191,18 @@ class UIManager {
 
     this._el('containerScreen').addEventListener('mousedown', (e) => {
       if (this.engine.state !== 'container' || !this.cursorStack) return;
-      if (e.target.closest('.inv-shell')) return;
+      // Slot handlers re-render the grid (innerHTML = '') before this bubbles up, which detaches
+      // e.target — so closest() alone would wrongly report "outside". Check by coordinates too.
+      if (e.target.closest('.inv-shell') || !this._isPointOutsideInvBox(e.clientX, e.clientY)) return;
       e.preventDefault();
       if (e.button === 0) this.dropCursorItem(true);
       else if (e.button === 2) this.dropCursorItem(false);
     });
     window.addEventListener('mouseup', (e) => {
+      if (this._drag) {
+        if (e.button === this._drag.button) this._finishDrag();
+        return;
+      }
       if (this.engine.state === 'container' && this._slotDragThrow && this.cursorStack && !this._rightDragPainted) {
         if (this._isPointOutsideInvBox(e.clientX, e.clientY)) {
           this.dropCursorItem(true);
@@ -12073,7 +12629,8 @@ class GameEngine {
 
     // Create scenic live background world for Title Screen!
     this._initTitleWorld();
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', (e) => {
+      if (this.state === 'playing' || this.state === 'paused' || this.state === 'container') { e.preventDefault(); e.returnValue = ''; }
       if (this.isMultiplayer()) {
         this.net.sendInventorySync();
         this.net.disconnect();
@@ -12310,6 +12867,7 @@ class GameEngine {
 
   pause() {
     this.state = 'paused';
+    this._pausedAt = performance.now();
     this.input.exitLock();
     if (!this.isMultiplayer()) this.saveCurrentWorld();
     const mp = this.isMultiplayer();
@@ -12428,6 +12986,7 @@ class GameEngine {
       landDip: p.landDip || 0,
       strafe: p.strafeInput || 0,
       blocking: !!p.blocking,
+      eating: p.eating ? p.eating.t : -1,
       color
     };
   }
