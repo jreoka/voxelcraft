@@ -9673,6 +9673,27 @@ class MobManager {
   }
 
   // True if a melee strike from point A can reach point B without passing through walls or closed doors/trapdoors
+  // Creeper sight: throttled line-of-sight check from its head to the player's head/feet.
+  // Once spotted, it keeps chasing for a short memory window, but can't track you through walls indefinitely.
+  _creeperCanSee(m, def, player, dt) {
+    m.sightCd = (m.sightCd || 0) - dt;
+    if (m.sightCd <= 0) {
+      m.sightCd = 0.2 + Math.random() * 0.1;
+      const ey = m.y + (def.h || 1.7) * 0.85;
+      m.seesPlayer = this._meleeClear(m.x, ey, m.z, player.x, player.y + 1.5, player.z) ||
+                     this._meleeClear(m.x, ey, m.z, player.x, player.y + 0.4, player.z);
+      if (m.seesPlayer) m.sightMemory = 2.5;
+    }
+    if (!m.seesPlayer) {
+      m.sightMemory = (m.sightMemory || 0) - dt;
+      if (m.sightMemory <= 0) {
+        m.fuse = Math.max(0, (m.fuse || 0) - dt * 1.5);
+        return false;
+      }
+    }
+    return true;
+  }
+
   _meleeClear(ax, ay, az, bx, by, bz) {
     const dx = bx - ax, dy = by - ay, dz = bz - az;
     const len = Math.hypot(dx, dy, dz);
@@ -9801,10 +9822,11 @@ class MobManager {
         moveSpd = def.spd;
         const inW = this.world.getBlock(Math.floor(m.x), Math.floor(m.y + 0.3), Math.floor(m.z)) === B.WATER;
         m.vy = inW ? Math.sin(m.walkPhase) * 0.4 : -6;
-      } else if (m.hostile && dist < 24 && !player.dead && player.mode === 'survival') {
+      } else if (m.hostile && dist < 24 && !player.dead && player.mode === 'survival' && (!def.creeper || this._creeperCanSee(m, def, player, dt))) {
         m.targetYaw = Math.atan2(dx, dz);
         if (def.creeper) {
-          if (dist < 3.4) {
+          // Only fuse with a clear line of sight right now — no blowing up through walls
+          if (dist < 3.4 && m.seesPlayer) {
             m.fuse += dt;
             if (m.fuse < dt * 1.5) audio.playSound('sizzle');
             if (m.fuse >= 1.45) {
