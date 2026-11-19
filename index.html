@@ -856,6 +856,7 @@ html, body {
     <div class="menu-title" style="justify-content:center">Game Paused</div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button class="btn primary" id="btnResume">Resume Game</button>
+      <button class="btn" id="btnPauseFullscreen">Enter Fullscreen (F11)</button>
       <button class="btn" id="btnManualSave">Save World Now</button>
       <button class="btn" id="btnPauseSettings">Settings</button>
       <button class="btn" id="btnPauseControls">Controls</button>
@@ -917,6 +918,19 @@ html, body {
         <input type="range" id="setBright" min="0" max="100" step="5" value="50">
       </div>
     </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Sprint Mode</label>
+        <select id="setSprintMode">
+          <option value="hold">Hold Ctrl (+ Double-Tap W)</option>
+          <option value="toggle">Toggle Ctrl (+ Double-Tap W)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Display (Captures Ctrl+W)</label>
+        <button class="btn" id="btnSettingsFullscreen" style="width:100%">Enter Fullscreen (F11)</button>
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn primary" id="btnSettingsDone">Done</button>
     </div>
@@ -928,7 +942,7 @@ html, body {
   <div class="menu-card">
     <div class="menu-title">Controls &amp; Keybindings</div>
     <p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">
-      Click any binding button and press a new key. Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Right-Click take half / place one, Left-Drag split evenly, Right-Drag place one per slot, Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Middle-Click (Creative) clone stack, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, Tab shows Players, F3 toggles Debug HUD.
+      Click any binding button and press a new key. Sprint with Ctrl or double-tap W (use F11 Fullscreen to prevent Ctrl+W closing the tab). Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Right-Click take half / place one, Left-Drag split evenly, Right-Drag place one per slot, Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Middle-Click (Creative) clone stack, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, Tab shows Players, F3 toggles Debug HUD.
     </p>
     <div class="controls-grid" id="controlsList"></div>
     <div class="btn-row">
@@ -1302,6 +1316,7 @@ class SettingsManager {
       quality: 'high',
       shadows: 'high',
       brightness: 50,
+      sprintMode: 'hold',
       keysV2: true,
       keys: {
         forward: 'KeyW',
@@ -8482,8 +8497,10 @@ class PlayerPhysics {
     const str = (input.isAction('right') ? 1 : 0) - (input.isAction('left') ? 1 : 0) + input.gpMoveX;
     player.strafeInput = clamp(str, -1, 1);
     player.crouching = input.isAction('crouch') && !player.flying;
-    const wantsSprint = input.isAction('sprint') && fwd > 0.2 && !player.crouching && (player.hunger > 6 || player.mode === 'creative');
-    player.sprinting = wantsSprint && !player.eating;
+    const canSprint = fwd > 0.2 && !player.crouching && !player.eating && (player.hunger > 6 || player.mode === 'creative');
+    if (!canSprint) input.doubleTapSprint = false;
+    const sprintHeld = input.isAction('sprint') || input.doubleTapSprint || (input.settings.data.sprintMode === 'toggle' && input.sprintToggled);
+    player.sprinting = sprintHeld && canSprint;
 
     const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
     let moveX = -sy * fwd + cy * str;
@@ -10371,6 +10388,10 @@ class InputManager {
     this.mouseRightJustPressed = false;
     this.mouseMiddleJustPressed = false;
     this.jumpJustPressed = false;
+    this.doubleTapSprint = false;
+    this.sprintToggled = false;
+    this._lastForwardTap = 0;
+    this._forwardWasUp = true;
     this.pointerLocked = false;
     this.rebindingAction = null;
     this.gpMoveX = 0; this.gpMoveY = 0;
@@ -10381,6 +10402,37 @@ class InputManager {
   isAction(action) {
     const code = this.settings.data.keys[action];
     return code ? this.keys.has(code) : false;
+  }
+
+  async lockKeyboard() {
+    if (navigator.keyboard && typeof navigator.keyboard.lock === 'function') {
+      try {
+        // Lock common game & shortcut keys (Ctrl+W, Ctrl+T, Ctrl+1..9, Tab) while leaving Escape unlocked
+        await navigator.keyboard.lock([
+          'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyT', 'KeyR', 'KeyN',
+          'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+          'Tab', 'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight'
+        ]);
+      } catch {}
+    }
+  }
+
+  unlockKeyboard() {
+    if (navigator.keyboard && typeof navigator.keyboard.unlock === 'function') {
+      try { navigator.keyboard.unlock(); } catch {}
+    }
+  }
+
+  async toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        await this.lockKeyboard();
+      } else {
+        this.unlockKeyboard();
+        await document.exitFullscreen();
+      }
+    } catch {}
   }
 
   requestLock() {
@@ -10439,6 +10491,12 @@ class InputManager {
 
       if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) return;
 
+      if (e.code === 'F11') {
+        e.preventDefault();
+        this.toggleFullscreen();
+        return;
+      }
+
       const k = this.settings.data.keys;
 
       // Tab shows online players while held in multiplayer
@@ -10473,6 +10531,21 @@ class InputManager {
 
       if (e.ctrlKey && this.engine.state === 'playing' && e.code !== 'F3') e.preventDefault();
       if (e.code === k.jump && !this.keys.has(e.code)) this.jumpJustPressed = true;
+      if (this.engine.state === 'playing') {
+        if (e.code === k.forward && !e.repeat) {
+          const now = performance.now();
+          if (this._forwardWasUp && now - this._lastForwardTap <= 300) {
+            this.doubleTapSprint = true;
+            this._lastForwardTap = 0;
+          } else {
+            this._lastForwardTap = now;
+          }
+          this._forwardWasUp = false;
+        }
+        if (e.code === k.sprint && !e.repeat && this.settings.data.sprintMode === 'toggle') {
+          this.sprintToggled = !this.sprintToggled;
+        }
+      }
       this.keys.add(e.code);
 
       if (e.code === 'F3' || e.code === k.debug) {
@@ -10527,6 +10600,10 @@ class InputManager {
 
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+      if (e.code === this.settings.data.keys.forward) {
+        this._forwardWasUp = true;
+        this.doubleTapSprint = false;
+      }
       if ((e.code === 'Tab' || e.key === 'Tab') && this.engine.ui) {
         if (this.engine.state === 'playing') e.preventDefault();
         this.engine.ui.setTabListVisible(false);
@@ -10534,7 +10611,13 @@ class InputManager {
     });
     window.addEventListener('blur', () => {
       this.keys.clear(); this.mouseLeft = false; this.mouseRight = false; this.containerRightDragging = false;
+      this.doubleTapSprint = false; this._forwardWasUp = true;
       if (this.engine.ui) this.engine.ui.setTabListVisible(false);
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement) this.lockKeyboard();
+      else this.unlockKeyboard();
+      if (this.engine.ui) this.engine.ui.updateFullscreenButtons();
     });
 
     document.addEventListener('pointerlockchange', () => {
@@ -10568,11 +10651,15 @@ class InputManager {
     });
     window.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('wheel', (e) => {
-      if (this.engine.state !== 'playing') return;
-      const inv = this.engine.player.inventory;
-      inv.selected = (inv.selected + (e.deltaY > 0 ? 1 : 8)) % 9;
-      this.engine.ui.refreshHotbar();
-    });
+      if (this.engine.state === 'playing') {
+        e.preventDefault();
+        const inv = this.engine.player.inventory;
+        inv.selected = (inv.selected + (e.deltaY > 0 ? 1 : 8)) % 9;
+        this.engine.ui.refreshHotbar();
+      } else if (e.ctrlKey && this.engine.state === 'container') {
+        e.preventDefault();
+      }
+    }, { passive: false });
   }
 }
 
@@ -12072,6 +12159,12 @@ class UIManager {
     }
   }
 
+  updateFullscreenButtons() {
+    const label = document.fullscreenElement ? 'Exit Fullscreen (F11)' : 'Enter Fullscreen (F11)';
+    const b1 = this._el('btnPauseFullscreen'); if (b1) b1.textContent = label;
+    const b2 = this._el('btnSettingsFullscreen'); if (b2) b2.textContent = label;
+  }
+
   syncSettingsInputs() {
     const s = this.engine.settings.data;
     this._el('setViewDist').value = s.viewDistance; this._el('valViewDist').textContent = `${s.viewDistance} chunks`;
@@ -12082,6 +12175,8 @@ class UIManager {
     this._el('setQuality').value = s.quality;
     this._el('setShadows').value = s.shadows || 'high';
     this._el('setBright').value = s.brightness ?? 50; this._el('valBright').textContent = `${s.brightness ?? 50}%`;
+    this._el('setSprintMode').value = s.sprintMode || 'hold';
+    this.updateFullscreenButtons();
   }
 
   _bindButtons() {
@@ -12141,6 +12236,8 @@ class UIManager {
     });
 
     this._el('btnResume').onclick = () => this.engine.resume();
+    this._el('btnPauseFullscreen').onclick = () => this.engine.input.toggleFullscreen();
+    this._el('btnSettingsFullscreen').onclick = () => this.engine.input.toggleFullscreen();
     this._el('btnManualSave').onclick = async () => {
       if (this.engine.isMultiplayer()) {
         this.engine.net.sendInventorySync();
@@ -12294,6 +12391,11 @@ class UIManager {
     this._el('setBright').oninput = (e) => {
       this.engine.settings.data.brightness = parseInt(e.target.value, 10);
       this._el('valBright').textContent = `${e.target.value}%`;
+      this.engine.settings.save();
+    };
+    this._el('setSprintMode').onchange = (e) => {
+      this.engine.settings.data.sprintMode = e.target.value;
+      if (e.target.value !== 'toggle' && this.engine.input) this.engine.input.sprintToggled = false;
       this.engine.settings.save();
     };
   }
