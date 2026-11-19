@@ -913,15 +913,15 @@ class AntiCheat {
     const knownId = delta ? delta[3] : (Number.isInteger(prevId) ? prevId : 0);
     const knownMeta = delta ? delta[4] : (Number.isInteger(prevMeta) ? prevMeta : 0);
 
-    if (y < 0 || y >= WORLD_HEIGHT) {
+    if (Math.abs(y) > 10000000) {
       return { ok: false, revertId: knownId || -1, revertMeta: knownMeta, reason: 'Out-of-bounds block.' };
     }
 
     if (!this.isEnabled()) return { ok: true };
     const isCreative = p.mode === 'creative';
 
-    // 1. Survival Bedrock protection (y === 0 is always bedrock, plus explicit BEDROCK ID)
-    if (!isCreative && (y === 0 || knownId === B_BEDROCK)) {
+    // 1. Survival Bedrock protection (explicit BEDROCK ID only — world depth is infinite)
+    if (!isCreative && knownId === B_BEDROCK) {
       return {
         ok: false, revertId: B_BEDROCK, revertMeta: 0, reason: 'Cannot break Bedrock in Survival.',
         flag: ['BEDROCK_BREAK', 6, `Attempted to break bedrock at (${x},${y},${z})`]
@@ -977,8 +977,8 @@ class AntiCheat {
     const revId = prev ? prev[3] : B_AIR;
     const revMeta = prev ? prev[4] : 0;
 
-    if (y < 1 || y >= WORLD_HEIGHT - 1) {
-      return { ok: false, revertId: revId, revertMeta: revMeta, reason: 'Cannot build outside world height (1..126).' };
+    if (Math.abs(y) > 10000000) {
+      return { ok: false, revertId: revId, revertMeta: revMeta, reason: 'Cannot build beyond coordinate limit.' };
     }
 
     if (!isValidBlockId(id)) {
@@ -1194,7 +1194,8 @@ class VoxelCraftServer {
           id: p.id, name: p.name,
           x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
           yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3),
-          crouch: p.crouch, swing: p.swing, ping: p.ping
+          crouch: p.crouch, swing: p.swing, ping: p.ping,
+          mode: p.mode, op: this.isOp(p.name)
         });
       }
       this.broadcast({ type: 'players', list });
@@ -1458,7 +1459,8 @@ class VoxelCraftServer {
       if (o.id === id) continue;
       existingPlayers.push({
         id: o.id, name: o.name, x: o.x, y: o.y, z: o.z,
-        yaw: o.yaw, pitch: o.pitch, crouch: o.crouch, swing: o.swing, ping: o.ping
+        yaw: o.yaw, pitch: o.pitch, crouch: o.crouch, swing: o.swing, ping: o.ping,
+        mode: o.mode, op: this.isOp(o.name)
       });
     }
 
@@ -1469,6 +1471,8 @@ class VoxelCraftServer {
       accountCreated: !!authRes.created,
       serverName: config.serverName,
       motd: config.motd,
+      maxPlayers: config.maxPlayers || 32,
+      isOp: this.isOp(name),
       seed: this.world.seed,
       mode: player.mode,
       difficulty: config.difficulty,
@@ -1495,6 +1499,9 @@ class VoxelCraftServer {
     switch (msg.type) {
       case 'ping': {
         const t = Number(msg.t) || Date.now();
+        if (Number.isFinite(Number(msg.ping)) && Number(msg.ping) > 0) {
+          p.ping = Math.max(1, Math.min(9999, Math.round(Number(msg.ping))));
+        }
         p.ws.sendJSON({ type: 'pong', t });
         break;
       }
@@ -1544,7 +1551,7 @@ class VoxelCraftServer {
         const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
         const action = String(msg.action || '');
         const val = (msg.val | 0) & 255;
-        if (y < 1 || y >= WORLD_HEIGHT - 1) return;
+        if (Math.abs(y) > 10000000) return;
 
         const reach = this.ac.checkReach(p, x, y, z);
         if (!reach.ok) {
@@ -1560,7 +1567,6 @@ class VoxelCraftServer {
               for (let dx = -r; dx <= r; dx++) {
                 if (dx*dx + dy*dy + dz*dz > radius * radius) continue;
                 const bx = x + dx, by = y + dy, bz = z + dz;
-                if (by <= 0 || by >= WORLD_HEIGHT - 1) continue;
                 const prev = this.world.getDelta(bx, by, bz);
                 if (prev && (prev[3] === B_BEDROCK || prev[3] === B_OBSIDIAN || prev[3] === B_OBSIDIAN_CRYING)) continue;
                 this.world.setBlock(bx, by, bz, B_AIR, 0);

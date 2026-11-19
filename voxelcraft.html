@@ -515,8 +515,11 @@ html, body {
   background: rgba(8, 12, 18, 0.66); border-radius: 6px; padding: 4px 9px;
   font-size: 12.5px; line-height: 1.38; width: fit-content; max-width: 100%;
   word-break: break-word; text-shadow: 0 1px 2px #000;
-  transition: opacity 0.5s;
+  transition: opacity 0.8s ease;
 }
+.chat-line.faded { opacity: 0; pointer-events: none; }
+#chatBox.chat-open .chat-line.faded { opacity: 1; }
+#chatBox.chat-open #chatMessages { pointer-events: auto; }
 .chat-line.sys { color: #a7e8a0; border-left: 2px solid var(--accent); }
 .chat-line.warn { color: #ffcf6e; border-left: 2px solid var(--gold); }
 .chat-line.err { color: #ff8585; border-left: 2px solid var(--danger); }
@@ -534,17 +537,67 @@ html, body {
 /* Tab Player List */
 #tabPlayerList {
   position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
-  width: min(380px, 86vw); background: rgba(10, 14, 22, 0.88);
-  border: 1px solid var(--border); border-radius: 11px; padding: 12px 15px;
-  z-index: 24; display: none; backdrop-filter: blur(5px);
+  width: min(440px, 90vw); background: rgba(10, 14, 22, 0.90);
+  border: 1px solid var(--border-hi); border-radius: 12px; padding: 13px 16px;
+  z-index: 24; display: none; backdrop-filter: blur(8px);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.55);
 }
 #tabPlayerList.active { display: block; }
-.tab-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 8px; border-radius: 6px; font-size: 13px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+.tab-header {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  margin-bottom: 4px;
 }
-.tab-ping { font-family: var(--mono); font-size: 11.5px; color: #7ef27a; }
+.tab-title { font-weight: 800; font-size: 14px; color: #fff; }
+.tab-count { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+.tab-meta {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  font-size: 11px; color: var(--muted); margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.09);
+}
+.tab-chip {
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 5px; padding: 1px 6px; font-size: 10.5px; color: var(--text);
+}
+#tabPlayerRows { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.tab-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 7px; font-size: 13px;
+  background: rgba(255,255,255,0.035);
+}
+.tab-row.is-self { background: rgba(106, 219, 86, 0.11); border: 1px solid rgba(106, 219, 86, 0.25); }
+.tab-player-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tab-avatar {
+  width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.35);
+}
+.tab-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-badge {
+  font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.tab-badge.op { background: rgba(255, 204, 80, 0.18); color: #ffd46b; border: 1px solid rgba(255, 204, 80, 0.35); }
+.tab-badge.mode { background: rgba(120, 180, 255, 0.14); color: #9ad0ff; }
+.tab-player-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.tab-ping { font-family: var(--mono); font-size: 11.5px; min-width: 42px; text-align: right; }
+.tab-ping.good { color: #7ef27a; }
+.tab-ping.ok { color: #ffcf6e; }
+.tab-ping.bad { color: #ff7c7c; }
+.ping-bars { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 11px; }
+.ping-bars i {
+  display: block; width: 2.5px; border-radius: 1px; background: rgba(255,255,255,0.16);
+}
+.ping-bars i:nth-child(1) { height: 3px; }
+.ping-bars i:nth-child(2) { height: 5px; }
+.ping-bars i:nth-child(3) { height: 7px; }
+.ping-bars i:nth-child(4) { height: 9px; }
+.ping-bars i:nth-child(5) { height: 11px; }
+.ping-bars.good i.on { background: #7ef27a; }
+.ping-bars.ok i.on { background: #ffcf6e; }
+.ping-bars.bad i.on { background: #ff7c7c; }
+.tab-footer {
+  margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; justify-content: space-between; font-size: 11px; color: var(--muted);
+}
 
 /* Remote Player 3D Nametags */
 #nametagLayer {
@@ -607,6 +660,8 @@ html, body {
       <span id="hudMpLabel">Online</span>
       <span style="opacity:.4">|</span>
       <span id="hudMpPing">0ms</span>
+      <span style="opacity:.4">|</span>
+      <span style="opacity:.72;font-size:10.5px">TAB</span>
     </div>
     <div id="debugPanel"></div>
   </div>
@@ -619,11 +674,16 @@ html, body {
   </div>
   <div id="toastContainer"></div>
   <div id="tabPlayerList">
-    <div style="font-weight:800;font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between">
-      <span id="tabServerTitle">Multiplayer Server</span>
-      <span id="tabPlayerCount" style="color:var(--muted)">0 online</span>
+    <div class="tab-header">
+      <span class="tab-title" id="tabServerTitle">Multiplayer Server</span>
+      <span class="tab-count" id="tabPlayerCount">0 / 32 online</span>
     </div>
+    <div class="tab-meta" id="tabServerMeta"></div>
     <div id="tabPlayerRows"></div>
+    <div class="tab-footer">
+      <span id="tabFooterLeft">Hold TAB for player list</span>
+      <span id="tabFooterRight"></span>
+    </div>
   </div>
   <div id="chatBox">
     <div id="chatMessages"></div>
@@ -919,7 +979,7 @@ html, body {
 // ============================================================================
 
 const CHUNK_SIZE = 16;
-const WORLD_HEIGHT = 128;
+const CHUNK_VOL = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE; // 4096 blocks per 16x16x16 cubic chunk
 const SEA_LEVEL = 46;
 const ATLAS_TILES = 16;
 const TILE_PX = 32;
@@ -2924,49 +2984,49 @@ class TextureAtlas {
 // ============================================================================
 
 const BIOMES = [
-  // Temperate (0..6)
-  { id: 0, name: 'Plains', cat: 'temperate', grass: [0.46, 0.74, 0.30], leaf: [0.38, 0.66, 0.25], water: [0.22, 0.56, 0.86], top: B.GRASS, sub: B.DIRT, treeRate: 0.0025, treeType: 'oak', weather: 'rain', flowers: 0.04 },
-  { id: 1, name: 'Forest', cat: 'temperate', grass: [0.38, 0.68, 0.27], leaf: [0.30, 0.58, 0.22], water: [0.20, 0.52, 0.84], top: B.GRASS, sub: B.DIRT, treeRate: 0.022, treeType: 'oak', weather: 'rain', flowers: 0.02 },
-  { id: 2, name: 'Dense Forest', cat: 'temperate', grass: [0.29, 0.56, 0.22], leaf: [0.24, 0.48, 0.18], water: [0.18, 0.46, 0.78], top: B.GRASS, sub: B.DIRT, treeRate: 0.036, treeType: 'darkoak', weather: 'rain', flowers: 0.015 },
-  { id: 3, name: 'Birch Forest', cat: 'temperate', grass: [0.48, 0.75, 0.34], leaf: [0.44, 0.72, 0.30], water: [0.24, 0.58, 0.88], top: B.GRASS, sub: B.DIRT, treeRate: 0.021, treeType: 'birch', weather: 'rain', flowers: 0.03 },
-  { id: 4, name: 'Flower Fields', cat: 'temperate', grass: [0.50, 0.80, 0.32], leaf: [0.42, 0.72, 0.28], water: [0.25, 0.62, 0.90], top: B.GRASS, sub: B.DIRT, treeRate: 0.004, treeType: 'birch', weather: 'rain', flowers: 0.19 },
-  { id: 5, name: 'Swamp', cat: 'temperate', grass: [0.34, 0.46, 0.24], leaf: [0.30, 0.42, 0.20], water: [0.26, 0.44, 0.36], top: B.GRASS, sub: B.MUD, treeRate: 0.014, treeType: 'swamp', weather: 'rain', flowers: 0.02 },
-  { id: 6, name: 'Meadow', cat: 'temperate', grass: [0.44, 0.76, 0.38], leaf: [0.36, 0.66, 0.30], water: [0.24, 0.60, 0.88], top: B.GRASS, sub: B.DIRT, treeRate: 0.005, treeType: 'oak', weather: 'rain', flowers: 0.09 },
+  // Temperate (0..6) — authentic vanilla Minecraft biome colormaps
+  { id: 0, name: 'Plains', cat: 'temperate', grass: [0.57, 0.74, 0.35], leaf: [0.46, 0.66, 0.25], water: [0.25, 0.46, 0.86], top: B.GRASS, sub: B.DIRT, treeRate: 0.0025, treeType: 'oak', weather: 'rain', flowers: 0.04 },
+  { id: 1, name: 'Forest', cat: 'temperate', grass: [0.47, 0.72, 0.35], leaf: [0.38, 0.63, 0.24], water: [0.24, 0.45, 0.85], top: B.GRASS, sub: B.DIRT, treeRate: 0.022, treeType: 'oak', weather: 'rain', flowers: 0.02 },
+  { id: 2, name: 'Dense Forest', cat: 'temperate', grass: [0.36, 0.56, 0.26], leaf: [0.30, 0.50, 0.20], water: [0.22, 0.42, 0.80], top: B.GRASS, sub: B.DIRT, treeRate: 0.036, treeType: 'darkoak', weather: 'rain', flowers: 0.015 },
+  { id: 3, name: 'Birch Forest', cat: 'temperate', grass: [0.53, 0.72, 0.40], leaf: [0.48, 0.67, 0.34], water: [0.25, 0.47, 0.86], top: B.GRASS, sub: B.DIRT, treeRate: 0.021, treeType: 'birch', weather: 'rain', flowers: 0.03 },
+  { id: 4, name: 'Flower Fields', cat: 'temperate', grass: [0.55, 0.75, 0.36], leaf: [0.46, 0.68, 0.28], water: [0.25, 0.48, 0.88], top: B.GRASS, sub: B.DIRT, treeRate: 0.004, treeType: 'birch', weather: 'rain', flowers: 0.19 },
+  { id: 5, name: 'Swamp', cat: 'temperate', grass: [0.42, 0.44, 0.22], leaf: [0.38, 0.42, 0.20], water: [0.36, 0.46, 0.38], top: B.GRASS, sub: B.MUD, treeRate: 0.014, treeType: 'swamp', weather: 'rain', flowers: 0.02 },
+  { id: 6, name: 'Meadow', cat: 'temperate', grass: [0.51, 0.70, 0.45], leaf: [0.42, 0.62, 0.36], water: [0.24, 0.48, 0.85], top: B.GRASS, sub: B.DIRT, treeRate: 0.005, treeType: 'oak', weather: 'rain', flowers: 0.09 },
   // Cold (7..11)
-  { id: 7, name: 'Snowy Plains', cat: 'cold', grass: [0.58, 0.70, 0.64], leaf: [0.46, 0.62, 0.56], water: [0.20, 0.44, 0.74], top: B.SNOW, sub: B.DIRT, treeRate: 0.002, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
-  { id: 8, name: 'Snowy Forest', cat: 'cold', grass: [0.52, 0.66, 0.60], leaf: [0.40, 0.56, 0.50], water: [0.20, 0.42, 0.72], top: B.SNOW, sub: B.DIRT, treeRate: 0.022, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
-  { id: 9, name: 'Frozen Lakes', cat: 'cold', grass: [0.60, 0.74, 0.72], leaf: [0.46, 0.62, 0.58], water: [0.28, 0.54, 0.82], top: B.SNOW, sub: B.PACKED_ICE, treeRate: 0.003, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
-  { id: 10, name: 'Ice Mountains', cat: 'cold', grass: [0.64, 0.76, 0.80], leaf: [0.44, 0.60, 0.64], water: [0.22, 0.48, 0.78], top: B.SNOW, sub: B.PACKED_ICE, treeRate: 0.004, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
-  { id: 11, name: 'Tundra', cat: 'cold', grass: [0.44, 0.56, 0.46], leaf: [0.36, 0.50, 0.40], water: [0.20, 0.44, 0.72], top: B.GRASS, sub: B.DIRT, treeRate: 0.009, treeType: 'spruce', weather: 'snow', flowers: 0.005 },
+  { id: 7, name: 'Snowy Plains', cat: 'cold', grass: [0.52, 0.67, 0.58], leaf: [0.42, 0.58, 0.50], water: [0.22, 0.40, 0.76], top: B.SNOW, sub: B.DIRT, treeRate: 0.002, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
+  { id: 8, name: 'Snowy Forest', cat: 'cold', grass: [0.50, 0.65, 0.56], leaf: [0.38, 0.54, 0.46], water: [0.22, 0.39, 0.75], top: B.SNOW, sub: B.DIRT, treeRate: 0.022, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
+  { id: 9, name: 'Frozen Lakes', cat: 'cold', grass: [0.54, 0.69, 0.64], leaf: [0.42, 0.58, 0.52], water: [0.24, 0.44, 0.80], top: B.SNOW, sub: B.PACKED_ICE, treeRate: 0.003, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
+  { id: 10, name: 'Ice Mountains', cat: 'cold', grass: [0.56, 0.70, 0.68], leaf: [0.42, 0.56, 0.56], water: [0.22, 0.42, 0.78], top: B.SNOW, sub: B.PACKED_ICE, treeRate: 0.004, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
+  { id: 11, name: 'Tundra', cat: 'cold', grass: [0.52, 0.66, 0.50], leaf: [0.40, 0.54, 0.42], water: [0.23, 0.41, 0.76], top: B.GRASS, sub: B.DIRT, treeRate: 0.009, treeType: 'spruce', weather: 'snow', flowers: 0.005 },
   // Warm (12..16)
-  { id: 12, name: 'Desert', cat: 'warm', grass: [0.72, 0.68, 0.34], leaf: [0.64, 0.62, 0.28], water: [0.24, 0.64, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0.003, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
-  { id: 13, name: 'Savanna', cat: 'warm', grass: [0.68, 0.66, 0.30], leaf: [0.58, 0.60, 0.24], water: [0.24, 0.58, 0.82], top: B.GRASS, sub: B.DIRT, treeRate: 0.009, treeType: 'acacia', weather: 'dust', flowers: 0.01 },
-  { id: 14, name: 'Tropical Jungle', cat: 'warm', grass: [0.26, 0.76, 0.22], leaf: [0.20, 0.68, 0.16], water: [0.18, 0.68, 0.78], top: B.GRASS, sub: B.DIRT, treeRate: 0.034, treeType: 'jungle', weather: 'rain', flowers: 0.04 },
-  { id: 15, name: 'Badlands', cat: 'warm', grass: [0.64, 0.52, 0.30], leaf: [0.56, 0.48, 0.24], water: [0.28, 0.54, 0.72], top: B.RED_SAND, sub: B.TERRACOTTA, treeRate: 0.002, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
-  { id: 16, name: 'Sparse Desert', cat: 'warm', grass: [0.74, 0.70, 0.38], leaf: [0.64, 0.60, 0.32], water: [0.26, 0.62, 0.84], top: B.SAND, sub: B.SANDSTONE, treeRate: 0.0012, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
+  { id: 12, name: 'Desert', cat: 'warm', grass: [0.74, 0.70, 0.35], leaf: [0.66, 0.63, 0.28], water: [0.25, 0.50, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0.003, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
+  { id: 13, name: 'Savanna', cat: 'warm', grass: [0.73, 0.70, 0.34], leaf: [0.64, 0.63, 0.27], water: [0.25, 0.48, 0.84], top: B.GRASS, sub: B.DIRT, treeRate: 0.009, treeType: 'acacia', weather: 'dust', flowers: 0.01 },
+  { id: 14, name: 'Tropical Jungle', cat: 'warm', grass: [0.36, 0.74, 0.25], leaf: [0.28, 0.66, 0.19], water: [0.22, 0.56, 0.82], top: B.GRASS, sub: B.DIRT, treeRate: 0.034, treeType: 'jungle', weather: 'rain', flowers: 0.04 },
+  { id: 15, name: 'Badlands', cat: 'warm', grass: [0.58, 0.50, 0.30], leaf: [0.54, 0.46, 0.26], water: [0.28, 0.48, 0.76], top: B.RED_SAND, sub: B.TERRACOTTA, treeRate: 0.002, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
+  { id: 16, name: 'Sparse Desert', cat: 'warm', grass: [0.74, 0.70, 0.38], leaf: [0.66, 0.62, 0.32], water: [0.26, 0.50, 0.85], top: B.SAND, sub: B.SANDSTONE, treeRate: 0.0012, treeType: 'cactus', weather: 'dust', flowers: 0.0 },
   // Mountain (17..20)
-  { id: 17, name: 'Mountain Peaks', cat: 'mountain', grass: [0.42, 0.62, 0.38], leaf: [0.34, 0.54, 0.32], water: [0.20, 0.50, 0.82], top: B.STONE, sub: B.STONE, treeRate: 0.002, treeType: 'spruce', weather: 'snow', flowers: 0.005 },
-  { id: 18, name: 'Rocky Mountains', cat: 'mountain', grass: [0.42, 0.60, 0.36], leaf: [0.34, 0.52, 0.30], water: [0.22, 0.50, 0.80], top: B.STONE, sub: B.STONE, treeRate: 0.005, treeType: 'spruce', weather: 'rain', flowers: 0.01 },
-  { id: 19, name: 'Alpine Meadows', cat: 'mountain', grass: [0.44, 0.74, 0.42], leaf: [0.36, 0.62, 0.36], water: [0.24, 0.62, 0.90], top: B.GRASS, sub: B.DIRT, treeRate: 0.008, treeType: 'spruce', weather: 'rain', flowers: 0.08 },
-  { id: 20, name: 'Snow-Capped Mountains', cat: 'mountain', grass: [0.56, 0.70, 0.64], leaf: [0.42, 0.58, 0.54], water: [0.20, 0.46, 0.76], top: B.SNOW, sub: B.STONE, treeRate: 0.003, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
+  { id: 17, name: 'Mountain Peaks', cat: 'mountain', grass: [0.50, 0.66, 0.48], leaf: [0.40, 0.56, 0.38], water: [0.22, 0.44, 0.82], top: B.STONE, sub: B.STONE, treeRate: 0.002, treeType: 'spruce', weather: 'snow', flowers: 0.005 },
+  { id: 18, name: 'Rocky Mountains', cat: 'mountain', grass: [0.50, 0.64, 0.46], leaf: [0.40, 0.54, 0.36], water: [0.23, 0.44, 0.80], top: B.STONE, sub: B.STONE, treeRate: 0.005, treeType: 'spruce', weather: 'rain', flowers: 0.01 },
+  { id: 19, name: 'Alpine Meadows', cat: 'mountain', grass: [0.51, 0.70, 0.46], leaf: [0.40, 0.60, 0.38], water: [0.24, 0.48, 0.86], top: B.GRASS, sub: B.DIRT, treeRate: 0.008, treeType: 'spruce', weather: 'rain', flowers: 0.08 },
+  { id: 20, name: 'Snow-Capped Mountains', cat: 'mountain', grass: [0.54, 0.68, 0.58], leaf: [0.42, 0.56, 0.48], water: [0.22, 0.42, 0.78], top: B.SNOW, sub: B.STONE, treeRate: 0.003, treeType: 'spruce', weather: 'snow', flowers: 0.0 },
   // Aquatic (21..26)
-  { id: 21, name: 'Deep Ocean', cat: 'aquatic', grass: [0.44, 0.70, 0.32], leaf: [0.36, 0.62, 0.26], water: [0.10, 0.32, 0.68], top: B.GRAVEL, sub: B.STONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
-  { id: 22, name: 'Ocean', cat: 'aquatic', grass: [0.46, 0.72, 0.32], leaf: [0.38, 0.64, 0.26], water: [0.16, 0.48, 0.82], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
-  { id: 23, name: 'Coral Reef', cat: 'aquatic', grass: [0.48, 0.76, 0.36], leaf: [0.40, 0.68, 0.30], water: [0.16, 0.74, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
-  { id: 24, name: 'Warm Ocean', cat: 'aquatic', grass: [0.50, 0.74, 0.34], leaf: [0.42, 0.66, 0.28], water: [0.18, 0.66, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
-  { id: 25, name: 'Cold Ocean', cat: 'aquatic', grass: [0.48, 0.66, 0.52], leaf: [0.40, 0.58, 0.46], water: [0.14, 0.38, 0.72], top: B.GRAVEL, sub: B.STONE, treeRate: 0, treeType: 'none', weather: 'snow', flowers: 0 },
-  { id: 26, name: 'River', cat: 'aquatic', grass: [0.44, 0.72, 0.34], leaf: [0.36, 0.64, 0.28], water: [0.20, 0.58, 0.88], top: B.SAND, sub: B.CLAY, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
+  { id: 21, name: 'Deep Ocean', cat: 'aquatic', grass: [0.52, 0.68, 0.38], leaf: [0.42, 0.60, 0.28], water: [0.16, 0.34, 0.74], top: B.GRAVEL, sub: B.STONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
+  { id: 22, name: 'Ocean', cat: 'aquatic', grass: [0.54, 0.70, 0.38], leaf: [0.44, 0.62, 0.28], water: [0.22, 0.44, 0.84], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
+  { id: 23, name: 'Coral Reef', cat: 'aquatic', grass: [0.52, 0.72, 0.38], leaf: [0.44, 0.64, 0.30], water: [0.24, 0.64, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
+  { id: 24, name: 'Warm Ocean', cat: 'aquatic', grass: [0.54, 0.72, 0.36], leaf: [0.45, 0.64, 0.28], water: [0.24, 0.60, 0.86], top: B.SAND, sub: B.SANDSTONE, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
+  { id: 25, name: 'Cold Ocean', cat: 'aquatic', grass: [0.52, 0.66, 0.50], leaf: [0.42, 0.56, 0.44], water: [0.20, 0.38, 0.76], top: B.GRAVEL, sub: B.STONE, treeRate: 0, treeType: 'none', weather: 'snow', flowers: 0 },
+  { id: 26, name: 'River', cat: 'aquatic', grass: [0.54, 0.71, 0.38], leaf: [0.44, 0.62, 0.28], water: [0.24, 0.46, 0.86], top: B.SAND, sub: B.CLAY, treeRate: 0, treeType: 'none', weather: 'rain', flowers: 0 },
   // Expanded Biomes (27..36)
-  { id: 27, name: 'Cherry Blossom Grove', cat: 'temperate', grass: [0.44, 0.82, 0.40], leaf: [0.96, 0.68, 0.78], water: [0.26, 0.66, 0.92], top: B.GRASS, sub: B.DIRT, treeRate: 0.019, treeType: 'cherry', weather: 'rain', flowers: 0.14, ambientParticle: 'petal' },
-  { id: 28, name: 'Volcanic Wastes', cat: 'volcanic', grass: [0.36, 0.32, 0.28], leaf: [0.30, 0.26, 0.24], water: [0.24, 0.28, 0.34], top: B.BASALT, sub: B.BASALT, treeRate: 0.005, treeType: 'basalt_spire', weather: 'dust', flowers: 0, ambientParticle: 'ember' },
-  { id: 29, name: 'Mangrove Swamp', cat: 'temperate', grass: [0.32, 0.54, 0.24], leaf: [0.28, 0.50, 0.22], water: [0.22, 0.46, 0.38], top: B.MUD, sub: B.MUD, treeRate: 0.024, treeType: 'mangrove', weather: 'rain', flowers: 0.02 },
-  { id: 30, name: 'Bamboo Jungle', cat: 'warm', grass: [0.28, 0.80, 0.24], leaf: [0.22, 0.72, 0.18], water: [0.18, 0.70, 0.80], top: B.GRASS, sub: B.DIRT, treeRate: 0.038, treeType: 'bamboo', weather: 'rain', flowers: 0.03 },
-  { id: 31, name: 'Redwood Giant Taiga', cat: 'cold', grass: [0.36, 0.54, 0.32], leaf: [0.26, 0.44, 0.26], water: [0.18, 0.46, 0.74], top: B.PODZOL, sub: B.COARSE_DIRT, treeRate: 0.016, treeType: 'redwood', weather: 'rain', flowers: 0.01 },
-  { id: 32, name: 'Mushroom Island', cat: 'exotic', grass: [0.42, 0.68, 0.36], leaf: [0.38, 0.62, 0.32], water: [0.34, 0.46, 0.76], top: B.MYCELIUM, sub: B.DIRT, treeRate: 0.016, treeType: 'giant_shroom', weather: 'rain', flowers: 0.0, noHostiles: true },
-  { id: 33, name: 'Autumn Woods', cat: 'temperate', grass: [0.70, 0.56, 0.24], leaf: [0.88, 0.46, 0.18], water: [0.22, 0.50, 0.78], top: B.GRASS, sub: B.DIRT, treeRate: 0.024, treeType: 'autumn', weather: 'rain', flowers: 0.03, ambientParticle: 'leaf' },
-  { id: 34, name: 'Crystal Highlands', cat: 'mountain', grass: [0.46, 0.66, 0.56], leaf: [0.42, 0.60, 0.54], water: [0.28, 0.62, 0.92], top: B.CALCITE, sub: B.STONE, treeRate: 0.009, treeType: 'crystal_spire', weather: 'snow', flowers: 0.01, ambientParticle: 'sparkle' },
-  { id: 35, name: 'Desert Oasis', cat: 'warm', grass: [0.32, 0.78, 0.28], leaf: [0.26, 0.70, 0.22], water: [0.16, 0.76, 0.88], top: B.GRASS, sub: B.SAND, treeRate: 0.018, treeType: 'palm', weather: 'clear', flowers: 0.06 },
-  { id: 36, name: 'Shattered Cliffs', cat: 'mountain', grass: [0.40, 0.64, 0.34], leaf: [0.32, 0.56, 0.28], water: [0.20, 0.52, 0.82], top: B.GRASS, sub: B.STONE, treeRate: 0.008, treeType: 'spruce', weather: 'rain', flowers: 0.02 }
+  { id: 27, name: 'Cherry Blossom Grove', cat: 'temperate', grass: [0.56, 0.78, 0.44], leaf: [0.92, 0.68, 0.76], water: [0.28, 0.54, 0.88], top: B.GRASS, sub: B.DIRT, treeRate: 0.019, treeType: 'cherry', weather: 'rain', flowers: 0.14, ambientParticle: 'petal' },
+  { id: 28, name: 'Volcanic Wastes', cat: 'volcanic', grass: [0.38, 0.34, 0.30], leaf: [0.32, 0.28, 0.25], water: [0.26, 0.30, 0.38], top: B.BASALT, sub: B.BASALT, treeRate: 0.005, treeType: 'basalt_spire', weather: 'dust', flowers: 0, ambientParticle: 'ember' },
+  { id: 29, name: 'Mangrove Swamp', cat: 'temperate', grass: [0.40, 0.52, 0.26], leaf: [0.36, 0.48, 0.22], water: [0.28, 0.46, 0.40], top: B.MUD, sub: B.MUD, treeRate: 0.024, treeType: 'mangrove', weather: 'rain', flowers: 0.02 },
+  { id: 30, name: 'Bamboo Jungle', cat: 'warm', grass: [0.36, 0.75, 0.26], leaf: [0.28, 0.67, 0.20], water: [0.22, 0.56, 0.82], top: B.GRASS, sub: B.DIRT, treeRate: 0.038, treeType: 'bamboo', weather: 'rain', flowers: 0.03 },
+  { id: 31, name: 'Redwood Giant Taiga', cat: 'cold', grass: [0.46, 0.62, 0.40], leaf: [0.34, 0.50, 0.32], water: [0.22, 0.42, 0.78], top: B.PODZOL, sub: B.COARSE_DIRT, treeRate: 0.016, treeType: 'redwood', weather: 'rain', flowers: 0.01 },
+  { id: 32, name: 'Mushroom Island', cat: 'exotic', grass: [0.34, 0.74, 0.30], leaf: [0.28, 0.66, 0.24], water: [0.34, 0.44, 0.78], top: B.MYCELIUM, sub: B.DIRT, treeRate: 0.016, treeType: 'giant_shroom', weather: 'rain', flowers: 0.0, noHostiles: true },
+  { id: 33, name: 'Autumn Woods', cat: 'temperate', grass: [0.68, 0.58, 0.28], leaf: [0.82, 0.48, 0.22], water: [0.24, 0.45, 0.80], top: B.GRASS, sub: B.DIRT, treeRate: 0.024, treeType: 'autumn', weather: 'rain', flowers: 0.03, ambientParticle: 'leaf' },
+  { id: 34, name: 'Crystal Highlands', cat: 'mountain', grass: [0.50, 0.66, 0.56], leaf: [0.44, 0.58, 0.52], water: [0.26, 0.52, 0.88], top: B.CALCITE, sub: B.STONE, treeRate: 0.009, treeType: 'crystal_spire', weather: 'snow', flowers: 0.01, ambientParticle: 'sparkle' },
+  { id: 35, name: 'Desert Oasis', cat: 'warm', grass: [0.42, 0.74, 0.30], leaf: [0.34, 0.66, 0.24], water: [0.22, 0.60, 0.86], top: B.GRASS, sub: B.SAND, treeRate: 0.018, treeType: 'palm', weather: 'clear', flowers: 0.06 },
+  { id: 36, name: 'Shattered Cliffs', cat: 'mountain', grass: [0.48, 0.64, 0.42], leaf: [0.38, 0.56, 0.34], water: [0.23, 0.45, 0.82], top: B.GRASS, sub: B.STONE, treeRate: 0.008, treeType: 'spruce', weather: 'rain', flowers: 0.02 }
 ];
 
 class BiomeGenerator {
@@ -3125,7 +3185,7 @@ class TerrainGenerator {
       h -= ct * 18;
     }
 
-    const height = clamp(Math.floor(h), 8, WORLD_HEIGHT - 8);
+    const height = Math.floor(h);
     const biome = this.biomeGen.getBiomeFromClimate(c, height);
     return { height, biome, climate: c };
   }
@@ -3143,28 +3203,28 @@ class CaveGenerator {
 
   // Returns cave carve type: 0=solid, 1=carved air/lava, 2=amethyst geode wall, 3=amethyst crystal
   sampleCave(wx, wy, wz, surfH) {
-    if (wy <= 1 || wy >= surfH - 2) return 0;
-    // Winding spaghetti tunnels
+    if (wy >= surfH - 2) return 0;
+    // Winding spaghetti tunnels (extend infinitely deep)
     const s1 = this.nSpag1.simplex3(wx * 0.028, wy * 0.042, wz * 0.028);
     const s2 = this.nSpag2.simplex3(wx * 0.028 + 41, wy * 0.042 - 19, wz * 0.028 + 73);
     const tube = s1 * s1 + s2 * s2;
     if (tube < 0.022) return 1;
 
-    // Large cheese caverns deeper underground
+    // Large cheese caverns deeper underground (continue infinitely deep)
     if (wy < Math.min(surfH - 8, 42)) {
       const ch = this.nCheese.simplex3(wx * 0.020, wy * 0.028, wz * 0.020);
       if (ch > 0.56) return 1;
     }
 
     // Occasional deep vertical entrance shafts / ravines
-    if (wy < surfH - 3 && wy > 14) {
+    if (wy < surfH - 3 && wy > -128) {
       const r1 = this.nSpag1.simplex2(wx * 0.011 + 200, wz * 0.011 - 150);
       const r2 = this.nSpag2.simplex2(wx * 0.008 - 80, wz * 0.008 + 110);
       if (Math.abs(r1) < 0.026 && r2 > 0.42) return 1;
     }
 
-    // Rare Amethyst Geodes
-    if (wy > 6 && wy < 30) {
+    // Rare Amethyst Geodes at any underground depth below y=30
+    if (wy < 30) {
       const g = this.nRegion.simplex3(wx * 0.045 + 12, wy * 0.045, wz * 0.045 - 12);
       if (g > 0.80) return 1;
       if (g > 0.75) return 3;
@@ -3187,15 +3247,15 @@ class CaveGenerator {
     if (n < 0.58) return 0;
     const h = hash3i(wx, wy, wz, this.seed ^ 0x777);
     const r = (h & 1023) / 1024;
-    if (wy <= 12 && n > 0.76 && r < 0.06) return B.ANCIENT_DEBRIS;
-    if (wy <= 18 && n > 0.71 && r < 0.22) return B.DIAMOND_ORE;
+    if (wy <= 12 && n > 0.75 && r < 0.08) return B.ANCIENT_DEBRIS;
+    if (wy <= 18 && n > 0.70 && r < 0.24) return B.DIAMOND_ORE;
     if (wy <= 22 && n > 0.67 && r < 0.34) return B.REDSTONE_ORE;
     if (wy <= 30 && n > 0.68 && r < 0.26) return B.GOLD_ORE;
-    if (wy <= 32 && wy >= 10 && n > 0.69 && r < 0.22) return B.LAPIS_ORE;
+    if (wy <= 32 && n > 0.69 && r < 0.22) return B.LAPIS_ORE;
     if ((biomeId === 17 || biomeId === 18 || biomeId === 20 || biomeId === 34 || biomeId === 36) && wy <= 48 && n > 0.73 && r < 0.28) return B.EMERALD_ORE;
     if (wy <= 54 && n > 0.62 && r < 0.46) return B.IRON_ORE;
-    if (wy <= 64 && wy >= 22 && n > 0.63 && r < 0.38) return B.COPPER_ORE;
-    if (wy <= 78 && n > 0.59 && r < 0.60) return B.COAL_ORE;
+    if (wy <= 64 && wy >= -32 && n > 0.63 && r < 0.38) return B.COPPER_ORE;
+    if (wy <= 78 && wy >= -64 && n > 0.59 && r < 0.60) return B.COAL_ORE;
     return 0;
   }
 }
@@ -3280,32 +3340,33 @@ class StructureGenerator {
   }
 
   applyToChunk(chunk, world) {
-    const cx = chunk.cx, cz = chunk.cz;
+    const cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
     const minX = cx * CHUNK_SIZE, maxX = minX + CHUNK_SIZE - 1;
+    const minY = cy * CHUNK_SIZE, maxY = minY + CHUNK_SIZE - 1;
     const minZ = cz * CHUNK_SIZE, maxZ = minZ + CHUNK_SIZE - 1;
     const baseCellX = floorDiv(cx, this.CELL);
     const baseCellZ = floorDiv(cz, this.CELL);
 
     const setB = (wx, wy, wz, id, meta = 0) => {
-      if (wx < minX || wx > maxX || wz < minZ || wz > maxZ || wy < 1 || wy >= WORLD_HEIGHT - 1) return;
-      chunk.setBlock(wx - minX, wy, wz - minZ, id, meta);
+      if (wx < minX || wx > maxX || wy < minY || wy > maxY || wz < minZ || wz > maxZ) return;
+      chunk.setBlock(wx - minX, wy - minY, wz - minZ, id, meta);
     };
     const setChest = (wx, wy, wz, seed, tier) => {
-      if (wx < minX || wx > maxX || wz < minZ || wz > maxZ || wy < 1 || wy >= WORLD_HEIGHT - 1) return;
-      chunk.setBlock(wx - minX, wy, wz - minZ, B.CHEST, 0);
+      if (wx < minX || wx > maxX || wy < minY || wy > maxY || wz < minZ || wz > maxZ) return;
+      chunk.setBlock(wx - minX, wy - minY, wz - minZ, B.CHEST, 0);
       if (world && !world.getBlockEntity(wx, wy, wz)) {
         world.setBlockEntity(wx, wy, wz, this.generateLoot(seed, tier), false);
       }
     };
     const fill = (x0, y0, z0, x1, y1, z1, id, meta = 0) => {
-      if (x1 < minX || x0 > maxX || z1 < minZ || z0 > maxZ) return;
+      if (x1 < minX || x0 > maxX || y1 < minY || y0 > maxY || z1 < minZ || z0 > maxZ) return;
       const sx = Math.max(x0, minX), ex = Math.min(x1, maxX);
       const sz = Math.max(z0, minZ), ez = Math.min(z1, maxZ);
-      const sy = Math.max(y0, 1), ey = Math.min(y1, WORLD_HEIGHT - 2);
+      const sy = Math.max(y0, minY), ey = Math.min(y1, maxY);
       for (let y = sy; y <= ey; y++)
         for (let z = sz; z <= ez; z++)
           for (let x = sx; x <= ex; x++)
-            chunk.setBlock(x - minX, y, z - minZ, id, meta);
+            chunk.setBlock(x - minX, y - minY, z - minZ, id, meta);
     };
 
     const buildHouse = (hx, hy, hz, w, d, h, wall, trim, roof, seed) => {
@@ -3508,127 +3569,63 @@ class WorldGenerator {
     this.terrainGen = new TerrainGenerator(this.seed, this.biomeGen);
     this.caveGen = new CaveGenerator(this.seed);
     this.structGen = new StructureGenerator(this.seed, this.terrainGen);
+    this._colCache = new Map();
   }
 
   getColumn(wx, wz) {
     return this.terrainGen.sampleColumn(wx, wz);
   }
 
-  generateChunk(chunk, world) {
-    const cx = chunk.cx, cz = chunk.cz;
+  // Cached 16x16 surface column metadata shared across all vertical cubic chunks in (cx, cz)
+  getColumnChunk(cx, cz) {
+    const key = `${cx},${cz}`;
+    let data = this._colCache.get(key);
+    if (data) return data;
+    if (this._colCache.size > 600) {
+      const first = this._colCache.keys().next().value;
+      this._colCache.delete(first);
+    }
     const ox = cx * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
-    const heights = chunk.heightMap;
-    const biomeIds = chunk.biomeMap;
-
-    // 1. Base terrain, biomes, oceans, caves, ores
+    const heights = new Int32Array(CHUNK_SIZE * CHUNK_SIZE);
+    const biomeIds = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    const ugBiomes = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    let minH = 1e9, maxH = -1e9;
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       const wz = oz + lz;
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const wx = ox + lx;
         const col = this.terrainGen.sampleColumn(wx, wz);
-        const surfH = col.height;
-        const biome = col.biome;
         const cIdx = (lz << 4) | lx;
-        heights[cIdx] = surfH;
-        biomeIds[cIdx] = biome.id;
-
-        const ugBiome = this.caveGen.getUndergroundBiome(wx, wz);
-        const nearWater = surfH <= SEA_LEVEL + 1 && biome.cat !== 'cold' && biome.id !== 5;
-
-        for (let y = 0; y < WORLD_HEIGHT; y++) {
-          if (y === 0 || (y === 1 && (hash3i(wx, y, wz, this.seed) & 1) === 0)) {
-            chunk.setBlock(lx, y, lz, B.BEDROCK);
-            continue;
-          }
-          if (y <= surfH) {
-            // Cave carving check
-            const cave = this.caveGen.sampleCave(wx, y, wz, surfH);
-            if (cave === 1) {
-              if (y <= 9) chunk.setBlock(lx, y, lz, B.LAVA);
-              else if (y <= 18 && ugBiome === 3) chunk.setBlock(lx, y, lz, B.WATER);
-              else chunk.setBlock(lx, y, lz, B.AIR);
-              continue;
-            }
-            if (cave === 2) { chunk.setBlock(lx, y, lz, B.CALCITE); continue; }
-            if (cave === 3) { chunk.setBlock(lx, y, lz, B.AMETHYST); continue; }
-
-            // Surface & Subsurface strata
-            if (y === surfH) {
-              if (biome.id === 15) {
-                const band = (y >> 1) % 3;
-                chunk.setBlock(lx, y, lz, band === 0 ? B.RED_SAND : band === 1 ? B.RED_TERRACOTTA : B.YEL_TERRACOTTA);
-              } else if (biome.id === 28) {
-                const vh = hash2i(wx, wz, this.seed ^ 0x5511) % 20;
-                chunk.setBlock(lx, y, lz, vh === 0 ? B.LAVA : vh <= 3 ? B.MAGMA_BLOCK : vh <= 9 ? B.ASH_BLOCK : B.BASALT);
-              } else if (biome.id === 34) {
-                const ch = hash2i(wx, wz, this.seed ^ 0x9123) % 16;
-                chunk.setBlock(lx, y, lz, ch === 0 ? B.AMETHYST : ch <= 8 ? B.CALCITE : B.STONE);
-              } else if (biome.id === 29) {
-                const mh = hash2i(wx, wz, this.seed ^ 0x3377) % 10;
-                chunk.setBlock(lx, y, lz, mh < 3 ? B.MOSS : mh < 6 ? B.MUD : B.GRASS);
-              } else if (nearWater && biome.top === B.GRASS && biome.id !== 35) {
-                chunk.setBlock(lx, y, lz, B.SAND);
-              } else if (surfH > 88 && biome.cat === 'mountain' && biome.id !== 34) {
-                chunk.setBlock(lx, y, lz, B.SNOW);
-              } else {
-                chunk.setBlock(lx, y, lz, biome.top);
-              }
-            } else if (y >= surfH - 3) {
-              if (biome.id === 15) {
-                const band = (y >> 1) % 3;
-                chunk.setBlock(lx, y, lz, band === 0 ? B.TERRACOTTA : band === 1 ? B.RED_TERRACOTTA : B.YEL_TERRACOTTA);
-              } else if (nearWater && biome.sub === B.DIRT) {
-                chunk.setBlock(lx, y, lz, B.SAND);
-              } else {
-                chunk.setBlock(lx, y, lz, biome.sub);
-              }
-            } else {
-              // Deep rock & ores
-              const ore = this.caveGen.pickOre(wx, y, wz, biome.id);
-              if (ore) chunk.setBlock(lx, y, lz, ore);
-              else if (y < 20) chunk.setBlock(lx, y, lz, B.DEEPSLATE);
-              else chunk.setBlock(lx, y, lz, B.STONE);
-            }
-          } else if (y <= SEA_LEVEL) {
-            // Water, Volcanic Lava Pool, or Frozen Lake Ice
-            if (biome.id === 28 && y <= SEA_LEVEL - 1) {
-              chunk.setBlock(lx, y, lz, B.LAVA);
-            } else if (y === SEA_LEVEL && (biome.id === 9 || biome.id === 7 || biome.id === 25)) {
-              chunk.setBlock(lx, y, lz, B.ICE);
-            } else {
-              chunk.setBlock(lx, y, lz, B.WATER);
-            }
-          }
-        }
-
-        // Cave floor & ceiling decorations (Dripstone, Mushroom Caves, Lush Moss)
-        if (ugBiome !== 0) {
-          for (let y = 11; y < Math.min(surfH - 4, 42); y++) {
-            const cur = chunk.getBlock(lx, y, lz);
-            if (cur !== B.AIR) continue;
-            const below = chunk.getBlock(lx, y - 1, lz);
-            const above = chunk.getBlock(lx, y + 1, lz);
-            const h = hash3i(wx, y, wz, this.seed ^ 0x4455);
-            if (ugBiome === 1) {
-              if (above === B.STONE && (h & 7) === 0) chunk.setBlock(lx, y, lz, B.DRIPSTONE);
-              else if (below === B.STONE && (h & 7) === 1) chunk.setBlock(lx, y, lz, B.DRIPSTONE);
-            } else if (ugBiome === 2 && below === B.STONE) {
-              chunk.setBlock(lx, y - 1, lz, B.MYCELIUM);
-              if ((h & 15) === 0) chunk.setBlock(lx, y, lz, B.GLOW_SHROOM_BLK);
-              else if ((h & 7) === 1) chunk.setBlock(lx, y, lz, (h & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
-            } else if (ugBiome === 3) {
-              if (below === B.STONE) {
-                chunk.setBlock(lx, y - 1, lz, B.MOSS);
-                if ((h & 7) === 0) chunk.setBlock(lx, y, lz, B.TALL_GRASS);
-              }
-              if (above === B.STONE && (h & 15) === 0) chunk.setBlock(lx, y, lz, B.GLOWSTONE);
-            }
-          }
-        }
+        heights[cIdx] = col.height;
+        biomeIds[cIdx] = col.biome.id;
+        ugBiomes[cIdx] = this.caveGen.getUndergroundBiome(wx, wz);
+        if (col.height < minH) minH = col.height;
+        if (col.height > maxH) maxH = col.height;
       }
     }
+    data = { heights, biomeIds, ugBiomes, minH, maxH };
+    this._colCache.set(key, data);
+    return data;
+  }
 
-    // 2. Surface Flora, Aquatic Plants, Coral Reefs, Reeds
+  generateChunk(chunk, world) {
+    const cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
+    const ox = cx * CHUNK_SIZE, oy = cy * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
+    const minY = oy, maxY = oy + CHUNK_SIZE - 1;
+    const colData = this.getColumnChunk(cx, cz);
+    const heights = colData.heights;
+    const biomeIds = colData.biomeIds;
+    const ugBiomes = colData.ugBiomes;
+    chunk.biomeMap = biomeIds;
+    chunk.heightMap = heights;
+
+    // Fast path: pure-sky cubic chunk well above all terrain, trees, water, and structures
+    if (minY > colData.maxH + 28 && minY > SEA_LEVEL) {
+      if (world) world.applyChunkModifications(chunk);
+      return;
+    }
+
+    // 1. Base terrain, biomes, oceans, infinite 3D caves & ores
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       const wz = oz + lz;
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
@@ -3636,71 +3633,193 @@ class WorldGenerator {
         const cIdx = (lz << 4) | lx;
         const surfH = heights[cIdx];
         const biome = BIOMES[biomeIds[cIdx]];
-        const topBlk = chunk.getBlock(lx, surfH, lz);
-        const r = hashFloat2(wx, wz, this.seed ^ 0x223344);
+        const ugBiome = ugBiomes[cIdx];
+        const nearWater = surfH <= SEA_LEVEL + 1 && biome.cat !== 'cold' && biome.id !== 5;
 
-        // Underwater Seagrass & Coral Reefs
-        if (surfH < SEA_LEVEL - 1) {
-          if (biome.id === 23 && r < 0.08 && surfH < SEA_LEVEL - 3) {
-            const cBlk = r < 0.027 ? B.CORAL_PINK : r < 0.054 ? B.CORAL_BLUE : B.CORAL_YELLOW;
-            const ch = 1 + (hash2i(wx, wz, this.seed) % 3);
-            for (let y = 1; y <= ch && surfH + y < SEA_LEVEL; y++) chunk.setBlock(lx, surfH + y, lz, cBlk);
-          } else if (r < 0.14 && chunk.getBlock(lx, surfH + 1, lz) === B.WATER) {
-            chunk.setBlock(lx, surfH + 1, lz, B.SEAGRASS);
+        if (minY > surfH && minY > SEA_LEVEL) continue;
+
+        for (let ly = 0; ly < CHUNK_SIZE; ly++) {
+          const y = oy + ly;
+          if (y <= surfH) {
+            // Cave carving check (continues infinitely deep)
+            const cave = this.caveGen.sampleCave(wx, y, wz, surfH);
+            if (cave === 1) {
+              // Periodic deep lava pools instead of solid lava below y=9, so infinite underground is explorable
+              const lavaBand = y <= 9 && floorMod(y, 64) <= 3 && (y >= -4 || (hash2i(wx >> 2, wz >> 2, this.seed ^ 0x1a7a) & 3) === 0);
+              if (lavaBand) chunk.setBlock(lx, ly, lz, B.LAVA);
+              else if (y <= 18 && y >= -32 && ugBiome === 3) chunk.setBlock(lx, ly, lz, B.WATER);
+              else chunk.setBlock(lx, ly, lz, B.AIR);
+              continue;
+            }
+            if (cave === 2) { chunk.setBlock(lx, ly, lz, B.CALCITE); continue; }
+            if (cave === 3) { chunk.setBlock(lx, ly, lz, B.AMETHYST); continue; }
+
+            // Surface & Subsurface strata
+            if (y === surfH) {
+              if (biome.id === 15) {
+                const band = floorMod(y >> 1, 3);
+                chunk.setBlock(lx, ly, lz, band === 0 ? B.RED_SAND : band === 1 ? B.RED_TERRACOTTA : B.YEL_TERRACOTTA);
+              } else if (biome.id === 28) {
+                const vh = hash2i(wx, wz, this.seed ^ 0x5511) % 20;
+                chunk.setBlock(lx, ly, lz, vh === 0 ? B.LAVA : vh <= 3 ? B.MAGMA_BLOCK : vh <= 9 ? B.ASH_BLOCK : B.BASALT);
+              } else if (biome.id === 34) {
+                const ch = hash2i(wx, wz, this.seed ^ 0x9123) % 16;
+                chunk.setBlock(lx, ly, lz, ch === 0 ? B.AMETHYST : ch <= 8 ? B.CALCITE : B.STONE);
+              } else if (biome.id === 29) {
+                const mh = hash2i(wx, wz, this.seed ^ 0x3377) % 10;
+                chunk.setBlock(lx, ly, lz, mh < 3 ? B.MOSS : mh < 6 ? B.MUD : B.GRASS);
+              } else if (nearWater && biome.top === B.GRASS && biome.id !== 35) {
+                chunk.setBlock(lx, ly, lz, B.SAND);
+              } else if (surfH > 88 && biome.cat === 'mountain' && biome.id !== 34) {
+                chunk.setBlock(lx, ly, lz, B.SNOW);
+              } else {
+                chunk.setBlock(lx, ly, lz, biome.top);
+              }
+            } else if (y >= surfH - 3) {
+              if (biome.id === 15) {
+                const band = floorMod(y >> 1, 3);
+                chunk.setBlock(lx, ly, lz, band === 0 ? B.TERRACOTTA : band === 1 ? B.RED_TERRACOTTA : B.YEL_TERRACOTTA);
+              } else if (nearWater && biome.sub === B.DIRT) {
+                chunk.setBlock(lx, ly, lz, B.SAND);
+              } else {
+                chunk.setBlock(lx, ly, lz, biome.sub);
+              }
+            } else {
+              // Deep rock & ores (continues infinitely down through stone -> deepslate -> deep basalt/deepslate)
+              const ore = this.caveGen.pickOre(wx, y, wz, biome.id);
+              if (ore) chunk.setBlock(lx, ly, lz, ore);
+              else if (y < -64 && (hash3i(wx >> 2, y >> 2, wz >> 2, this.seed ^ 0x6a5a) & 3) === 0) chunk.setBlock(lx, ly, lz, B.BASALT);
+              else if (y < 20) chunk.setBlock(lx, ly, lz, B.DEEPSLATE);
+              else chunk.setBlock(lx, ly, lz, B.STONE);
+            }
+          } else if (y <= SEA_LEVEL) {
+            if (biome.id === 28 && y <= SEA_LEVEL - 1) {
+              chunk.setBlock(lx, ly, lz, B.LAVA);
+            } else if (y === SEA_LEVEL && (biome.id === 9 || biome.id === 7 || biome.id === 25)) {
+              chunk.setBlock(lx, ly, lz, B.ICE);
+            } else {
+              chunk.setBlock(lx, ly, lz, B.WATER);
+            }
           }
-          continue;
         }
 
-        if (surfH >= WORLD_HEIGHT - 3 || chunk.getBlock(lx, surfH + 1, lz) !== B.AIR) continue;
-
-        // Reeds near water
-        if (surfH === SEA_LEVEL && (topBlk === B.SAND || topBlk === B.GRASS) && r < 0.045) {
-          const rh = 2 + (hash2i(wx, wz, this.seed) % 2);
-          for (let y = 1; y <= rh; y++) chunk.setBlock(lx, surfH + y, lz, B.REEDS);
-          continue;
-        }
-
-        if (topBlk === B.GRASS || topBlk === B.PODZOL || topBlk === B.MOSS) {
-          if ((biome.id === 33 || biome.id === 0 || biome.id === 6) && r < 0.0045) {
-            chunk.setBlock(lx, surfH + 1, lz, B.PUMPKIN, hash2i(wx, wz, this.seed) & 3);
-          } else if ((biome.id === 14 || biome.id === 30 || biome.id === 35) && r < 0.006) {
-            chunk.setBlock(lx, surfH + 1, lz, B.MELON);
-          } else if (biome.id === 31 && r < 0.03) {
-            chunk.setBlock(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
-          } else if (r < biome.flowers) {
-            const fr = hash2i(wx, wz, this.seed ^ 0x99) % 3;
-            chunk.setBlock(lx, surfH + 1, lz, fr === 0 ? B.POPPY : fr === 1 ? B.DANDELION : B.ORCHID);
-          } else if (r < biome.flowers + 0.14) {
-            chunk.setBlock(lx, surfH + 1, lz, B.TALL_GRASS);
+        // Cave floor & ceiling decorations (Dripstone, Mushroom Caves, Lush Moss) at any underground depth
+        if (ugBiome !== 0 && minY < surfH - 4) {
+          const topLy = Math.min(CHUNK_SIZE - 2, surfH - 5 - oy);
+          for (let ly = 1; ly <= topLy; ly++) {
+            const y = oy + ly;
+            if (y > 42) break;
+            const cur = chunk.getBlock(lx, ly, lz);
+            if (cur !== B.AIR) continue;
+            const below = chunk.getBlock(lx, ly - 1, lz);
+            const above = chunk.getBlock(lx, ly + 1, lz);
+            const isRock = (b) => b === B.STONE || b === B.DEEPSLATE || b === B.BASALT;
+            const h = hash3i(wx, y, wz, this.seed ^ 0x4455);
+            if (ugBiome === 1) {
+              if (isRock(above) && (h & 7) === 0) chunk.setBlock(lx, ly, lz, B.DRIPSTONE);
+              else if (isRock(below) && (h & 7) === 1) chunk.setBlock(lx, ly, lz, B.DRIPSTONE);
+            } else if (ugBiome === 2 && isRock(below)) {
+              chunk.setBlock(lx, ly - 1, lz, B.MYCELIUM);
+              if ((h & 15) === 0) chunk.setBlock(lx, ly, lz, B.GLOW_SHROOM_BLK);
+              else if ((h & 7) === 1) chunk.setBlock(lx, ly, lz, (h & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
+            } else if (ugBiome === 3) {
+              if (isRock(below)) {
+                chunk.setBlock(lx, ly - 1, lz, B.MOSS);
+                if ((h & 7) === 0) chunk.setBlock(lx, ly, lz, B.TALL_GRASS);
+              }
+              if (isRock(above) && (h & 15) === 0) chunk.setBlock(lx, ly, lz, B.GLOWSTONE);
+            }
           }
-        } else if (topBlk === B.MYCELIUM && r < 0.055) {
-          chunk.setBlock(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
-        } else if ((topBlk === B.SAND || topBlk === B.RED_SAND) && r < 0.008) {
-          chunk.setBlock(lx, surfH + 1, lz, B.DEAD_BUSH);
         }
       }
     }
 
-    // 3. Neighbor-Aware Trees & Landmarks (scanned over [-4..19] halo so big canopies NEVER clip at chunk borders!)
-    const setTreeBlock = (wx, y, wz, id, overwrite = false) => {
-      const lx = wx - ox, lz = wz - oz;
-      if (lx < 0 || lx >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE || y < 1 || y >= WORLD_HEIGHT - 1) return;
-      const cur = chunk.getBlock(lx, y, lz);
-      if (overwrite || cur === B.AIR || cur === B.TALL_GRASS || cur === B.POPPY || cur === B.DANDELION || cur === B.ORCHID) {
-        chunk.setBlock(lx, y, lz, id);
-      }
-    };
+    // 2. Surface Flora, Aquatic Plants, Coral Reefs, Reeds (only if surface overlaps this cubic chunk)
+    if (maxY >= colData.minH && minY <= colData.maxH + 4) {
+      const setSurf = (lx, wy, lz, id, meta = 0) => {
+        const ly = wy - oy;
+        if (ly >= 0 && ly < CHUNK_SIZE) chunk.setBlock(lx, ly, lz, id, meta);
+      };
+      const getSurf = (lx, wy, lz) => {
+        const ly = wy - oy;
+        if (ly >= 0 && ly < CHUNK_SIZE) return chunk.getBlock(lx, ly, lz);
+        return -1;
+      };
+      for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+        const wz = oz + lz;
+        for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+          const wx = ox + lx;
+          const cIdx = (lz << 4) | lx;
+          const surfH = heights[cIdx];
+          if (surfH + 4 < minY || surfH > maxY) continue;
+          const biome = BIOMES[biomeIds[cIdx]];
+          const nearWater = surfH <= SEA_LEVEL + 1 && biome.cat !== 'cold' && biome.id !== 5;
+          const topBlk = getSurf(lx, surfH, lz) !== -1 ? getSurf(lx, surfH, lz) : (nearWater && biome.top === B.GRASS && biome.id !== 35 ? B.SAND : biome.top);
+          const r = hashFloat2(wx, wz, this.seed ^ 0x223344);
 
-    for (let wz = oz - 4; wz < oz + CHUNK_SIZE + 4; wz++) {
-      for (let wx = ox - 4; wx < ox + CHUNK_SIZE + 4; wx++) {
-        // Jittered grid check prevents overlapping trunks
-        if ((floorMod(wx, 3) !== 1) || (floorMod(wz, 3) !== 1)) continue;
-        const h = hash2i(wx, wz, this.seed ^ 0x7a3b19);
-        const chance = (h & 65535) / 65536;
-        const col = this.terrainGen.sampleColumn(wx, wz);
-        if (col.height <= SEA_LEVEL || col.height > WORLD_HEIGHT - 22) continue;
-        const biome = col.biome;
-        if (chance > biome.treeRate * 8.5) continue;
+          if (surfH < SEA_LEVEL - 1) {
+            if (biome.id === 23 && r < 0.08 && surfH < SEA_LEVEL - 3) {
+              const cBlk = r < 0.027 ? B.CORAL_PINK : r < 0.054 ? B.CORAL_BLUE : B.CORAL_YELLOW;
+              const ch = 1 + (hash2i(wx, wz, this.seed) % 3);
+              for (let y = 1; y <= ch && surfH + y < SEA_LEVEL; y++) setSurf(lx, surfH + y, lz, cBlk);
+            } else if (r < 0.14 && (getSurf(lx, surfH + 1, lz) === B.WATER || getSurf(lx, surfH + 1, lz) === -1)) {
+              setSurf(lx, surfH + 1, lz, B.SEAGRASS);
+            }
+            continue;
+          }
+
+          const aboveSurf = getSurf(lx, surfH + 1, lz);
+          if (aboveSurf !== B.AIR && aboveSurf !== -1) continue;
+
+          if (surfH === SEA_LEVEL && (topBlk === B.SAND || topBlk === B.GRASS) && r < 0.045) {
+            const rh = 2 + (hash2i(wx, wz, this.seed) % 2);
+            for (let y = 1; y <= rh; y++) setSurf(lx, surfH + y, lz, B.REEDS);
+            continue;
+          }
+
+          if (topBlk === B.GRASS || topBlk === B.PODZOL || topBlk === B.MOSS) {
+            if ((biome.id === 33 || biome.id === 0 || biome.id === 6) && r < 0.0045) {
+              setSurf(lx, surfH + 1, lz, B.PUMPKIN, hash2i(wx, wz, this.seed) & 3);
+            } else if ((biome.id === 14 || biome.id === 30 || biome.id === 35) && r < 0.006) {
+              setSurf(lx, surfH + 1, lz, B.MELON);
+            } else if (biome.id === 31 && r < 0.03) {
+              setSurf(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
+            } else if (r < biome.flowers) {
+              const fr = hash2i(wx, wz, this.seed ^ 0x99) % 3;
+              setSurf(lx, surfH + 1, lz, fr === 0 ? B.POPPY : fr === 1 ? B.DANDELION : B.ORCHID);
+            } else if (r < biome.flowers + 0.14) {
+              setSurf(lx, surfH + 1, lz, B.TALL_GRASS);
+            }
+          } else if (topBlk === B.MYCELIUM && r < 0.055) {
+            setSurf(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
+          } else if ((topBlk === B.SAND || topBlk === B.RED_SAND) && r < 0.008) {
+            setSurf(lx, surfH + 1, lz, B.DEAD_BUSH);
+          }
+        }
+      }
+    }
+
+    // 3. Neighbor-Aware Trees & Landmarks (only if this cubic chunk's Y-band can intersect trees)
+    if (maxY >= colData.minH - 4 && minY <= colData.maxH + 24) {
+      const setTreeBlock = (wx, wy, wz, id, overwrite = false) => {
+        const lx = wx - ox, ly = wy - oy, lz = wz - oz;
+        if (lx < 0 || lx >= CHUNK_SIZE || ly < 0 || ly >= CHUNK_SIZE || lz < 0 || lz >= CHUNK_SIZE) return;
+        const cur = chunk.getBlock(lx, ly, lz);
+        if (overwrite || cur === B.AIR || cur === B.TALL_GRASS || cur === B.POPPY || cur === B.DANDELION || cur === B.ORCHID) {
+          chunk.setBlock(lx, ly, lz, id);
+        }
+      };
+
+      for (let wz = oz - 4; wz < oz + CHUNK_SIZE + 4; wz++) {
+        for (let wx = ox - 4; wx < ox + CHUNK_SIZE + 4; wx++) {
+          if ((floorMod(wx, 3) !== 1) || (floorMod(wz, 3) !== 1)) continue;
+          const h = hash2i(wx, wz, this.seed ^ 0x7a3b19);
+          const chance = (h & 65535) / 65536;
+          const col = this.terrainGen.sampleColumn(wx, wz);
+          if (col.height <= SEA_LEVEL) continue;
+          if (col.height + 24 < minY || col.height > maxY) continue;
+          const biome = col.biome;
+          if (chance > biome.treeRate * 8.5) continue;
 
         const rng = new SeededRNG(h);
         const y0 = col.height + 1;
@@ -3868,6 +3987,7 @@ class WorldGenerator {
         }
       }
     }
+    }
 
     // 4. Procedural Structures (Villages, Watchtowers, Temples, Shipwrecks, Mineshafts, Dungeons)
     this.structGen.applyToChunk(chunk, world);
@@ -3878,19 +3998,22 @@ class WorldGenerator {
 }
 
 // ============================================================================
-// PART 4: CHUNK, LIGHTING, GREEDY VOXEL MESHER, FLUIDS & WORLD MANAGER
+// PART 4: CUBIC CHUNK (16x16x16), 3D LIGHTING, GREEDY VOXEL MESHER, FLUIDS & WORLD MANAGER
 // ============================================================================
 
 class Chunk {
-  constructor(cx, cz) {
+  constructor(cx, cy, cz) {
     this.cx = cx;
+    this.cy = cy;
     this.cz = cz;
-    this.key = `${cx},${cz}`;
-    this.blocks = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
-    this.meta = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
-    this.light = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE); // hi4=sky, lo4=block
-    this.heightMap = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
-    this.biomeMap = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    this.key = `${cx},${cy},${cz}`;
+    this.blocks = new Uint8Array(CHUNK_VOL);
+    this.meta = new Uint8Array(CHUNK_VOL);
+    this.light = new Uint8Array(CHUNK_VOL); // hi4=sky, lo4=block
+    this.heightMap = null; // shared Int32Array(256) from column cache
+    this.biomeMap = null;  // shared Uint8Array(256) from column cache
+    this.nonAirCount = 0;
+    this.isEmpty = true;
     this.dirty = true;
     this.lightDirty = true;
     this.borderLightDirty = true;
@@ -3898,33 +4021,34 @@ class Chunk {
     this.opaqueCount = 0;
     this.fluidBuf = null;
     this.fluidCount = 0;
-    this.maxY = 0;
   }
 
   static idx(x, y, z) { return (y << 8) | (z << 4) | x; }
 
   getBlock(x, y, z) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    if (y < 0 || y >= CHUNK_SIZE) return 0;
     return this.blocks[(y << 8) | (z << 4) | x];
   }
   setBlock(x, y, z, id, meta = 0) {
-    if (y < 0 || y >= WORLD_HEIGHT) return;
+    if (y < 0 || y >= CHUNK_SIZE) return;
     const i = (y << 8) | (z << 4) | x;
+    const prev = this.blocks[i];
+    if (prev === 0 && id !== 0) this.nonAirCount++;
+    else if (prev !== 0 && id === 0) this.nonAirCount--;
+    this.isEmpty = this.nonAirCount === 0;
     this.blocks[i] = id;
     this.meta[i] = meta;
-    if (id !== 0 && y > this.maxY) this.maxY = y;
   }
   getMeta(x, y, z) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    if (y < 0 || y >= CHUNK_SIZE) return 0;
     return this.meta[(y << 8) | (z << 4) | x];
   }
   setMeta(x, y, z, m) {
-    if (y < 0 || y >= WORLD_HEIGHT) return;
+    if (y < 0 || y >= CHUNK_SIZE) return;
     this.meta[(y << 8) | (z << 4) | x] = m;
   }
   getSkyLight(x, y, z) {
-    if (y < 0) return 0;
-    if (y >= WORLD_HEIGHT) return 15;
+    if (y < 0 || y >= CHUNK_SIZE) return 15;
     return this.light[(y << 8) | (z << 4) | x] >>> 4;
   }
   setSkyLight(x, y, z, v) {
@@ -3932,7 +4056,7 @@ class Chunk {
     this.light[i] = (this.light[i] & 0x0f) | ((v & 0x0f) << 4);
   }
   getBlockLight(x, y, z) {
-    if (y < 0 || y >= WORLD_HEIGHT) return 0;
+    if (y < 0 || y >= CHUNK_SIZE) return 0;
     return this.light[(y << 8) | (z << 4) | x] & 0x0f;
   }
   setBlockLight(x, y, z, v) {
@@ -3947,12 +4071,12 @@ class Chunk {
   }
 }
 
-// Seamless 2-Pass Cross-Chunk Sky-Light + BFS Block-Light Engine (Zero Black Seam Glitches!)
+// Seamless 3D Cubic 2-Pass Cross-Chunk Sky-Light + BFS Block-Light Engine
 class LightingSystem {
   constructor(world) {
     this.world = world;
-    this.skyQ = new Int32Array(131072 * 3);
-    this.blkQ = new Int32Array(131072 * 3);
+    this.skyQ = new Int32Array(32768 * 3);
+    this.blkQ = new Int32Array(32768 * 3);
   }
 
   _grow(isSky) {
@@ -3981,12 +4105,15 @@ class LightingSystem {
       if (cur <= 1) continue;
       for (let d = 0; d < 6; d++) {
         const nx = x + dirs[d][0], ny = y + dirs[d][1], nz = z + dirs[d][2];
-        if (nx < 0 || nx >= CHUNK_SIZE || nz < 0 || nz >= CHUNK_SIZE || ny < 0 || ny >= WORLD_HEIGHT) continue;
+        if (nx < 0 || nx >= CHUNK_SIZE || ny < 0 || ny >= CHUNK_SIZE || nz < 0 || nz >= CHUNK_SIZE) continue;
         const ni = (ny << 8) | (nz << 4) | nx;
-        if (!this._isLightPassable(blocks[ni])) continue;
+        const nid = blocks[ni];
+        if (!this._isLightPassable(nid)) continue;
+        // Direct unobstructed sunlight (15) propagates straight downward without attenuation
+        let nextSky = (d === 3 && cur === 15 && nid === 0) ? 15 : (cur - 1);
         const nsl = light[ni] >>> 4;
-        if (nsl < cur - 1) {
-          light[ni] = (light[ni] & 0x0f) | ((cur - 1) << 4);
+        if (nsl < nextSky) {
+          light[ni] = (light[ni] & 0x0f) | (nextSky << 4);
           if (tail + 3 >= q.length) q = this._grow(true);
           q[tail++] = nx; q[tail++] = ny; q[tail++] = nz;
         }
@@ -4006,7 +4133,7 @@ class LightingSystem {
       if (cur <= 1) continue;
       for (let d = 0; d < 6; d++) {
         const nx = x + dirs[d][0], ny = y + dirs[d][1], nz = z + dirs[d][2];
-        if (nx < 0 || nx >= CHUNK_SIZE || nz < 0 || nz >= CHUNK_SIZE || ny < 0 || ny >= WORLD_HEIGHT) continue;
+        if (nx < 0 || nx >= CHUNK_SIZE || ny < 0 || ny >= CHUNK_SIZE || nz < 0 || nz >= CHUNK_SIZE) continue;
         const ni = (ny << 8) | (nz << 4) | nx;
         if (!this._isLightPassable(blocks[ni])) continue;
         const nbl = light[ni] & 0x0f;
@@ -4019,10 +4146,34 @@ class LightingSystem {
     }
   }
 
-  // Pass 1: Local vertical skylight + local block lights + internal BFS
+  // Pass 1: Local vertical skylight (inheriting from chunk above or terrain surface height) + local block lights + 3D BFS
   computeLocalLight(chunk) {
     const blocks = chunk.blocks;
     const light = chunk.light;
+    const world = this.world;
+    const oy = chunk.cy * CHUNK_SIZE;
+    const topWy = oy + CHUNK_SIZE - 1;
+    const above = world.getChunk(chunk.cx, chunk.cy + 1, chunk.cz);
+    const colData = chunk.heightMap ? null : world.generator.getColumnChunk(chunk.cx, chunk.cz);
+    const heights = chunk.heightMap || colData.heights;
+
+    // Fast path: empty air chunk completely above surface and above chunk (if any) is full sky
+    if (chunk.isEmpty) {
+      let allSky = true;
+      if (above && !above.isEmpty) allSky = false;
+      else {
+        for (let i = 0; i < 256; i++) {
+          if (heights[i] >= oy) { allSky = false; break; }
+        }
+      }
+      if (allSky) {
+        light.fill(0xf0);
+        chunk.lightDirty = false;
+        chunk.borderLightDirty = true;
+        return;
+      }
+    }
+
     light.fill(0);
     let blkTail = 0;
     let bq = this.blkQ;
@@ -4030,8 +4181,15 @@ class LightingSystem {
     // 1. Vertical Skylight Pass + Seed Block Light Sources
     for (let z = 0; z < CHUNK_SIZE; z++) {
       for (let x = 0; x < CHUNK_SIZE; x++) {
-        let sky = 15;
-        for (let y = WORLD_HEIGHT - 1; y >= 0; y--) {
+        let sky;
+        if (above && !above.lightDirty) {
+          sky = above.light[(z << 4) | x] >>> 4;
+        } else {
+          // Estimate incoming skylight from procedural surface height when chunk above isn't loaded yet
+          const surfH = heights[(z << 4) | x];
+          sky = topWy > surfH ? 15 : 0;
+        }
+        for (let y = CHUNK_SIZE - 1; y >= 0; y--) {
           const i = (y << 8) | (z << 4) | x;
           const id = blocks[i];
           if (id === 0) {
@@ -4054,11 +4212,10 @@ class LightingSystem {
       }
     }
 
-    // 2. Seed internal skylight horizontal/vertical bleed for ANY lit cell (sl >= 2!)
+    // 2. Seed internal skylight bleed for any lit cell (sl >= 2)
     let skyTail = 0;
     let sq = this.skyQ;
-    const maxY = Math.min(WORLD_HEIGHT - 1, Math.max(chunk.maxY + 2, SEA_LEVEL + 2));
-    for (let y = 1; y <= maxY; y++) {
+    for (let y = 0; y < CHUNK_SIZE; y++) {
       const yOff = y << 8;
       for (let z = 0; z < CHUNK_SIZE; z++) {
         const yzOff = yOff | (z << 4);
@@ -4071,7 +4228,7 @@ class LightingSystem {
               (x > 0  && (light[i - 1] >>> 4) < need && this._isLightPassable(blocks[i - 1])) ||
               (z < 15 && (light[i + 16] >>> 4) < need && this._isLightPassable(blocks[i + 16])) ||
               (z > 0  && (light[i - 16] >>> 4) < need && this._isLightPassable(blocks[i - 16])) ||
-              (y < WORLD_HEIGHT - 1 && (light[i + 256] >>> 4) < need && this._isLightPassable(blocks[i + 256])) ||
+              (y < 15 && (light[i + 256] >>> 4) < need && this._isLightPassable(blocks[i + 256])) ||
               (y > 0  && (light[i - 256] >>> 4) < need && this._isLightPassable(blocks[i - 256]))) {
             if (skyTail + 3 >= sq.length) sq = this._grow(true);
             sq[skyTail++] = x; sq[skyTail++] = y; sq[skyTail++] = z;
@@ -4086,38 +4243,40 @@ class LightingSystem {
     chunk.borderLightDirty = true;
   }
 
-  // Pass 2: Pull border light from 4 cardinal neighbors & push brighter light into neighbors
+  // Pass 2: Pull & push border light across all 6 cubic neighbors (±X, ±Y, ±Z)
   propagateBorderLight(chunk) {
     if (chunk.lightDirty) this.computeLocalLight(chunk);
     const world = this.world;
-    const borders = [
-      { nc: world.getChunk(chunk.cx + 1, chunk.cz), sx: 15, nx: 0,  alongZ: true },
-      { nc: world.getChunk(chunk.cx - 1, chunk.cz), sx: 0,  nx: 15, alongZ: true },
-      { nc: world.getChunk(chunk.cx, chunk.cz + 1), sz: 15, nz: 0,  alongZ: false },
-      { nc: world.getChunk(chunk.cx, chunk.cz - 1), sz: 0,  nz: 15, alongZ: false }
+    const cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
+    const neighbors = [
+      { nc: world.getChunk(cx + 1, cy, cz), axis: 0, sFixed: 15, nFixed: 0,  isDown: false },
+      { nc: world.getChunk(cx - 1, cy, cz), axis: 0, sFixed: 0,  nFixed: 15, isDown: false },
+      { nc: world.getChunk(cx, cy + 1, cz), axis: 1, sFixed: 15, nFixed: 0,  isDown: true  }, // nc is ABOVE chunk
+      { nc: world.getChunk(cx, cy - 1, cz), axis: 1, sFixed: 0,  nFixed: 15, isDown: false }, // nc is BELOW chunk
+      { nc: world.getChunk(cx, cy, cz + 1), axis: 2, sFixed: 15, nFixed: 0,  isDown: false },
+      { nc: world.getChunk(cx, cy, cz - 1), axis: 2, sFixed: 0,  nFixed: 15, isDown: false }
     ];
 
     let inSkyTail = 0, inBlkTail = 0;
-    const maxY = Math.min(WORLD_HEIGHT - 1, Math.max(chunk.maxY + 2, SEA_LEVEL + 2));
 
-    for (let b = 0; b < 4; b++) {
-      const bd = borders[b];
+    for (let b = 0; b < 6; b++) {
+      const bd = neighbors[b];
       const nc = bd.nc;
       if (!nc) continue;
       if (nc.lightDirty) this.computeLocalLight(nc);
 
-      const nMaxY = Math.min(WORLD_HEIGHT - 1, Math.max(maxY, nc.maxY + 2));
-      for (let y = 1; y <= nMaxY; y++) {
-        const yOff = y << 8;
+      for (let a = 0; a < CHUNK_SIZE; a++) {
         for (let k = 0; k < CHUNK_SIZE; k++) {
-          const lx = bd.alongZ ? bd.sx : k;
-          const lz = bd.alongZ ? k : bd.sz;
-          const nlx = bd.alongZ ? bd.nx : k;
-          const nlz = bd.alongZ ? k : bd.nz;
-          const si = yOff | (lz << 4) | lx;
-          const ni = yOff | (nlz << 4) | nlx;
+          let lx, ly, lz, nlx, nly, nlz;
+          if (bd.axis === 0)      { lx = bd.sFixed; nlx = bd.nFixed; ly = a; nly = a; lz = k; nlz = k; }
+          else if (bd.axis === 1) { ly = bd.sFixed; nly = bd.nFixed; lx = k; nlx = k; lz = a; nlz = a; }
+          else                    { lz = bd.sFixed; nlz = bd.nFixed; ly = a; nly = a; lx = k; nlx = k; }
 
-          if (!this._isLightPassable(chunk.blocks[si])) continue;
+          const si = (ly << 8) | (lz << 4) | lx;
+          const ni = (nly << 8) | (nlz << 4) | nlx;
+          const sBlkId = chunk.blocks[si];
+          if (!this._isLightPassable(sBlkId)) continue;
+
           const nLight = nc.light[ni];
           const nSky = nLight >>> 4;
           const nBlk = nLight & 0x0f;
@@ -4125,15 +4284,16 @@ class LightingSystem {
           const sSky = sLight >>> 4;
           const sBlk = sLight & 0x0f;
 
-          if (nSky - 1 > sSky) {
-            chunk.light[si] = (chunk.light[si] & 0x0f) | ((nSky - 1) << 4);
+          const inSky = (bd.isDown && nSky === 15 && sBlkId === 0) ? 15 : (nSky - 1);
+          if (inSky > sSky) {
+            chunk.light[si] = (chunk.light[si] & 0x0f) | (inSky << 4);
             if (inSkyTail + 3 >= this.skyQ.length) this._grow(true);
-            this.skyQ[inSkyTail++] = lx; this.skyQ[inSkyTail++] = y; this.skyQ[inSkyTail++] = lz;
+            this.skyQ[inSkyTail++] = lx; this.skyQ[inSkyTail++] = ly; this.skyQ[inSkyTail++] = lz;
           }
           if (nBlk - 1 > sBlk) {
             chunk.light[si] = (chunk.light[si] & 0xf0) | (nBlk - 1);
             if (inBlkTail + 3 >= this.blkQ.length) this._grow(false);
-            this.blkQ[inBlkTail++] = lx; this.blkQ[inBlkTail++] = y; this.blkQ[inBlkTail++] = lz;
+            this.blkQ[inBlkTail++] = lx; this.blkQ[inBlkTail++] = ly; this.blkQ[inBlkTail++] = lz;
           }
         }
       }
@@ -4142,24 +4302,25 @@ class LightingSystem {
     if (inSkyTail > 0) this._runSkyBFS(chunk, inSkyTail);
     if (inBlkTail > 0) this._runBlkBFS(chunk, inBlkTail);
 
-    // Push any brighter border light from chunk into its loaded neighbors
-    for (let b = 0; b < 4; b++) {
-      const bd = borders[b];
+    // Push brighter border light from chunk into its 6 loaded neighbors
+    for (let b = 0; b < 6; b++) {
+      const bd = neighbors[b];
       const nc = bd.nc;
       if (!nc) continue;
       let outSkyTail = 0, outBlkTail = 0;
-      const nMaxY = Math.min(WORLD_HEIGHT - 1, Math.max(maxY, nc.maxY + 2));
-      for (let y = 1; y <= nMaxY; y++) {
-        const yOff = y << 8;
+      const pushDown = (bd.axis === 1 && bd.sFixed === 0); // pushing into chunk BELOW us
+      for (let a = 0; a < CHUNK_SIZE; a++) {
         for (let k = 0; k < CHUNK_SIZE; k++) {
-          const lx = bd.alongZ ? bd.sx : k;
-          const lz = bd.alongZ ? k : bd.sz;
-          const nlx = bd.alongZ ? bd.nx : k;
-          const nlz = bd.alongZ ? k : bd.nz;
-          const si = yOff | (lz << 4) | lx;
-          const ni = yOff | (nlz << 4) | nlx;
+          let lx, ly, lz, nlx, nly, nlz;
+          if (bd.axis === 0)      { lx = bd.sFixed; nlx = bd.nFixed; ly = a; nly = a; lz = k; nlz = k; }
+          else if (bd.axis === 1) { ly = bd.sFixed; nly = bd.nFixed; lx = k; nlx = k; lz = a; nlz = a; }
+          else                    { lz = bd.sFixed; nlz = bd.nFixed; ly = a; nly = a; lx = k; nlx = k; }
 
-          if (!this._isLightPassable(nc.blocks[ni])) continue;
+          const si = (ly << 8) | (lz << 4) | lx;
+          const ni = (nly << 8) | (nlz << 4) | nlx;
+          const nBlkId = nc.blocks[ni];
+          if (!this._isLightPassable(nBlkId)) continue;
+
           const sLight = chunk.light[si];
           const sSky = sLight >>> 4;
           const sBlk = sLight & 0x0f;
@@ -4167,15 +4328,16 @@ class LightingSystem {
           const nSky = nLight >>> 4;
           const nBlk = nLight & 0x0f;
 
-          if (sSky - 1 > nSky) {
-            nc.light[ni] = (nc.light[ni] & 0x0f) | ((sSky - 1) << 4);
+          const outSky = (pushDown && sSky === 15 && nBlkId === 0) ? 15 : (sSky - 1);
+          if (outSky > nSky) {
+            nc.light[ni] = (nc.light[ni] & 0x0f) | (outSky << 4);
             if (outSkyTail + 3 >= this.skyQ.length) this._grow(true);
-            this.skyQ[outSkyTail++] = nlx; this.skyQ[outSkyTail++] = y; this.skyQ[outSkyTail++] = nlz;
+            this.skyQ[outSkyTail++] = nlx; this.skyQ[outSkyTail++] = nly; this.skyQ[outSkyTail++] = nlz;
           }
           if (sBlk - 1 > nBlk) {
             nc.light[ni] = (nc.light[ni] & 0xf0) | (sBlk - 1);
             if (outBlkTail + 3 >= this.blkQ.length) this._grow(false);
-            this.blkQ[outBlkTail++] = nlx; this.blkQ[outBlkTail++] = y; this.blkQ[outBlkTail++] = nlz;
+            this.blkQ[outBlkTail++] = nlx; this.blkQ[outBlkTail++] = nly; this.blkQ[outBlkTail++] = nlz;
           }
         }
       }
@@ -4203,8 +4365,8 @@ class VoxelMesher {
     this.opaqueLen = 0;
     this.fluidArr = new Float32Array(131072);
     this.fluidLen = 0;
-    this.mask = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT);
-    this.maskData = new Array(CHUNK_SIZE * WORLD_HEIGHT);
+    this.mask = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE);
+    this.maskData = new Array(CHUNK_SIZE * CHUNK_SIZE);
   }
 
   _ensureBuf(isFluid, floatsNeeded) {
@@ -4283,55 +4445,96 @@ class VoxelMesher {
 
   buildChunkMesh(chunk, gl) {
     const world = this.world;
-    const cPX = world.getChunk(chunk.cx + 1, chunk.cz);
-    const cNX = world.getChunk(chunk.cx - 1, chunk.cz);
-    const cPZ = world.getChunk(chunk.cx, chunk.cz + 1);
-    const cNZ = world.getChunk(chunk.cx, chunk.cz - 1);
 
-    // Guarantee chunk AND all 4 loaded cardinal neighbors have fully computed + border-bled lighting BEFORE reading a single light byte!
+    // Fast path for empty (all-air) cubic chunks
+    if (chunk.isEmpty) {
+      if (chunk.opaqueBuf) { gl.deleteBuffer(chunk.opaqueBuf); chunk.opaqueBuf = null; }
+      if (chunk.fluidBuf) { gl.deleteBuffer(chunk.fluidBuf); chunk.fluidBuf = null; }
+      chunk.opaqueCount = 0;
+      chunk.fluidCount = 0;
+      chunk.emitters = [];
+      chunk.dirty = false;
+      return;
+    }
+
+    const cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
+    const cPX = world.getChunk(cx + 1, cy, cz);
+    const cNX = world.getChunk(cx - 1, cy, cz);
+    const cPY = world.getChunk(cx, cy + 1, cz);
+    const cNY = world.getChunk(cx, cy - 1, cz);
+    const cPZ = world.getChunk(cx, cy, cz + 1);
+    const cNZ = world.getChunk(cx, cy, cz - 1);
+
+    // Guarantee chunk AND all 6 loaded face neighbors have computed + border-bled lighting before meshing
     if (chunk.lightDirty) world.lighting.computeLocalLight(chunk);
     if (cPX && cPX.lightDirty) world.lighting.computeLocalLight(cPX);
     if (cNX && cNX.lightDirty) world.lighting.computeLocalLight(cNX);
+    if (cPY && cPY.lightDirty) world.lighting.computeLocalLight(cPY);
+    if (cNY && cNY.lightDirty) world.lighting.computeLocalLight(cNY);
     if (cPZ && cPZ.lightDirty) world.lighting.computeLocalLight(cPZ);
     if (cNZ && cNZ.lightDirty) world.lighting.computeLocalLight(cNZ);
     if (chunk.borderLightDirty) world.lighting.propagateBorderLight(chunk);
     if (cPX && cPX.borderLightDirty) world.lighting.propagateBorderLight(cPX);
     if (cNX && cNX.borderLightDirty) world.lighting.propagateBorderLight(cNX);
+    if (cPY && cPY.borderLightDirty) world.lighting.propagateBorderLight(cPY);
+    if (cNY && cNY.borderLightDirty) world.lighting.propagateBorderLight(cNY);
     if (cPZ && cPZ.borderLightDirty) world.lighting.propagateBorderLight(cPZ);
     if (cNZ && cNZ.borderLightDirty) world.lighting.propagateBorderLight(cNZ);
 
     this.opaqueLen = 0;
     this.fluidLen = 0;
 
-    const ox = chunk.cx * CHUNK_SIZE, oz = chunk.cz * CHUNK_SIZE;
+    const ox = cx * CHUNK_SIZE, oy = cy * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
 
-    const getB = (lx, y, lz) => {
-      if (y < 0 || y >= WORLD_HEIGHT) return 0;
-      if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) return chunk.blocks[(y << 8) | (lz << 4) | lx];
-      if (lx >= CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE && cPX) return cPX.blocks[(y << 8) | (lz << 4) | (lx - CHUNK_SIZE)];
-      if (lx < 0 && lz >= 0 && lz < CHUNK_SIZE && cNX) return cNX.blocks[(y << 8) | (lz << 4) | (lx + CHUNK_SIZE)];
-      if (lz >= CHUNK_SIZE && lx >= 0 && lx < CHUNK_SIZE && cPZ) return cPZ.blocks[(y << 8) | ((lz - CHUNK_SIZE) << 4) | lx];
-      if (lz < 0 && lx >= 0 && lx < CHUNK_SIZE && cNZ) return cNZ.blocks[(y << 8) | ((lz + CHUNK_SIZE) << 4) | lx];
-      return world.getBlock(ox + lx, y, oz + lz);
+    const getB = (lx, ly, lz) => {
+      const inX = lx >= 0 && lx < CHUNK_SIZE;
+      const inY = ly >= 0 && ly < CHUNK_SIZE;
+      const inZ = lz >= 0 && lz < CHUNK_SIZE;
+      if (inX && inY && inZ) return chunk.blocks[(ly << 8) | (lz << 4) | lx];
+      if (inY && inZ) {
+        if (lx >= CHUNK_SIZE && cPX) return cPX.blocks[(ly << 8) | (lz << 4) | (lx - CHUNK_SIZE)];
+        if (lx < 0 && cNX) return cNX.blocks[(ly << 8) | (lz << 4) | (lx + CHUNK_SIZE)];
+      }
+      if (inX && inY) {
+        if (lz >= CHUNK_SIZE && cPZ) return cPZ.blocks[(ly << 8) | ((lz - CHUNK_SIZE) << 4) | lx];
+        if (lz < 0 && cNZ) return cNZ.blocks[(ly << 8) | ((lz + CHUNK_SIZE) << 4) | lx];
+      }
+      if (inX && inZ) {
+        if (ly >= CHUNK_SIZE && cPY) return cPY.blocks[((ly - CHUNK_SIZE) << 8) | (lz << 4) | lx];
+        if (ly < 0 && cNY) return cNY.blocks[((ly + CHUNK_SIZE) << 8) | (lz << 4) | lx];
+      }
+      return world.getBlock(ox + lx, oy + ly, oz + lz);
     };
 
-    const isUnloadedNeighbor = (lx, lz) => {
+    const isUnloadedNeighbor = (lx, ly, lz) => {
       if (lx >= CHUNK_SIZE && !cPX) return true;
       if (lx < 0 && !cNX) return true;
+      if (ly >= CHUNK_SIZE && !cPY) return true;
+      if (ly < 0 && !cNY) return true;
       if (lz >= CHUNK_SIZE && !cPZ) return true;
       if (lz < 0 && !cNZ) return true;
       return false;
     };
 
-    const getLight = (lx, y, lz) => {
-      if (y < 0) return 0;
-      if (y >= WORLD_HEIGHT) return 0xf0;
-      if (lx >= 0 && lx < CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE) return chunk.light[(y << 8) | (lz << 4) | lx];
-      if (lx >= CHUNK_SIZE && lz >= 0 && lz < CHUNK_SIZE && cPX) return cPX.light[(y << 8) | (lz << 4) | (lx - CHUNK_SIZE)];
-      if (lx < 0 && lz >= 0 && lz < CHUNK_SIZE && cNX) return cNX.light[(y << 8) | (lz << 4) | (lx + CHUNK_SIZE)];
-      if (lz >= CHUNK_SIZE && lx >= 0 && lx < CHUNK_SIZE && cPZ) return cPZ.light[(y << 8) | ((lz - CHUNK_SIZE) << 4) | lx];
-      if (lz < 0 && lx >= 0 && lx < CHUNK_SIZE && cNZ) return cNZ.light[(y << 8) | ((lz + CHUNK_SIZE) << 4) | lx];
-      return 0xf0;
+    const getLight = (lx, ly, lz) => {
+      const inX = lx >= 0 && lx < CHUNK_SIZE;
+      const inY = ly >= 0 && ly < CHUNK_SIZE;
+      const inZ = lz >= 0 && lz < CHUNK_SIZE;
+      if (inX && inY && inZ) return chunk.light[(ly << 8) | (lz << 4) | lx];
+      if (inY && inZ) {
+        if (lx >= CHUNK_SIZE && cPX) return cPX.light[(ly << 8) | (lz << 4) | (lx - CHUNK_SIZE)];
+        if (lx < 0 && cNX) return cNX.light[(ly << 8) | (lz << 4) | (lx + CHUNK_SIZE)];
+      }
+      if (inX && inY) {
+        if (lz >= CHUNK_SIZE && cPZ) return cPZ.light[(ly << 8) | ((lz - CHUNK_SIZE) << 4) | lx];
+        if (lz < 0 && cNZ) return cNZ.light[(ly << 8) | ((lz + CHUNK_SIZE) << 4) | lx];
+      }
+      if (inX && inZ) {
+        if (ly >= CHUNK_SIZE && cPY) return cPY.light[((ly - CHUNK_SIZE) << 8) | (lz << 4) | lx];
+        if (ly < 0 && cNY) return cNY.light[((ly + CHUNK_SIZE) << 8) | (lz << 4) | lx];
+      }
+      const l = world.getLightAt(ox + lx, oy + ly, oz + lz);
+      return ((l.sky & 0x0f) << 4) | (l.block & 0x0f);
     };
 
     const isOpaqueSolid = (lx, y, lz) => {
@@ -4367,8 +4570,6 @@ class VoxelMesher {
       return [sMax / 15, bMax / 15];
     };
 
-    const maxY = Math.min(WORLD_HEIGHT - 1, Math.max(chunk.maxY + 2, SEA_LEVEL + 2));
-
     // ---- PASS 1: TRUE 2D GREEDY MESHING FOR ALL SOLID CUBES (6 directions) ----
     const faces = [
       { d: 1, s:  1, u: 0, v: 2, n: [0, 1, 0], faceIdx: 0 }, // +Y top
@@ -4379,7 +4580,7 @@ class VoxelMesher {
       { d: 2, s: -1, u: 0, v: 1, n: [0, 0,-1], faceIdx: 5 }  // -Z north
     ];
 
-    const dims = [CHUNK_SIZE, maxY + 1, CHUNK_SIZE];
+    const dims = [CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE];
     const mask = this.mask;
     const maskData = this.maskData;
     const pos = [0, 0, 0];
@@ -4411,7 +4612,7 @@ class VoxelMesher {
             if (!blk || blk.shape !== 'cube' || blk.liquid || blk.layer === 'translucent') { mask[mIdx] = 0; continue; }
 
             const nx = pos[0] + fd.n[0], ny = pos[1] + fd.n[1], nz = pos[2] + fd.n[2];
-            if (isUnloadedNeighbor(nx, nz)) { mask[mIdx] = 0; continue; }
+            if (isUnloadedNeighbor(nx, ny, nz)) { mask[mIdx] = 0; continue; }
             const nid = getB(nx, ny, nz);
             if (nid !== 0) {
               const nb = BLOCKS.blocks[nid];
@@ -4551,7 +4752,7 @@ class VoxelMesher {
     // ---- PASS 2: SPECIAL SHAPES, VEGETATION, TRANSLUCENT & FLUIDS ----
     const ones = [1, 1, 1, 1];
     chunk.emitters = []; // torches / campfires that emit ambient flame & smoke particles
-    for (let y = 0; y <= maxY; y++) {
+    for (let y = 0; y < CHUNK_SIZE; y++) {
       for (let z = 0; z < CHUNK_SIZE; z++) {
         for (let x = 0; x < CHUNK_SIZE; x++) {
           const i = (y << 8) | (z << 4) | x;
@@ -4570,8 +4771,9 @@ class VoxelMesher {
             const topH = blk.liquid ? (getB(x, y + 1, z) === id ? 1.0 : Math.max(0.18, 0.88 - (meta & 7) * 0.10)) : 1.0;
             const tile = blk.tex[0];
             const uv = [0, 1, 1, 1, 1, 0, 0, 0];
+            const uvRim = [0, 0.14, 1, 0.14, 1, 0, 0, 0];
             const checkFace = (dx, dy, dz) => {
-              if (isUnloadedNeighbor(x + dx, z + dz)) return false;
+              if (isUnloadedNeighbor(x + dx, y + dy, z + dz)) return false;
               const nid = getB(x + dx, y + dy, z + dz);
               if (nid === id) return false;
               if (nid === 0) return true;
@@ -4581,12 +4783,26 @@ class VoxelMesher {
             };
             if (checkFace(0, 1, 0) || (blk.liquid && topH < 0.99 && getB(x, y + 1, z) !== B.ICE)) {
               this._emitQuad(isFluid, [x,y+topH,z+1],[x+1,y+topH,z+1],[x+1,y+topH,z],[x,y+topH,z], [0,1,0], uv, tile, col, sky, bl, ones, flags);
+              // Underside of liquid surface so swimming underwater still sees the surface with CULL_FACE enabled
+              if (blk.liquid) {
+                this._emitQuad(isFluid, [x,y+topH,z],[x+1,y+topH,z],[x+1,y+topH,z+1],[x,y+topH,z+1], [0,-1,0], uv, tile, col, sky, bl, ones, flags);
+              }
             }
             if (checkFace(0, -1, 0)) this._emitQuad(isFluid, [x,y,z],[x+1,y,z],[x+1,y,z+1],[x,y,z+1], [0,-1,0], uv, tile, col, sky, bl, ones, flags);
-            if (checkFace(0, 0, 1))  this._emitQuad(isFluid, [x,y,z+1],[x+1,y,z+1],[x+1,y+topH,z+1],[x,y+topH,z+1], [0,0,1], uv, tile, col, sky, bl, ones, flags);
-            if (checkFace(0, 0, -1)) this._emitQuad(isFluid, [x+1,y,z],[x,y,z],[x,y+topH,z],[x+1,y+topH,z], [0,0,-1], uv, tile, col, sky, bl, ones, flags);
-            if (checkFace(1, 0, 0))  this._emitQuad(isFluid, [x+1,y,z+1],[x+1,y,z],[x+1,y+topH,z],[x+1,y+topH,z+1], [1,0,0], uv, tile, col, sky, bl, ones, flags);
-            if (checkFace(-1, 0, 0)) this._emitQuad(isFluid, [x,y,z],[x,y,z+1],[x,y+topH,z+1],[x,y+topH,z], [-1,0,0], uv, tile, col, sky, bl, ones, flags);
+            const emitSide = (dx, dz, p0, p1, p2, p3, norm) => {
+              if (!checkFace(dx, 0, dz)) return;
+              // Trim ice side faces adjacent to water to the above-water rim so submerged panels never overdraw water
+              if (id === B.ICE && getB(x + dx, y, z + dz) === B.WATER) {
+                const yBot = y + 0.86;
+                this._emitQuad(isFluid, [p0[0],yBot,p0[2]], [p1[0],yBot,p1[2]], p2, p3, norm, uvRim, tile, col, sky, bl, ones, flags);
+              } else {
+                this._emitQuad(isFluid, p0, p1, p2, p3, norm, uv, tile, col, sky, bl, ones, flags);
+              }
+            };
+            emitSide(0, 1,  [x,y,z+1],[x+1,y,z+1],[x+1,y+topH,z+1],[x,y+topH,z+1], [0,0,1]);
+            emitSide(0, -1, [x+1,y,z],[x,y,z],[x,y+topH,z],[x+1,y+topH,z], [0,0,-1]);
+            emitSide(1, 0,  [x+1,y,z+1],[x+1,y,z],[x+1,y+topH,z],[x+1,y+topH,z+1], [1,0,0]);
+            emitSide(-1, 0, [x,y,z],[x,y,z+1],[x,y+topH,z+1],[x,y+topH,z], [-1,0,0]);
           } else if (blk.shape === 'cross') {
             const tile = (id === B.WHEAT && (meta & 3) < 2) ? T.WHEAT_YOUNG : blk.tex[0];
             const uv = [0, 1, 1, 1, 1, 0, 0, 0];
@@ -4658,7 +4874,7 @@ class VoxelMesher {
             const w = id === B.LANTERN ? 0.22 : 0.09;
             const h = id === B.LANTERN ? 0.65 : 0.72;
             const litFlags = (id === B.LEVER && !(meta & 1)) ? flags : (flags | 2);
-            if (id === B.TORCH) chunk.emitters.push(ox + x + 0.5, y + h + 0.06, oz + z + 0.5, 0);
+            if (id === B.TORCH) chunk.emitters.push(ox + x + 0.5, oy + y + h + 0.06, oz + z + 0.5, 0);
             this._emitBox(false, x+0.5-w, y, z+0.5-w, x+0.5+w, y+h, z+0.5+w, blk, col, sky, bl, litFlags);
           } else if (blk.shape === 'ladder') {
             // Directional wall-attached ladder (0=+Z, 1=+X, 2=-Z, 3=-X)
@@ -4676,7 +4892,7 @@ class VoxelMesher {
           } else if (blk.shape === 'bamboo') {
             this._emitBox(false, x+0.36, y, z+0.36, x+0.64, y+1, z+0.64, blk, col, sky, bl, flags);
           } else if (blk.shape === 'campfire') {
-            chunk.emitters.push(ox + x + 0.5, y + 0.5, oz + z + 0.5, 1);
+            chunk.emitters.push(ox + x + 0.5, oy + y + 0.5, oz + z + 0.5, 1);
             this._emitBox(false, x+0.06, y, z+0.06, x+0.94, y+0.38, z+0.94, blk, col, sky, bl, flags | 2);
             const uv = [0, 1, 1, 1, 1, 0, 0, 0];
             this._emitQuad(false, [x+0.18,y+0.28,z+0.18],[x+0.82,y+0.28,z+0.82],[x+0.82,y+0.95,z+0.82],[x+0.18,y+0.95,z+0.18], [0,1,0], uv, T.CAMPFIRE_SIDE, col, sky, 1, ones, flags | 2);
@@ -4698,16 +4914,26 @@ class VoxelMesher {
       }
     }
 
-    // Upload GPU VBOs
-    if (!chunk.opaqueBuf) chunk.opaqueBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, chunk.opaqueBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, this.opaqueArr.subarray(0, this.opaqueLen), gl.STATIC_DRAW);
-    chunk.opaqueCount = this.opaqueLen / VERTEX_FLOATS;
+    // Upload GPU VBOs (skip allocating empty buffers for buried or pure-air cubic chunks)
+    if (this.opaqueLen > 0) {
+      if (!chunk.opaqueBuf) chunk.opaqueBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, chunk.opaqueBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, this.opaqueArr.subarray(0, this.opaqueLen), gl.STATIC_DRAW);
+      chunk.opaqueCount = this.opaqueLen / VERTEX_FLOATS;
+    } else {
+      if (chunk.opaqueBuf) { gl.deleteBuffer(chunk.opaqueBuf); chunk.opaqueBuf = null; }
+      chunk.opaqueCount = 0;
+    }
 
-    if (!chunk.fluidBuf) chunk.fluidBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, chunk.fluidBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, this.fluidArr.subarray(0, this.fluidLen), gl.STATIC_DRAW);
-    chunk.fluidCount = this.fluidLen / VERTEX_FLOATS;
+    if (this.fluidLen > 0) {
+      if (!chunk.fluidBuf) chunk.fluidBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, chunk.fluidBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, this.fluidArr.subarray(0, this.fluidLen), gl.STATIC_DRAW);
+      chunk.fluidCount = this.fluidLen / VERTEX_FLOATS;
+    } else {
+      if (chunk.fluidBuf) { gl.deleteBuffer(chunk.fluidBuf); chunk.fluidBuf = null; }
+      chunk.fluidCount = 0;
+    }
 
     chunk.dirty = false;
     this.world.meshVersion = (this.world.meshVersion || 0) + 1;
@@ -4724,7 +4950,7 @@ class FluidSystem {
   }
 
   schedule(wx, wy, wz) {
-    if (wy < 1 || wy >= WORLD_HEIGHT - 1) return;
+    wy = wy | 0;
     const key = `${wx},${wy},${wz}`;
     if (this.queuedSet.has(key)) return;
     if (this.queue.length > 800) return;
@@ -4904,95 +5130,114 @@ class World {
     this.fallingBlocks = [];
   }
 
-  chunkKey(cx, cz) { return `${cx},${cz}`; }
-  getChunk(cx, cz) { return this.chunks.get(`${cx},${cz}`) || null; }
+  chunkKey(cx, cy, cz) { return `${cx},${cy},${cz}`; }
+  getChunk(cx, cy, cz) { return this.chunks.get(`${cx},${cy},${cz}`) || null; }
 
   getBlock(wx, wy, wz) {
-    if (wy < 0 || wy >= WORLD_HEIGHT) return 0;
-    const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const c = this.chunks.get(`${cx},${cz}`);
-    if (!c) return 0;
-    return c.getBlock(floorMod(wx, CHUNK_SIZE), wy | 0, floorMod(wz, CHUNK_SIZE));
+    wy = wy | 0;
+    const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
+    const c = this.chunks.get(`${cx},${cy},${cz}`);
+    if (!c || c.isEmpty) return 0;
+    return c.blocks[(floorMod(wy, CHUNK_SIZE) << 8) | (floorMod(wz, CHUNK_SIZE) << 4) | floorMod(wx, CHUNK_SIZE)];
   }
 
   getMeta(wx, wy, wz) {
-    if (wy < 0 || wy >= WORLD_HEIGHT) return 0;
-    const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const c = this.chunks.get(`${cx},${cz}`);
-    if (!c) return 0;
-    return c.getMeta(floorMod(wx, CHUNK_SIZE), wy | 0, floorMod(wz, CHUNK_SIZE));
+    wy = wy | 0;
+    const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
+    const c = this.chunks.get(`${cx},${cy},${cz}`);
+    if (!c || c.isEmpty) return 0;
+    return c.meta[(floorMod(wy, CHUNK_SIZE) << 8) | (floorMod(wz, CHUNK_SIZE) << 4) | floorMod(wx, CHUNK_SIZE)];
   }
 
   getLightAt(wx, wy, wz) {
-    if (wy < 0) return { sky: 0, block: 0 };
-    if (wy >= WORLD_HEIGHT) return { sky: 15, block: 0 };
-    const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const c = this.chunks.get(`${cx},${cz}`);
-    if (!c) return { sky: 15, block: 0 };
-    const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-    return { sky: c.getSkyLight(lx, wy | 0, lz), block: c.getBlockLight(lx, wy | 0, lz) };
+    wy = wy | 0;
+    const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
+    const c = this.chunks.get(`${cx},${cy},${cz}`);
+    if (!c) {
+      const col = this.generator.getColumnChunk(cx, cz);
+      const surfH = col.heights[(floorMod(wz, CHUNK_SIZE) << 4) | floorMod(wx, CHUNK_SIZE)];
+      return { sky: wy > surfH ? 15 : 0, block: 0 };
+    }
+    const lx = floorMod(wx, CHUNK_SIZE), ly = floorMod(wy, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
+    const lb = c.light[(ly << 8) | (lz << 4) | lx];
+    return { sky: lb >>> 4, block: lb & 0x0f };
   }
 
   getBiomeAt(wx, wz) {
     const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const c = this.chunks.get(`${cx},${cz}`);
-    if (c) {
-      const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-      return BIOMES[c.biomeMap[(lz << 4) | lx]] || BIOMES[0];
-    }
-    return this.generator.getColumn(wx, wz).biome;
+    const col = this.generator.getColumnChunk(cx, cz);
+    const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
+    return BIOMES[col.biomeIds[(lz << 4) | lx]] || BIOMES[0];
   }
 
   getSurfaceHeight(wx, wz) {
     const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const c = this.chunks.get(`${cx},${cz}`);
-    if (c) {
-      const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-      for (let y = WORLD_HEIGHT - 2; y >= 1; y--) {
-        const b = BLOCKS.get(c.getBlock(lx, y, lz));
-        if (b.solid) return y + 1;
+    const col = this.generator.getColumnChunk(cx, cz);
+    const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
+    const baseH = col.heights[(lz << 4) | lx];
+    const startCy = floorDiv(baseH + 32, CHUNK_SIZE);
+    const endCy = floorDiv(baseH - 32, CHUNK_SIZE);
+    for (let cy = startCy; cy >= endCy; cy--) {
+      const c = this.chunks.get(`${cx},${cy},${cz}`);
+      if (!c || c.isEmpty) continue;
+      for (let ly = CHUNK_SIZE - 1; ly >= 0; ly--) {
+        const b = BLOCKS.get(c.blocks[(ly << 8) | (lz << 4) | lx]);
+        if (b.solid) return cy * CHUNK_SIZE + ly + 1;
       }
     }
-    return Math.max(SEA_LEVEL + 1, this.generator.getColumn(wx, wz).height + 1);
+    return Math.max(SEA_LEVEL + 1, baseH + 1);
   }
 
   setBlock(wx, wy, wz, id, meta = 0, recordDelta = true) {
     wy = wy | 0;
-    if (wy < 0 || wy >= WORLD_HEIGHT) return;
-    const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-    const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-    const key = `${cx},${cz}`;
+    const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
+    const lx = floorMod(wx, CHUNK_SIZE), ly = floorMod(wy, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
+    const key = `${cx},${cy},${cz}`;
 
     if (recordDelta) {
       let map = this.modifications.get(key);
       if (!map) { map = new Map(); this.modifications.set(key, map); }
-      map.set(Chunk.idx(lx, wy, lz), [id, meta]);
+      map.set(Chunk.idx(lx, ly, lz), [id, meta]);
     }
 
     const c = this.chunks.get(key);
     if (!c) return;
-    const prevId = c.getBlock(lx, wy, lz);
+    const prevId = c.getBlock(lx, ly, lz);
     const prevBlk = BLOCKS.get(prevId);
     const newBlk = BLOCKS.get(id);
-    c.setBlock(lx, wy, lz, id, meta);
+    c.setBlock(lx, ly, lz, id, meta);
     c.lightDirty = true;
     c.borderLightDirty = true;
     c.dirty = true;
 
-    // Mark neighbor chunks dirty & relight if editing boundaries OR adding/removing light sources
-    const lightChanged = (prevBlk.light || 0) !== (newBlk.light || 0) || prevBlk.transparent !== newBlk.transparent;
+    // Mark 6-direction neighbor cubic chunks dirty & relight if editing boundaries OR changing light/opacity
+    const opacityChanged = prevBlk.transparent !== newBlk.transparent;
+    const lightChanged = (prevBlk.light || 0) !== (newBlk.light || 0) || opacityChanged;
     const rad = ((prevBlk.light || 0) > 0 || (newBlk.light || 0) > 0) ? 14 : 1;
-    const markN = (ncx, ncz) => {
-      const nc = this.chunks.get(`${ncx},${ncz}`);
+    const markN = (ncx, ncy, ncz) => {
+      const nc = this.chunks.get(`${ncx},${ncy},${ncz}`);
       if (nc) {
         nc.dirty = true;
         if (lightChanged) { nc.lightDirty = true; nc.borderLightDirty = true; }
       }
     };
-    if (lx <= rad) markN(cx - 1, cz);
-    if (lx >= CHUNK_SIZE - 1 - rad) markN(cx + 1, cz);
-    if (lz <= rad) markN(cx, cz - 1);
-    if (lz >= CHUNK_SIZE - 1 - rad) markN(cx, cz + 1);
+    if (lx <= rad) markN(cx - 1, cy, cz);
+    if (lx >= CHUNK_SIZE - 1 - rad) markN(cx + 1, cy, cz);
+    if (ly <= rad) markN(cx, cy - 1, cz);
+    if (ly >= CHUNK_SIZE - 1 - rad) markN(cx, cy + 1, cz);
+    if (lz <= rad) markN(cx, cy, cz - 1);
+    if (lz >= CHUNK_SIZE - 1 - rad) markN(cx, cy, cz + 1);
+
+    // Propagate skylight column changes downward through loaded cubic chunks below
+    if (opacityChanged) {
+      for (let dcy = cy - 1; dcy >= cy - 10; dcy--) {
+        const below = this.chunks.get(`${cx},${dcy},${cz}`);
+        if (!below) break;
+        below.lightDirty = true;
+        below.borderLightDirty = true;
+        below.dirty = true;
+      }
+    }
 
     // Clean up block entities if broken
     if (id === B.AIR && (prevId === B.CHEST || prevId === B.BARREL || prevId === B.FURNACE || prevId === B.FURNACE_LIT)) {
@@ -5000,7 +5245,6 @@ class World {
     }
     if (recordDelta) {
       this.fluids.notifyNeighbors(wx, wy, wz);
-      // Schedule gravity check for falling blocks (Sand, Red Sand, Gravel) above cleared space
       if (id === B.AIR || newBlk.liquid) {
         const above = this.getBlock(wx, wy + 1, wz);
         if (BLOCKS.get(above).gravity) this._gravityQueue.push([wx, wy + 1, wz]);
@@ -5014,19 +5258,8 @@ class World {
     const map = this.modifications.get(chunk.key);
     if (!map) return;
     for (const [idx, [id, meta]] of map) {
-      chunk.blocks[idx] = id;
-      chunk.meta[idx] = meta;
-      const y = idx >>> 8;
-      if (id !== 0 && y > chunk.maxY) chunk.maxY = y;
-      // Seamless migration for legacy single-block doors in older saved worlds
-      const b = BLOCKS.blocks[id];
-      if (b && b.shape === 'door' && (meta & 8) === 0 && y + 1 < WORLD_HEIGHT - 1) {
-        const upIdx = ((y + 1) << 8) | (idx & 0xff);
-        if (chunk.blocks[upIdx] === B.AIR) {
-          chunk.blocks[upIdx] = id;
-          chunk.meta[upIdx] = meta | 8;
-        }
-      }
+      const lx = idx & 15, lz = (idx >>> 4) & 15, ly = (idx >>> 8) & 15;
+      chunk.setBlock(lx, ly, lz, id, meta);
     }
   }
 
@@ -5085,7 +5318,6 @@ class World {
       const budget = Math.min(this._gravityQueue.length, 16);
       for (let i = 0; i < budget; i++) {
         const [gx, gy, gz] = this._gravityQueue.shift();
-        if (gy <= 1) continue;
         const id = this.getBlock(gx, gy, gz);
         if (!BLOCKS.get(id).gravity) continue;
         const below = this.getBlock(gx, gy - 1, gz);
@@ -5112,9 +5344,9 @@ class World {
         const landY = Math.floor(fb.y);
         const belowId = this.getBlock(gx, landY, gz);
         const belowBlk = BLOCKS.get(belowId);
-        const hitSolid = landY <= 0 || (belowId !== B.AIR && !belowBlk.liquid && !belowBlk.cross);
+        const hitSolid = (belowId !== B.AIR && !belowBlk.liquid && !belowBlk.cross);
         if (hitSolid || fb.age > 12) {
-          const placeY = hitSolid ? landY + 1 : Math.max(1, landY);
+          const placeY = hitSolid ? landY + 1 : landY;
           const dst = this.getBlock(gx, placeY, gz);
           if (dst === B.AIR || BLOCKS.get(dst).liquid || BLOCKS.get(dst).cross) {
             this.setBlock(gx, placeY, gz, fb.id, 0, true);
@@ -5157,7 +5389,7 @@ class World {
     for (let k = 0; k < 14; k++) {
       const wx = px + Math.floor((Math.random() - 0.5) * 28);
       const wz = pz + Math.floor((Math.random() - 0.5) * 28);
-      const wy = clamp(py + Math.floor((Math.random() - 0.5) * 14), 2, WORLD_HEIGHT - 2);
+      const wy = py + Math.floor((Math.random() - 0.5) * 14);
       const id = this.getBlock(wx, wy, wz);
       if (id === B.CAMPFIRE && particles) {
         particles.spawn(wx + 0.5, wy + 0.8, wz + 0.5, (Math.random()-0.5)*0.4, 1.8, (Math.random()-0.5)*0.4, [0.62, 0.64, 0.68], 0.22, 1.9, false);
@@ -5182,98 +5414,126 @@ class World {
     }
   }
 
-  // Dynamic Spiral Chunk Loading, 2-Pass Lighting, Time-Budgeted Meshing & Unloading
-  updateChunks(playerX, playerZ, viewDist, budgetMs = 6.5) {
+  _getCubicOffsets(viewDist, vDist) {
+    const key = `${viewDist},${vDist}`;
+    if (this._offsetCache && this._offsetCacheKey === key) return this._offsetCache;
+    const list = [];
+    const r2Max = (viewDist + 0.5) * (viewDist + 0.5);
+    for (let dx = -viewDist; dx <= viewDist; dx++) {
+      for (let dz = -viewDist; dz <= viewDist; dz++) {
+        if (dx * dx + dz * dz > r2Max) continue;
+        for (let dy = vDist; dy >= -vDist; dy--) {
+          // Slight horizontal weighting so chunks near player's eye level & column load first
+          const score = dx * dx + dz * dz + dy * dy * 1.15;
+          list.push([score, dx, dy, dz]);
+        }
+      }
+    }
+    list.sort((a, b) => a[0] - b[0]);
+    this._offsetCache = list;
+    this._offsetCacheKey = key;
+    return list;
+  }
+
+  // Dynamic 3D Cubic Chunk Loading, 2-Pass Lighting, Time-Budgeted Meshing & Unloading
+  updateChunks(playerX, playerY, playerZ, viewDist, budgetMs = 6.5) {
     const pcx = floorDiv(Math.floor(playerX), CHUNK_SIZE);
+    const pcy = floorDiv(Math.floor(playerY), CHUNK_SIZE);
     const pcz = floorDiv(Math.floor(playerZ), CHUNK_SIZE);
+    const vDist = clamp(Math.ceil(viewDist * 0.65), 4, 7);
     const t0 = performance.now();
 
-    // 1. Unload distant chunks & free GPU buffers
+    // 1. Unload distant cubic chunks & free GPU buffers
     const unloadR = viewDist + 2;
+    const unloadV = vDist + 2;
     for (const [key, ch] of this.chunks) {
-      if (Math.abs(ch.cx - pcx) > unloadR || Math.abs(ch.cz - pcz) > unloadR) {
+      if (Math.abs(ch.cx - pcx) > unloadR || Math.abs(ch.cz - pcz) > unloadR || Math.abs(ch.cy - pcy) > unloadV) {
         ch.dispose(this.gl);
         this.chunks.delete(key);
       }
     }
 
-    // 2. Spiral outward to generate missing chunks + immediately compute their local light
+    // 2. Generate missing cubic chunks in 3D distance order around player
     let generated = 0;
     const genBudget = Math.max(2.5, budgetMs * 0.55);
-    genLoop: for (let r = 0; r <= viewDist; r++) {
-      for (let dz = -r; dz <= r; dz++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
-          if (dx*dx + dz*dz > (viewDist + 0.5) * (viewDist + 0.5)) continue;
-          const cx = pcx + dx, cz = pcz + dz;
-          const key = `${cx},${cz}`;
-          if (!this.chunks.has(key)) {
-            const ch = new Chunk(cx, cz);
-            this.generator.generateChunk(ch, this);
-            this.chunks.set(key, ch);
-            // Compute local light immediately so NO neighbor can ever read all-zero light!
-            this.lighting.computeLocalLight(ch);
-            // Mark cardinal neighbors dirty & borderLightDirty so seams and cross-chunk light update seamlessly
-            for (const [ox, oz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-              const nb = this.chunks.get(`${cx+ox},${cz+oz}`);
-              if (nb) { nb.dirty = true; nb.borderLightDirty = true; }
-            }
-            generated++;
-            if (performance.now() - t0 > genBudget && r > 1) {
-              break genLoop;
-            }
-          }
+    const offsets = this._getCubicOffsets(viewDist, vDist);
+    const dirs6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    for (let i = 0; i < offsets.length; i++) {
+      const off = offsets[i];
+      const cx = pcx + off[1], cy = pcy + off[2], cz = pcz + off[3];
+      const key = `${cx},${cy},${cz}`;
+      if (!this.chunks.has(key)) {
+        const ch = new Chunk(cx, cy, cz);
+        this.generator.generateChunk(ch, this);
+        this.chunks.set(key, ch);
+        this.lighting.computeLocalLight(ch);
+        for (let d = 0; d < 6; d++) {
+          const nb = this.chunks.get(`${cx + dirs6[d][0]},${cy + dirs6[d][1]},${cz + dirs6[d][2]}`);
+          if (nb) { nb.dirty = true; nb.borderLightDirty = true; }
         }
+        generated++;
+        if (performance.now() - t0 > genBudget && off[0] > 4) break;
       }
     }
 
-    // 3. Rebuild nearest dirty chunk meshes every frame (mesher enforces 2-pass lighting for chunk & neighbors)
+    // 3. Rebuild nearest dirty cubic chunk meshes every frame
     const dirty = [];
     for (const ch of this.chunks.values()) {
       if (ch.dirty) {
-        const dist2 = (ch.cx - pcx) ** 2 + (ch.cz - pcz) ** 2;
+        if (ch.isEmpty) {
+          this.mesher.buildChunkMesh(ch, this.gl);
+          continue;
+        }
+        const dist2 = (ch.cx - pcx) ** 2 + (ch.cy - pcy) ** 2 + (ch.cz - pcz) ** 2;
         dirty.push([dist2, ch]);
       }
     }
     dirty.sort((a, b) => a[0] - b[0]);
     for (let i = 0; i < dirty.length; i++) {
       this.mesher.buildChunkMesh(dirty[i][1], this.gl);
-      if (performance.now() - t0 > budgetMs + 3.0 && i >= 2) break;
+      if (performance.now() - t0 > budgetMs + 3.0 && i >= 6) break;
     }
 
     this.loadedCount = this.chunks.size;
     return generated;
   }
 
-  // Preload immediate spawn neighborhood synchronously with full 2-pass lighting before meshing!
-  ensureImmediateChunks(wx, wz, radius = 2) {
+  // Preload immediate 3D cubic neighborhood synchronously with top-down skylight & 6-neighbor border light
+  ensureImmediateChunks(wx, wy, wz, radius = 2, vRadius = 2) {
     const pcx = floorDiv(Math.floor(wx), CHUNK_SIZE);
+    const pcy = floorDiv(Math.floor(wy), CHUNK_SIZE);
     const pcz = floorDiv(Math.floor(wz), CHUNK_SIZE);
-    // 1. Generate all chunks + local light
-    for (let dz = -radius; dz <= radius; dz++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const cx = pcx + dx, cz = pcz + dz;
-        const key = `${cx},${cz}`;
-        if (!this.chunks.has(key)) {
-          const ch = new Chunk(cx, cz);
-          this.generator.generateChunk(ch, this);
-          this.chunks.set(key, ch);
-          this.lighting.computeLocalLight(ch);
+    // 1. Generate all cubic chunks top-down so skylight flows cleanly downward
+    for (let dy = vRadius; dy >= -vRadius; dy--) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const cx = pcx + dx, cy = pcy + dy, cz = pcz + dz;
+          const key = `${cx},${cy},${cz}`;
+          if (!this.chunks.has(key)) {
+            const ch = new Chunk(cx, cy, cz);
+            this.generator.generateChunk(ch, this);
+            this.chunks.set(key, ch);
+            this.lighting.computeLocalLight(ch);
+          }
         }
       }
     }
-    // 2. Cross-chunk border light pass across all preloaded chunks
-    for (let dz = -radius; dz <= radius; dz++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const ch = this.getChunk(pcx + dx, pcz + dz);
-        if (ch && ch.borderLightDirty) this.lighting.propagateBorderLight(ch);
+    // 2. Cross-chunk 6-neighbor border light pass
+    for (let dy = vRadius; dy >= -vRadius; dy--) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const ch = this.getChunk(pcx + dx, pcy + dy, pcz + dz);
+          if (ch && ch.borderLightDirty) this.lighting.propagateBorderLight(ch);
+        }
       }
     }
-    // 3. Build meshes (all neighbor light arrays are 100% populated!)
-    for (let dz = -radius; dz <= radius; dz++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const ch = this.getChunk(pcx + dx, pcz + dz);
-        if (ch && ch.dirty) this.mesher.buildChunkMesh(ch, this.gl);
+    // 3. Build meshes
+    for (let dy = vRadius; dy >= -vRadius; dy--) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const ch = this.getChunk(pcx + dx, pcy + dy, pcz + dz);
+          if (ch && ch.dirty) this.mesher.buildChunkMesh(ch, this.gl);
+        }
       }
     }
     this.loadedCount = this.chunks.size;
@@ -5326,10 +5586,10 @@ class DayNightSystem {
     this.day = 1;
     this.dayLength = 480; // 8 minutes per full day/night cycle
     this.sunDir = [0.4, 0.85, 0.3];
-    this.skyTop = [0.22, 0.52, 0.92];
-    this.skyHorizon = [0.68, 0.84, 0.98];
-    this.fogColor = [0.68, 0.84, 0.98];
-    this.sunColor = [1.0, 0.98, 0.92];
+    this.skyTop = [0.47, 0.66, 1.0];
+    this.skyHorizon = [0.75, 0.85, 1.0];
+    this.fogColor = [0.75, 0.85, 1.0];
+    this.sunColor = [1.0, 0.99, 0.96];
     this.sunIntensity = 1.0;
     this.starAlpha = 0.0;
     this.isNight = false;
@@ -5355,40 +5615,40 @@ class DayNightSystem {
     const stormDim = weather ? (1.0 - weather.intensity * 0.42) : 1.0;
     const flash = weather ? weather.lightningFlash : 0;
 
-    // Interpolate Sky Top
-    const nightTop = [0.02, 0.04, 0.10];
-    const dayTop = [0.20, 0.50, 0.90];
-    const duskTop = [0.26, 0.20, 0.44];
+    // Interpolate Sky Top (classic vanilla Minecraft cornflower sky)
+    const nightTop = [0.012, 0.018, 0.045];
+    const dayTop = [0.47, 0.66, 1.0];
+    const duskTop = [0.30, 0.29, 0.48];
     for (let i = 0; i < 3; i++) {
       let c = lerp(nightTop[i], dayTop[i], dayF);
-      c = lerp(c, duskTop[i], duskF * 0.55);
+      c = lerp(c, duskTop[i], duskF * 0.45);
       c = c * stormDim + flash * 0.6;
       this.skyTop[i] = clamp(c, 0, 1);
     }
 
     // Interpolate Sky Horizon / Fog
-    const nightHor = [0.05, 0.08, 0.16];
-    const dayHor = [0.68, 0.85, 0.98];
-    const duskHor = [0.96, 0.48, 0.26];
+    const nightHor = [0.03, 0.045, 0.095];
+    const dayHor = [0.75, 0.85, 1.0];
+    const duskHor = [0.86, 0.50, 0.34];
     for (let i = 0; i < 3; i++) {
       let c = lerp(nightHor[i], dayHor[i], dayF);
-      c = lerp(c, duskHor[i], duskF * 0.78);
+      c = lerp(c, duskHor[i], duskF * 0.55);
       if (weather && weather.activeType === 'dust' && weather.intensity > 0.1) {
         const dustCol = [0.82, 0.68, 0.44];
         c = lerp(c, dustCol[i] * (0.25 + 0.75 * dayF), weather.intensity * 0.75);
       } else if (weather && weather.intensity > 0.1) {
-        const gray = (c * 0.45 + 0.28 * dayF);
+        const gray = (c * 0.45 + 0.32 * dayF);
         c = lerp(c, gray, weather.intensity * 0.65);
       }
       this.skyHorizon[i] = clamp(c + flash * 0.65, 0, 1);
       this.fogColor[i] = this.skyHorizon[i];
     }
 
-    // Sunlight intensity & warm sunset tint
-    this.sunIntensity = clamp((0.10 + dayF * 0.92) * stormDim + flash * 0.5, 0.09, 1.2);
-    this.sunColor[0] = lerp(0.55, 1.0, dayF) + duskF * 0.18;
-    this.sunColor[1] = lerp(0.65, 0.97, dayF) - duskF * 0.20;
-    this.sunColor[2] = lerp(0.90, 0.90, dayF) - duskF * 0.40;
+    // Clean neutral daytime sun, gentle warm sunset tint
+    this.sunIntensity = clamp((0.12 + dayF * 0.88) * stormDim + flash * 0.5, 0.10, 1.15);
+    this.sunColor[0] = lerp(0.62, 1.0, dayF) + duskF * 0.08;
+    this.sunColor[1] = lerp(0.70, 0.99, dayF) - duskF * 0.16;
+    this.sunColor[2] = lerp(0.92, 0.96, dayF) - duskF * 0.34;
   }
 
   getClockString() {
@@ -5631,33 +5891,40 @@ const LIGHTING_GLSL = `
     return mix(s, 1.0, smoothstep(0.82, 1.0, edge));
   }
 
-  // Returns the light multiplier for an albedo
+  // Classic vanilla Minecraft directional face shading + lightmap lighting
   vec3 computeLighting(vec3 n, vec3 rel, float sky, float blk, float ao, float shadow) {
-    float ndl = dot(n, uLightDir);
-    // Hemispheric sky ambient: up-facing surfaces see more of the sky dome
-    float hemi = 0.62 + 0.38 * n.y;
-    if (n.y < -0.5) hemi = 0.5;
-    float skyF = sky * sky;
-    vec3 ambient = uAmbCol * (skyF * hemi * ao);
-    // Direct sun / moon (sky-occluded so it never leaks into caves beyond shadow range)
+    // Authentic Minecraft per-face shading: +Y=1.0, ±Z=0.80, ±X=0.62, -Y=0.50
+    float faceShade = n.y >= 0.0 ? mix(0.62, 1.0, n.y) : mix(0.62, 0.50, -n.y);
+    faceShade += abs(n.z) * 0.18 * (1.0 - abs(n.y));
+
+    float skyF = pow(clamp(sky, 0.0, 1.0), 1.35);
     float open = smoothstep(0.45, 0.95, sky);
-    vec3 direct = uLightCol * (max(ndl, 0.0) * shadow * open * mix(1.0, ao, 0.55));
-    // Warm voxel block light with gentle flicker
-    float flicker = 0.965 + 0.035 * sin(uTime * 9.0 + rel.x * 1.7 + rel.z * 1.3);
-    vec3 bl = uBlockCol * (pow(blk, 2.1) * 1.6 * flicker * mix(1.0, ao, 0.75));
+    float ndl = max(dot(n, uLightDir), 0.0);
+    float sunStrength = clamp(dot(uLightCol, vec3(0.333)), 0.0, 1.0);
+    // Soft, non-dramatic shadow modulation so shadows add depth without looking like a cartoon trailer
+    float shMod = mix(1.0, mix(0.80, 1.0, shadow), open * sunStrength);
+    vec3 skyLight = uAmbCol * (skyF * shMod) + uLightCol * (ndl * shadow * open * 0.12);
+
+    // Classic Minecraft warm torch/block light with subtle flicker
+    float flicker = 0.985 + 0.015 * sin(uTime * 7.5 + rel.x * 1.7 + rel.z * 1.3);
+    vec3 bl = uBlockCol * (pow(clamp(blk, 0.0, 1.0), 1.65) * 1.12 * flicker);
     float dist = length(rel);
     float heldAtt = clamp(1.0 - dist / 12.0, 0.0, 1.0);
-    vec3 held = uBlockCol * (uHeldLight * heldAtt * heldAtt * 1.25 * flicker * mix(1.0, ao, 0.6));
-    vec3 minAmb = vec3(0.045, 0.05, 0.068) * uMinAmb * ao;
-    return ambient + direct + max(bl, held) + minAmb;
+    vec3 held = uBlockCol * (uHeldLight * heldAtt * heldAtt * 0.95 * flicker);
+    vec3 blockLight = max(bl, held);
+
+    // Lightmap blend: combine sky and block light cleanly without blowing out highlights
+    vec3 minAmb = vec3(0.052, 0.055, 0.068) * uMinAmb;
+    vec3 combined = max(skyLight, blockLight * 0.96) + min(skyLight, blockLight) * 0.18 + minAmb;
+    return combined * faceShade * mix(0.55, 1.0, ao);
   }
 
   vec3 toneMap(vec3 x) {
-    x *= 1.08;
-    vec3 c = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
-    // restore a touch of saturation lost by ACES
+    // Clean vanilla Minecraft response: preserve true midtones without ACES contrast crush or cartoon saturation boost
+    vec3 c = x / (1.0 + max(x - 0.88, 0.0) * 0.45);
+    c = clamp(c, 0.0, 1.0);
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    return clamp(mix(vec3(l), c, 1.1), 0.0, 1.0);
+    return mix(vec3(l), c, 0.94);
   }
 `;
 
@@ -5977,21 +6244,39 @@ class Renderer {
         if (dir.y < 0.0) col = mix(uSkyHorizon, uSkyHorizon * 0.55, clamp(-dir.y * 3.0, 0.0, 1.0));
 
         float sDot = dot(dir, sun);
-        // Sunset band hugging the horizon, strongest toward the sun's azimuth
+        // Classic subtle Minecraft sunrise/sunset horizon glow
         float azim = max(dot(normalize(vec2(dir.x, dir.z) + 1e-4), normalize(vec2(sun.x, sun.z) + 1e-4)), 0.0);
-        float band = exp(-abs(dir.y) * 7.0) * uDusk * (0.35 + 0.65 * pow(azim, 3.0));
-        col = mix(col, vec3(1.0, 0.45, 0.18), band * 0.75 * (1.0 - uStorm));
-        // Mie halo + sun disc
+        float band = exp(-abs(dir.y) * 8.0) * uDusk * (0.25 + 0.75 * pow(azim, 3.0));
+        col = mix(col, vec3(0.92, 0.48, 0.28), band * 0.52 * (1.0 - uStorm));
+
+        // Orthonormal basis for blocky square Minecraft sun & moon
+        vec3 sRef = abs(sun.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0);
+        vec3 sRight = normalize(cross(sRef, sun));
+        vec3 sUp = cross(sun, sRight);
+
+        // Square Minecraft sun with gentle bloom
         float vis = smoothstep(-0.08, 0.04, sun.y) * (1.0 - uStorm * 0.85);
-        col += uSunCol * (pow(max(sDot, 0.0), 6.0) * 0.22 + pow(max(sDot, 0.0), 64.0) * 0.55) * vis;
-        if (sDot > 0.9975) col = mix(col, vec3(1.0, 0.98, 0.9), smoothstep(0.9975, 0.999, sDot) * vis);
-        // Moon disc with soft glow
+        col += uSunCol * (pow(max(sDot, 0.0), 10.0) * 0.06 + pow(max(sDot, 0.0), 80.0) * 0.14) * vis;
+        if (sDot > 0.0) {
+          float sunBox = max(abs(dot(dir, sRight)), abs(dot(dir, sUp)));
+          float sunEdge = 1.0 - smoothstep(0.060, 0.066, sunBox);
+          float sunGlow = (1.0 - smoothstep(0.060, 0.095, sunBox)) * 0.35;
+          col = mix(col, vec3(1.0, 0.99, 0.90), clamp(sunEdge + sunGlow, 0.0, 1.0) * vis);
+        }
+
+        // Square Minecraft moon with pixelated craters
         float mDot = dot(dir, -sun);
         float mvis = smoothstep(-0.05, 0.08, -sun.y) * (1.0 - uStorm * 0.85);
-        col += vec3(0.55, 0.65, 0.9) * pow(max(mDot, 0.0), 120.0) * 0.35 * mvis;
-        if (mDot > 0.9985) {
-          float crater = 0.88 + 0.12 * hash(floor(dir * 900.0));
-          col = mix(col, vec3(0.86, 0.9, 1.0) * crater, smoothstep(0.9985, 0.9993, mDot) * 0.95 * mvis);
+        col += vec3(0.55, 0.65, 0.88) * pow(max(mDot, 0.0), 140.0) * 0.16 * mvis;
+        if (mDot > 0.0) {
+          float mx = dot(dir, sRight);
+          float my = dot(dir, sUp);
+          float moonBox = max(abs(mx), abs(my));
+          float moonEdge = 1.0 - smoothstep(0.050, 0.055, moonBox);
+          if (moonEdge > 0.01) {
+            float crater = 0.84 + 0.16 * hash(vec3(floor(vec2(mx, my) * 110.0), 3.0));
+            col = mix(col, vec3(0.88, 0.91, 0.98) * crater, moonEdge * 0.95 * mvis);
+          }
         }
         // Twinkling stars
         if (uStarAlpha > 0.01 && dir.y > 0.0) {
@@ -6120,30 +6405,28 @@ class Renderer {
         vec3 viewDir = normalize(-vRelPos);
         bool isWater = uPass == 1 && isLiquid && !isLava && n.y > 0.5;
         if (isWater) {
-          // Animated multi-octave wave normal perturbation for realistic shimmering water
-          vec2 wp = vUV * 3.6;
-          float w1 = sin(wp.x * 2.3 + uTime * 2.4) * cos(wp.y * 2.1 - uTime * 1.9);
-          float w2 = sin((wp.x * 1.7 - wp.y * 2.5) + uTime * 3.1);
-          float w3 = cos((wp.x * 4.1 + wp.y * 3.4) - uTime * 3.8) * 0.45;
-          vec3 wn = normalize(vec3((w1 + w2 * 0.7 + w3) * 0.075, 1.0, (w2 - w1 * 0.8 + w3) * 0.075));
-          // Fresnel sky reflection + shadowed sun glint
-          float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(viewDir, wn), 0.0), 5.0);
+          // Subtle vanilla-style translucent water with light surface shimmer (no glossy mirror reflection)
+          vec2 wp = vUV * 3.0;
+          float w1 = sin(wp.x * 2.1 + uTime * 2.0) * cos(wp.y * 1.9 - uTime * 1.6);
+          float w2 = sin((wp.x * 1.5 - wp.y * 2.2) + uTime * 2.5);
+          vec3 wn = normalize(vec3((w1 + w2 * 0.6) * 0.025, 1.0, (w2 - w1 * 0.6) * 0.025));
+          float fresnel = 0.03 + 0.97 * pow(1.0 - max(dot(viewDir, wn), 0.0), 4.0);
           vec3 r = reflect(-viewDir, wn);
-          vec3 refl = mix(uFogColor, uSkyTop, clamp(r.y * 1.6, 0.0, 1.0)) * (0.35 + 0.65 * vSky * vSky);
-          col = mix(col, refl, clamp(fresnel * 0.88, 0.0, 0.88));
+          vec3 refl = mix(uFogColor, uSkyTop, clamp(r.y * 1.4, 0.0, 1.0)) * (0.45 + 0.55 * vSky);
+          col = mix(col, refl, clamp(fresnel * 0.22, 0.0, 0.22));
           vec3 halfV = normalize(uLightDir + viewDir);
-          float spec = pow(max(dot(wn, halfV), 0.0), 160.0) * 2.6 + pow(max(dot(wn, halfV), 0.0), 28.0) * 0.24;
+          float spec = pow(max(dot(wn, halfV), 0.0), 120.0) * 0.32 + pow(max(dot(wn, halfV), 0.0), 24.0) * 0.04;
           col += uLightCol * spec * shadow * vSky;
-          alpha = clamp(tex.a + fresnel * 0.38, 0.52, 0.96);
+          alpha = clamp(tex.a * 0.86 + fresnel * 0.14, 0.56, 0.84);
         }
 
         col = toneMap(col);
 
-        // Atmospheric fog with sun-tinted in-scattering
+        // Clean vanilla Minecraft distance fog
         float dist = length(vRelPos);
         float fogF = smoothstep(uFogStart, uFogEnd, dist);
         float sunAmt = pow(max(dot(-viewDir, uSunDirFog), 0.0), 6.0);
-        vec3 fogC = mix(uFogColor, uSunGlowCol, sunAmt * 0.55);
+        vec3 fogC = mix(uFogColor, uSunGlowCol, sunAmt * 0.14);
         if (uSubmerged == 1) { fogF = smoothstep(1.0, 24.0, dist); fogC = vec3(0.05, 0.22, 0.38) * (0.25 + 0.75 * uAmbCol.b * 1.6); }
         else if (uSubmerged == 2) { fogF = smoothstep(0.3, 6.0, dist); fogC = vec3(0.85, 0.28, 0.05); }
         col = mix(col, fogC, clamp(fogF, 0.0, 1.0));
@@ -6233,12 +6516,10 @@ class Renderer {
           if (t.a < 0.3) discard;
           base *= t;
         } else if (uUnlit < 0.5 && base.a > 0.95) {
-          // Subtle voxel pixel-grain + edge bevel shading on solid entity models (mobs, arm, players)
+          // Subtle voxel pixel-grain on solid entity models (clean vanilla Minecraft look, no trailer bevel)
           vec2 cell = floor(vUV * 8.0);
           float grain = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
-          vec2 edgeD = min(vUV, 1.0 - vUV);
-          float bevel = smoothstep(0.0, 0.14, min(edgeD.x, edgeD.y));
-          base.rgb *= (0.94 + grain * 0.09) * (0.88 + 0.12 * bevel);
+          base.rgb *= (0.96 + grain * 0.06);
         }
         vec3 col;
         if (uUnlit > 0.5) {
@@ -6247,11 +6528,7 @@ class Renderer {
           vec3 n = normalize(vNorm);
           float sh = uReceiveShadow > 0.5 && vLight.x > 0.4 ? sampleShadow(vRel, n) : 1.0;
           vec3 lighting = computeLighting(n, vRel, vLight.x, vLight.y, 1.0, sh);
-          // Subtle grazing sky rim light so 3D models pop cleanly from the background
-          vec3 vdir = normalize(-vRel + 1e-4);
-          float rim = pow(1.0 - max(dot(n, vdir), 0.0), 3.2) * 0.14 * vLight.x;
-          lighting += uAmbCol * rim;
-          if (emissive) lighting = max(lighting, vec3(1.1));
+          if (emissive) lighting = max(lighting, vec3(1.05));
           col = toneMap(base.rgb * lighting);
         }
         if (uApplyFog > 0.5) {
@@ -6522,7 +6799,7 @@ class Renderer {
     gl.uniform3fv(this._u(prog, 'uLightDir'), L.dir);
     gl.uniform3fv(this._u(prog, 'uLightCol'), L.col);
     gl.uniform3fv(this._u(prog, 'uAmbCol'), L.amb);
-    gl.uniform3f(this._u(prog, 'uBlockCol'), 1.0, 0.70, 0.40);
+    gl.uniform3f(this._u(prog, 'uBlockCol'), 1.0, 0.84, 0.58);
     gl.uniform1f(this._u(prog, 'uMinAmb'), L.minAmb);
     gl.uniform1f(this._u(prog, 'uHeldLight'), L.held);
     gl.uniform1f(this._u(prog, 'uTime'), this.time);
@@ -6596,35 +6873,35 @@ class Renderer {
     gl.vertexAttribPointer(7, 1, gl.FLOAT, false, stride, 60);
   }
 
-  // Compute sun/moon direct light, sky ambient and fog tint for this frame
+  // Compute sun/moon direct light, sky ambient and fog tint for this frame (vanilla Minecraft lightmap feel)
   _computeFrameLighting(dayNight, weather, settings, cam) {
     const sd = dayNight.sunDir;
     const sunUp = sd[1];
     const storm = weather ? weather.intensity : 0;
-    const stormDim = 1 - storm * 0.55;
+    const stormDim = 1 - storm * 0.45;
     const flash = weather ? weather.lightningFlash : 0;
     const L = this._light;
     if (sunUp > -0.04) {
       const k = smoothstepJS(-0.04, 0.16, sunUp);
       L.dir = [sd[0], Math.max(sd[1], 0.06), sd[2]];
       const sc = dayNight.sunColor;
-      const s = 0.95 * k * stormDim;
-      L.col = [sc[0] * s, sc[1] * s * 0.97, sc[2] * s * 0.9];
+      const s = 0.88 * k * stormDim;
+      L.col = [sc[0] * s, sc[1] * s, sc[2] * s];
     } else {
       const k = smoothstepJS(0.04, 0.2, -sunUp);
       L.dir = [-sd[0], Math.max(-sd[1], 0.06), -sd[2]];
-      const s = 0.17 * k * stormDim;
-      L.col = [0.62 * s, 0.72 * s, 1.0 * s];
+      const s = 0.16 * k * stormDim;
+      L.col = [0.68 * s, 0.76 * s, 1.0 * s];
     }
     const ln = Math.hypot(L.dir[0], L.dir[1], L.dir[2]);
     L.dir = [L.dir[0] / ln, L.dir[1] / ln, L.dir[2] / ln];
     const dayF = clamp((sunUp + 0.12) / 0.32, 0, 1);
-    const night = [0.06, 0.072, 0.125], day = [0.50, 0.56, 0.66];
-    const st = 1 - storm * 0.35;
-    L.amb = [0, 1, 2].map(i => (lerp(night[i], day[i], dayF) * st + flash * 0.9));
-    // Warm golden-hour ambient
-    const dusk = clamp(1 - Math.abs(sunUp) / 0.25, 0, 1);
-    L.amb[0] += dusk * 0.06; L.amb[2] -= dusk * 0.04;
+    const night = [0.16, 0.19, 0.29], day = [0.95, 0.96, 0.98];
+    const st = 1 - storm * 0.30;
+    L.amb = [0, 1, 2].map(i => (lerp(night[i], day[i], dayF) * st + flash * 0.85));
+    // Subtle sunset/sunrise warmth without orange-washing the whole day
+    const dusk = clamp(1 - Math.abs(sunUp) / 0.22, 0, 1);
+    L.amb[0] += dusk * 0.05; L.amb[2] -= dusk * 0.05;
     L.dusk = dusk;
     L.minAmb = 0.6 + (settings.data.brightness ?? 50) / 50;
     L.held = cam.heldLight || 0;
@@ -6695,9 +6972,9 @@ class Renderer {
     let n = 0;
     for (const ch of world.chunks.values()) {
       if (!ch.opaqueBuf || ch.opaqueCount === 0) continue;
-      const dx = ch.cx * CHUNK_SIZE + 8 - cam.x, dz = ch.cz * CHUNK_SIZE + 8 - cam.z;
-      if (dx * dx + dz * dz > reach * reach) continue;
-      gl.uniform3f(uOff, ch.cx * CHUNK_SIZE - cam.x, -cam.y, ch.cz * CHUNK_SIZE - cam.z);
+      const dx = ch.cx * CHUNK_SIZE + 8 - cam.x, dy = ch.cy * CHUNK_SIZE + 8 - cam.y, dz = ch.cz * CHUNK_SIZE + 8 - cam.z;
+      if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+      gl.uniform3f(uOff, ch.cx * CHUNK_SIZE - cam.x, ch.cy * CHUNK_SIZE - cam.y, ch.cz * CHUNK_SIZE - cam.z);
       gl.bindBuffer(gl.ARRAY_BUFFER, ch.opaqueBuf);
       this._bindTerrainAttribs();
       gl.drawArrays(gl.TRIANGLES, 0, ch.opaqueCount);
@@ -6773,22 +7050,22 @@ class Renderer {
     gl.depthMask(true);
     gl.enable(gl.CULL_FACE);
 
-    // 2. Frustum culling
+    // 2. 3D Cubic Frustum Culling
     const visibleChunks = [];
     for (const ch of world.chunks.values()) {
       if (ch.opaqueCount === 0 && ch.fluidCount === 0) continue;
       const minX = ch.cx * CHUNK_SIZE - camX;
-      const minY = -camY;
+      const minY = ch.cy * CHUNK_SIZE - camY;
       const minZ = ch.cz * CHUNK_SIZE - camZ;
-      if (Mat4.boxInFrustum(this.frustum, minX, minY, minZ, minX + CHUNK_SIZE, minY + Math.max(ch.maxY + 2, SEA_LEVEL + 2), minZ + CHUNK_SIZE)) {
+      if (Mat4.boxInFrustum(this.frustum, minX, minY, minZ, minX + CHUNK_SIZE, minY + CHUNK_SIZE, minZ + CHUNK_SIZE)) {
         visibleChunks.push(ch);
       }
     }
-    // Front-to-back for early-z rejection
+    // Front-to-back 3D distance sort for early-z rejection
     visibleChunks.sort((a, b) => {
-      const ax = a.cx * CHUNK_SIZE + 8 - camX, az = a.cz * CHUNK_SIZE + 8 - camZ;
-      const bx = b.cx * CHUNK_SIZE + 8 - camX, bz = b.cz * CHUNK_SIZE + 8 - camZ;
-      return (ax * ax + az * az) - (bx * bx + bz * bz);
+      const ax = a.cx * CHUNK_SIZE + 8 - camX, ay = a.cy * CHUNK_SIZE + 8 - camY, az = a.cz * CHUNK_SIZE + 8 - camZ;
+      const bx = b.cx * CHUNK_SIZE + 8 - camX, by = b.cy * CHUNK_SIZE + 8 - camY, bz = b.cz * CHUNK_SIZE + 8 - camZ;
+      return (ax * ax + ay * ay + az * az) - (bx * bx + by * by + bz * bz);
     });
 
     // 3. Opaque & cutout terrain
@@ -6814,7 +7091,7 @@ class Renderer {
     for (let i = 0; i < visibleChunks.length; i++) {
       const ch = visibleChunks[i];
       if (!ch.opaqueBuf || ch.opaqueCount === 0) continue;
-      gl.uniform3f(uChunkOff, ch.cx * CHUNK_SIZE - camX, -camY, ch.cz * CHUNK_SIZE - camZ);
+      gl.uniform3f(uChunkOff, ch.cx * CHUNK_SIZE - camX, ch.cy * CHUNK_SIZE - camY, ch.cz * CHUNK_SIZE - camZ);
       gl.bindBuffer(gl.ARRAY_BUFFER, ch.opaqueBuf);
       this._bindTerrainAttribs();
       gl.drawArrays(gl.TRIANGLES, 0, ch.opaqueCount);
@@ -6963,24 +7240,23 @@ class Renderer {
       this._flushBoxes(this.vp, { fog: true, fogColor, fogStart: 120, fogEnd: 230, blend: true });
     }
 
-    // 6. Fluids & translucent blocks
+    // 6. Fluids & translucent blocks (keep back-face culling enabled so ice/glass undersides never overdraw top faces)
     gl.useProgram(tp);
     gl.uniform1i(uPass, 1);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.CULL_FACE);
     gl.depthMask(false);
     for (let i = visibleChunks.length - 1; i >= 0; i--) {
       const ch = visibleChunks[i];
       if (!ch.fluidBuf || ch.fluidCount === 0) continue;
-      gl.uniform3f(uChunkOff, ch.cx * CHUNK_SIZE - camX, -camY, ch.cz * CHUNK_SIZE - camZ);
+      gl.uniform3f(uChunkOff, ch.cx * CHUNK_SIZE - camX, ch.cy * CHUNK_SIZE - camY, ch.cz * CHUNK_SIZE - camZ);
       gl.bindBuffer(gl.ARRAY_BUFFER, ch.fluidBuf);
       this._bindTerrainAttribs();
       gl.drawArrays(gl.TRIANGLES, 0, ch.fluidCount);
       this.drawCalls++;
     }
     gl.depthMask(true);
-    gl.enable(gl.CULL_FACE);
     gl.disable(gl.BLEND);
 
     // 7. Target outline, crack overlay & placement ghost
@@ -7809,7 +8085,7 @@ class Player {
     this.vx = this.vy = this.vz = 0;
     this.x = this.spawnPoint.x;
     this.z = this.spawnPoint.z;
-    world.ensureImmediateChunks(this.x, this.z, 2);
+    world.ensureImmediateChunks(this.x, this.spawnPoint.y, this.z, 2, 2);
     this.y = Math.max(this.spawnPoint.y, world.getSurfaceHeight(Math.floor(this.x), Math.floor(this.z)) + 0.2);
     this.visualEyeY = this.y + this.eyeHeight;
     this.fallStartY = this.y;
@@ -7913,10 +8189,14 @@ class PlayerPhysics {
     if (player.dead) return;
     dt = Math.min(dt, 0.05);
 
-    // Ensure current chunk exists so player can NEVER fall through unloaded void
-    const curChunk = world.getChunk(floorDiv(Math.floor(player.x), CHUNK_SIZE), floorDiv(Math.floor(player.z), CHUNK_SIZE));
+    // Ensure current cubic chunk exists so player can NEVER fall through unloaded space
+    const curChunk = world.getChunk(
+      floorDiv(Math.floor(player.x), CHUNK_SIZE),
+      floorDiv(Math.floor(player.y), CHUNK_SIZE),
+      floorDiv(Math.floor(player.z), CHUNK_SIZE)
+    );
     if (!curChunk) {
-      world.ensureImmediateChunks(player.x, player.z, 1);
+      world.ensureImmediateChunks(player.x, player.y, player.z, 1, 1);
       return;
     }
 
@@ -8151,12 +8431,6 @@ class PlayerPhysics {
         }
         player.vy = 0;
       }
-    }
-
-    // Void safety net
-    if (player.y < 1.0) {
-      player.y = Math.max(2, world.getSurfaceHeight(Math.floor(player.x), Math.floor(player.z)));
-      player.vy = 0;
     }
 
     // Landing, Slime Block Bounce, Spring Camera Dip, Impact Debris & Fall Damage
@@ -8900,7 +9174,6 @@ class MiningSystem {
     if (this.target && heldIt && heldIt.blockId) {
       const t = this.target;
       const px = t.x + t.nx, py = t.y + t.ny, pz = t.z + t.nz;
-      if (py < 1 || py >= WORLD_HEIGHT - 1) return;
       const cur = this.world.getBlock(px, py, pz);
       if (cur !== B.AIR && !BLOCKS.get(cur).liquid && !BLOCKS.get(cur).cross) return;
 
@@ -8908,7 +9181,6 @@ class MiningSystem {
 
       // Door needs 2 vertical blocks!
       if (blk.shape === 'door') {
-        if (py + 1 >= WORLD_HEIGHT - 1) return;
         const above = this.world.getBlock(px, py + 1, pz);
         if (above !== B.AIR && !BLOCKS.get(above).liquid && !BLOCKS.get(above).cross) return;
       }
@@ -9386,7 +9658,8 @@ class MobManager {
     const rad = 18 + Math.random() * 28;
     const wx = Math.floor(player.x + Math.cos(ang) * rad);
     const wz = Math.floor(player.z + Math.sin(ang) * rad);
-    if (!this.world.getChunk(floorDiv(wx, CHUNK_SIZE), floorDiv(wz, CHUNK_SIZE))) return;
+    const pcy = floorDiv(Math.floor(player.y), CHUNK_SIZE);
+    if (!this.world.getChunk(floorDiv(wx, CHUNK_SIZE), pcy, floorDiv(wz, CHUNK_SIZE))) return;
 
     const biome = this.world.getBiomeAt(wx, wz);
     let wy = this.world.getSurfaceHeight(wx, wz);
@@ -9398,15 +9671,17 @@ class MobManager {
         return;
       }
       if (player.y < SEA_LEVEL - 6 || (!dayNight.isNight && Math.random() < 0.65)) {
-        let foundY = -1;
-        for (let y = Math.min(40, Math.floor(player.y + 8)); y >= 10; y--) {
+        let foundY = null;
+        const startY = Math.min(40, Math.floor(player.y + 10));
+        const endY = Math.floor(player.y - 16);
+        for (let y = startY; y >= endY; y--) {
           if (this.world.getBlock(wx, y, wz) === B.AIR && this.world.getBlock(wx, y + 1, wz) === B.AIR &&
               BLOCKS.get(this.world.getBlock(wx, y - 1, wz)).solid) {
             const lt = this.world.getLightAt(wx, y, wz);
             if (lt.sky <= 4 && lt.block <= 7) { foundY = y; break; }
           }
         }
-        if (foundY < 0) return;
+        if (foundY === null) return;
         const r = Math.random();
         const type = foundY < 22 && r < 0.14 ? 'golem' : foundY < 28 && r < 0.36 ? 'stalker'
           : r < 0.56 ? 'zombie' : r < 0.75 ? 'skeleton' : r < 0.88 ? 'spider' : 'creeper';
@@ -9817,9 +10092,9 @@ class InputManager {
       const k = this.settings.data.keys;
 
       // Tab shows online players while held in multiplayer
-      if (e.code === 'Tab' && this.engine.state === 'playing') {
+      if ((e.code === 'Tab' || e.key === 'Tab') && this.engine.state === 'playing') {
         e.preventDefault();
-        this.engine.ui.setTabListVisible(true);
+        if (!e.repeat) this.engine.ui.setTabListVisible(true);
         return;
       }
 
@@ -9901,7 +10176,10 @@ class InputManager {
 
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
-      if (e.code === 'Tab' && this.engine.ui) this.engine.ui.setTabListVisible(false);
+      if ((e.code === 'Tab' || e.key === 'Tab') && this.engine.ui) {
+        if (this.engine.state === 'playing') e.preventDefault();
+        this.engine.ui.setTabListVisible(false);
+      }
     });
     window.addEventListener('blur', () => {
       this.keys.clear(); this.mouseLeft = false; this.mouseRight = false; this.containerRightDragging = false;
@@ -9967,7 +10245,6 @@ class UIManager {
     this.showCreativeCatalog = false;
     this.enchantTargetSlot = null;
     this.chatOpen = false;
-    this.lastBiome = '';
     this.pendingDeleteWorld = null;
     this.mpAuthMode = 'login';
     this._bindButtons();
@@ -10032,7 +10309,7 @@ class UIManager {
     box.appendChild(div);
     while (box.children.length > 36) box.firstChild.remove();
     box.scrollTop = box.scrollHeight;
-    setTimeout(() => { if (!this.chatOpen) div.style.opacity = '0.35'; }, 10000);
+    setTimeout(() => { div.classList.add('faded'); }, 6500);
   }
 
   openChat(prefix = '') {
@@ -10040,10 +10317,13 @@ class UIManager {
     this.chatOpen = true;
     this.engine.input.exitLock();
     this._el('pointerPrompt').style.display = 'none';
+    const box = this._el('chatBox');
     const wrap = this._el('chatInputWrap');
     const inp = this._el('chatInput');
+    if (box) box.classList.add('chat-open');
     wrap.classList.add('active');
-    this._el('chatMessages').querySelectorAll('.chat-line').forEach(n => n.style.opacity = '1');
+    const msgs = this._el('chatMessages');
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
     inp.value = prefix;
     setTimeout(() => { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }, 10);
   }
@@ -10051,8 +10331,10 @@ class UIManager {
   closeChat() {
     if (!this.chatOpen) return;
     this.chatOpen = false;
+    const box = this._el('chatBox');
     const wrap = this._el('chatInputWrap');
     const inp = this._el('chatInput');
+    if (box) box.classList.remove('chat-open');
     wrap.classList.remove('active');
     inp.blur();
     if (this.engine.state === 'playing') this.engine.input.requestLock();
@@ -10110,8 +10392,8 @@ class UIManager {
     } else if (cmd === 'tp') {
       const tx = parseFloat(parts[1]), ty = parseFloat(parts[2]), tz = parseFloat(parts[3]);
       if (isFinite(tx) && isFinite(ty) && isFinite(tz)) {
-        this.engine.world.ensureImmediateChunks(tx, tz, 2);
-        p.x = tx; p.y = clamp(ty, 2, WORLD_HEIGHT - 2); p.z = tz; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
+        this.engine.world.ensureImmediateChunks(tx, ty, tz, 2, 2);
+        p.x = tx; p.y = ty; p.z = tz; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
         this.addChat(`Teleported to ${tx.toFixed(1)}, ${p.y.toFixed(1)}, ${tz.toFixed(1)}.`, 'sys');
       } else this.addChat('Usage: /tp <x> <y> <z>', 'warn');
     } else if (cmd === 'give') {
@@ -10150,25 +10432,93 @@ class UIManager {
     const panel = this._el('tabPlayerList');
     if (!panel) return;
     if (!show || !this.engine.isMultiplayer()) {
+      this.tabListOpen = false;
       panel.classList.remove('active');
       return;
     }
+    this.tabListOpen = true;
+    this.refreshTabList();
+    panel.classList.add('active');
+  }
+
+  refreshTabList() {
+    if (!this.tabListOpen || !this.engine.isMultiplayer()) return;
     const net = this.engine.net;
+    const player = this.engine.player;
     this._el('tabServerTitle').textContent = net.serverName || 'VoxelCraft Server';
+    const selfMode = player ? player.mode : 'survival';
+    const palette = ['#3d9ee0','#db5c5c','#57c270','#dbad38','#ad6be0','#3dc7bd'];
+    const selfCol = palette[hashString(net.playerName || 'You') % palette.length];
+    const all = [{
+      name: net.playerName || 'You',
+      isSelf: true,
+      ping: net.pingMs,
+      mode: selfMode,
+      op: !!net.isOp,
+      color: selfCol
+    }];
+    for (const rp of net.remotePlayers.values()) {
+      const c = rp.color ? `rgb(${Math.round(rp.color[0]*255)},${Math.round(rp.color[1]*255)},${Math.round(rp.color[2]*255)})` : palette[hashString(rp.name || rp.id) % palette.length];
+      all.push({
+        name: rp.name,
+        isSelf: false,
+        ping: rp.ping ?? 0,
+        mode: rp.mode || 'survival',
+        op: !!rp.op,
+        color: c
+      });
+    }
+    all.sort((a, b) => (b.isSelf - a.isSelf) || (b.op - a.op) || a.name.localeCompare(b.name));
+    const maxP = net.maxPlayers || 32;
+    this._el('tabPlayerCount').textContent = `${all.length} / ${maxP} online`;
+
+    const metaEl = this._el('tabServerMeta');
+    if (metaEl) {
+      const diff = (net.difficulty || 'normal');
+      const diffLabel = diff.charAt(0).toUpperCase() + diff.slice(1);
+      const chips = [
+        `<span class="tab-chip">${net.pvp ? 'PvP On' : 'PvP Off'}</span>`,
+        `<span class="tab-chip">${this._esc(diffLabel)}</span>`,
+        `<span class="tab-chip">${this.engine.dayNight ? this._esc(this.engine.dayNight.getClockString()) : ''}</span>`
+      ];
+      if (net.motd) chips.push(`<span style="opacity:.8">${this._esc(net.motd)}</span>`);
+      metaEl.innerHTML = chips.join('');
+    }
+
+    const pingMeta = (ms) => {
+      const n = Math.max(0, Math.round(ms || 0));
+      if (n <= 0) return { cls: 'good', bars: 5, label: '—' };
+      if (n < 60) return { cls: 'good', bars: 5, label: `${n}ms` };
+      if (n < 110) return { cls: 'good', bars: 4, label: `${n}ms` };
+      if (n < 180) return { cls: 'ok', bars: 3, label: `${n}ms` };
+      if (n < 280) return { cls: 'ok', bars: 2, label: `${n}ms` };
+      return { cls: 'bad', bars: 1, label: `${n}ms` };
+    };
+
     const rows = this._el('tabPlayerRows');
     rows.innerHTML = '';
-    const all = [{ name: net.playerName + ' (You)', ping: net.pingMs }];
-    for (const rp of net.remotePlayers.values()) {
-      all.push({ name: rp.name, ping: rp.ping ?? 0 });
-    }
-    this._el('tabPlayerCount').textContent = `${all.length} online`;
     for (const pl of all) {
+      const pm = pingMeta(pl.ping);
+      let barsHtml = '';
+      for (let b = 1; b <= 5; b++) barsHtml += `<i class="${b <= pm.bars ? 'on' : ''}"></i>`;
+      const modeLabel = pl.mode === 'creative' ? 'Creative' : 'Survival';
       const r = document.createElement('div');
-      r.className = 'tab-row';
-      r.innerHTML = `<span>${this._esc(pl.name)}</span><span class="tab-ping">${pl.ping}ms</span>`;
+      r.className = 'tab-row' + (pl.isSelf ? ' is-self' : '');
+      r.innerHTML =
+        `<div class="tab-player-left">` +
+          `<span class="tab-avatar" style="background:${pl.color}"></span>` +
+          `<span class="tab-name">${this._esc(pl.name)}${pl.isSelf ? ' <span style="opacity:.6;font-weight:400">(You)</span>' : ''}</span>` +
+          (pl.op ? `<span class="tab-badge op">OP</span>` : '') +
+        `</div>` +
+        `<div class="tab-player-right">` +
+          `<span class="tab-badge mode">${modeLabel}</span>` +
+          `<span class="tab-ping ${pm.cls}">${pm.label}</span>` +
+          `<span class="ping-bars ${pm.cls}" title="${pm.label}">${barsHtml}</span>` +
+        `</div>`;
       rows.appendChild(r);
     }
-    panel.classList.add('active');
+    const rightFoot = this._el('tabFooterRight');
+    if (rightFoot) rightFoot.textContent = `Ping: ${net.pingMs}ms · T to chat`;
   }
 
   _esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
@@ -10365,10 +10715,6 @@ class UIManager {
     this._el('xpLevel').textContent = player.level;
 
     const biome = world.getBiomeAt(Math.floor(player.x), Math.floor(player.z));
-    if (this.lastBiome && this.lastBiome !== biome.name && this.engine.state === 'playing') {
-      this.toast(`Entered ${biome.name}`);
-    }
-    this.lastBiome = biome.name;
     this._el('hudBiome').textContent = biome.name;
     this._el('hudTime').textContent = dayNight.getClockString();
     this._el('hudWeather').textContent = weather.getLabel();
@@ -10384,8 +10730,16 @@ class UIManager {
       mpPill.classList.add('active');
       this._el('hudMpLabel').textContent = `${this.engine.net.remotePlayers.size + 1} Online`;
       this._el('hudMpPing').textContent = `${this.engine.net.pingMs}ms`;
+      if (this.tabListOpen) {
+        const nowMs = performance.now();
+        if (!this._lastTabRefresh || nowMs - this._lastTabRefresh > 250) {
+          this._lastTabRefresh = nowMs;
+          this.refreshTabList();
+        }
+      }
     } else {
       mpPill.classList.remove('active');
+      if (this.tabListOpen) this.setTabListVisible(false);
     }
 
     this._el('underwaterOverlay').style.display = player.submerged === 1 ? 'block' : 'none';
@@ -11379,6 +11733,10 @@ class MultiplayerClient {
     this.playerId = null;
     this.playerName = 'Explorer';
     this.serverName = 'VoxelCraft Server';
+    this.motd = '';
+    this.difficulty = 'normal';
+    this.maxPlayers = 32;
+    this.isOp = false;
     this.pvp = true;
     this.pingMs = 0;
     this.remotePlayers = new Map(); // id -> { id, name, x,y,z, rx,ry,rz, yaw,ryaw, pitch,rpitch, crouch, swing, walkPhase, color, ping, hurtTimer }
@@ -11420,7 +11778,12 @@ class MultiplayerClient {
         this.playerId = msg.id;
         if (msg.name) this.playerName = msg.name;
         this.serverName = msg.serverName || 'VoxelCraft Server';
+        this.motd = msg.motd || '';
+        this.difficulty = msg.difficulty || 'normal';
+        this.maxPlayers = msg.maxPlayers || 32;
+        this.isOp = !!msg.isOp;
         this.pvp = msg.pvp !== false;
+        this._send({ type: 'ping', t: Date.now() });
         this.engine.enterMultiplayerWorld(msg);
       } else if (msg.type === 'auth_error' || (!this.connected && msg.type === 'kick')) {
         clearTimeout(timeout);
@@ -11542,11 +11905,11 @@ class MultiplayerClient {
       });
     }
 
-    // 2. Heartbeat Ping every 3s
+    // 2. Heartbeat Ping every 2.5s (reports our measured RTT so other players see accurate ping in Tab)
     this._pingAccum += dt;
-    if (this._pingAccum >= 3.0) {
+    if (this._pingAccum >= 2.5) {
       this._pingAccum = 0;
-      this._send({ type: 'ping', t: Date.now() });
+      this._send({ type: 'ping', t: Date.now(), ping: this.pingMs });
     }
 
     // 3. Inventory / stats cloud save sync every 4s
@@ -11593,14 +11956,17 @@ class MultiplayerClient {
             x: pl.x, y: pl.y, z: pl.z, rx: pl.x, ry: pl.y, rz: pl.z,
             yaw: pl.yaw || 0, ryaw: pl.yaw || 0, pitch: pl.pitch || 0, rpitch: pl.pitch || 0,
             crouch: !!pl.crouch, swing: pl.swing || 0, walkPhase: 0,
-            color: palette[h % palette.length], ping: pl.ping || 0, hurtTimer: 0
+            color: palette[h % palette.length], ping: pl.ping || 0,
+            mode: pl.mode || 'survival', op: !!pl.op, hurtTimer: 0
           };
           this.remotePlayers.set(pl.id, rp);
         } else {
           rp.x = pl.x; rp.y = pl.y; rp.z = pl.z;
           rp.yaw = pl.yaw || 0; rp.pitch = pl.pitch || 0;
           rp.crouch = !!pl.crouch; rp.swing = pl.swing || 0;
-          rp.ping = pl.ping || rp.ping;
+          if (pl.ping !== undefined) rp.ping = pl.ping;
+          if (pl.mode) rp.mode = pl.mode;
+          if (pl.op !== undefined) rp.op = !!pl.op;
         }
       }
       for (const id of this.remotePlayers.keys()) {
@@ -11623,7 +11989,6 @@ class MultiplayerClient {
             for (let dx = -r; dx <= r; dx++) {
               if (dx*dx + dy*dy + dz*dz > radius * radius) continue;
               const bx = msg.x + dx, by = msg.y + dy, bz = msg.z + dz;
-              if (by <= 0 || by >= WORLD_HEIGHT - 1) continue;
               const bid = eng.world.getBlock(bx, by, bz);
               if (bid === B.AIR || bid === B.BEDROCK || bid === B.OBSIDIAN || bid === B.OBSIDIAN_CRYING) continue;
               eng.world.setBlock(bx, by, bz, B.AIR, 0, true);
@@ -11725,8 +12090,29 @@ class GameEngine {
   _initTitleWorld() {
     if (this.world) this.world.disposeAll();
     this.world = new World('voxelcraft-vista', this.renderer.gl);
-    this.world.ensureImmediateChunks(16, 16, 3);
-    this.menuCam.y = Math.max(70, this.world.getSurfaceHeight(16, 16) + 16);
+    const cx = 16, cz = 16, orbitR = 20;
+    const initSurf = this.world.generator.getColumn(cx, cz).height;
+    this.world.ensureImmediateChunks(cx, initSurf, cz, 4, 3);
+    let maxH = SEA_LEVEL + 6;
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+      for (const r of [orbitR - 6, orbitR, orbitR + 6]) {
+        const sx = Math.floor(cx + Math.cos(a) * r);
+        const sz = Math.floor(cz + Math.sin(a) * r);
+        const h = this.world.getSurfaceHeight(sx, sz);
+        if (h > maxH) maxH = h;
+      }
+    }
+    const baseY = Math.max(maxH + 14, SEA_LEVEL + 22);
+    const angle = 0.4;
+    this.menuCam = {
+      cx, cz, radius: orbitR, angle, baseY,
+      x: cx + Math.cos(angle) * orbitR,
+      y: baseY,
+      z: cz + Math.sin(angle) * orbitR,
+      yaw: -(angle + Math.PI * 0.35),
+      pitch: -0.22,
+      isMenu: true
+    };
     this.dayNight.time = 0.34;
   }
 
@@ -11759,12 +12145,12 @@ class GameEngine {
     if (Array.isArray(msg.deltas)) {
       for (const d of msg.deltas) {
         const [wx, wy, wz, id, meta] = d;
-        const cx = floorDiv(wx, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-        const lx = floorMod(wx, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-        const key = `${cx},${cz}`;
+        const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
+        const lx = floorMod(wx, CHUNK_SIZE), ly = floorMod(wy, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
+        const key = `${cx},${cy},${cz}`;
         let map = this.world.modifications.get(key);
         if (!map) { map = new Map(); this.world.modifications.set(key, map); }
-        map.set(Chunk.idx(lx, wy, lz), [id, meta || 0]);
+        map.set(Chunk.idx(lx, ly, lz), [id, meta || 0]);
       }
     }
     if (Array.isArray(msg.blockEntities)) {
@@ -11774,7 +12160,7 @@ class GameEngine {
     this.player = new Player(msg.mode || 'survival');
     const saved = msg.player;
     if (saved && isFinite(saved.x) && isFinite(saved.y) && isFinite(saved.z)) {
-      this.world.ensureImmediateChunks(saved.x, saved.z, 2);
+      this.world.ensureImmediateChunks(saved.x, saved.y, saved.z, 2, 2);
       this.player.x = saved.x; this.player.y = saved.y; this.player.z = saved.z;
       this.player.health = saved.health ?? 20; this.player.hunger = saved.hunger ?? 20;
       this.player.xp = saved.xp ?? 0; this.player.level = saved.level ?? 0;
@@ -11788,7 +12174,8 @@ class GameEngine {
       }
     } else {
       const sp = this._findGoodSpawn(this.world);
-      this.world.ensureImmediateChunks(sp.x, sp.z, 2);
+      const estY = this.world.generator.getColumn(Math.floor(sp.x), Math.floor(sp.z)).height;
+      this.world.ensureImmediateChunks(sp.x, estY, sp.z, 2, 2);
       const sy = this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2;
       this.player.x = sp.x; this.player.y = sy; this.player.z = sp.z;
       this.player.spawnPoint = { x: sp.x, y: sy, z: sp.z };
@@ -11809,7 +12196,6 @@ class GameEngine {
     if (Array.isArray(msg.players)) this.net._handleMessage({ type: 'players', list: msg.players });
 
     this.state = 'playing';
-    this.ui.lastBiome = '';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.addChat(msg.motd || `Connected to ${msg.serverName || 'Server'}! Press T to chat, Tab for player list.`, 'sys');
@@ -11824,7 +12210,8 @@ class GameEngine {
     this.world = new World(meta.seed, this.renderer.gl);
     this.player = new Player(meta.mode);
     const sp = this._findGoodSpawn(this.world);
-    this.world.ensureImmediateChunks(sp.x, sp.z, 2);
+    const estY = this.world.generator.getColumn(Math.floor(sp.x), Math.floor(sp.z)).height;
+    this.world.ensureImmediateChunks(sp.x, estY, sp.z, 2, 2);
     const sy = this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2;
     this.player.x = sp.x; this.player.y = sy; this.player.z = sp.z;
     this.player.spawnPoint = { x: sp.x, y: sy, z: sp.z };
@@ -11838,7 +12225,6 @@ class GameEngine {
     this.player.miningRef = this.mining;
 
     this.state = 'playing';
-    this.ui.lastBiome = '';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.toast(`Created "${meta.name}" (Seed: ${meta.seed})`);
@@ -11857,9 +12243,23 @@ class GameEngine {
 
     if (rec.deltas) {
       for (const [k, entries] of rec.deltas) {
-        const map = new Map();
-        for (const [idx, bid, meta] of entries) map.set(idx, [bid, meta]);
-        this.world.modifications.set(k, map);
+        const parts = k.split(',');
+        if (parts.length === 2) {
+          // Seamless migration from legacy 2D column chunk saves ("cx,cz") to 3D cubic chunks ("cx,cy,cz")
+          const cx = Number(parts[0]), cz = Number(parts[1]);
+          for (const [idx, bid, meta] of entries) {
+            const wy = idx >>> 8;
+            const cy = wy >> 4;
+            const newKey = `${cx},${cy},${cz}`;
+            let map = this.world.modifications.get(newKey);
+            if (!map) { map = new Map(); this.world.modifications.set(newKey, map); }
+            map.set(((wy & 15) << 8) | (idx & 0xff), [bid, meta]);
+          }
+        } else {
+          const map = new Map();
+          for (const [idx, bid, meta] of entries) map.set(idx, [bid, meta]);
+          this.world.modifications.set(k, map);
+        }
       }
     }
     if (rec.entities) {
@@ -11880,7 +12280,7 @@ class GameEngine {
     if (p.armor) this.player.inventory.armor = p.armor;
     this.player.inventory.selected = p.selected || 0;
 
-    this.world.ensureImmediateChunks(this.player.x, this.player.z, 2);
+    this.world.ensureImmediateChunks(this.player.x, this.player.y, this.player.z, 2, 2);
     if (p.dead || this.player.health <= 0) {
       this.player.respawn(this.world);
     }
@@ -11897,7 +12297,6 @@ class GameEngine {
     this.player.miningRef = this.mining;
 
     this.state = 'playing';
-    this.ui.lastBiome = '';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.toast(`Loaded "${rec.name}"`);
@@ -11963,9 +12362,9 @@ class GameEngine {
     this._emitT = (this._emitT || 0) + dt;
     if (this._emitT < 0.08 || this.settings.data.quality === 'low') return;
     this._emitT = 0;
-    const p = this.player, pcx = Math.floor(p.x / CHUNK_SIZE), pcz = Math.floor(p.z / CHUNK_SIZE);
-    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
-      const ch = this.world.getChunk(pcx + dx, pcz + dz);
+    const p = this.player, pcx = floorDiv(Math.floor(p.x), CHUNK_SIZE), pcy = floorDiv(Math.floor(p.y), CHUNK_SIZE), pcz = floorDiv(Math.floor(p.z), CHUNK_SIZE);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+      const ch = this.world.getChunk(pcx + dx, pcy + dy, pcz + dz);
       if (!ch || !ch.emitters) continue;
       const e = ch.emitters;
       for (let i = 0; i < e.length; i += 4) {
@@ -12046,17 +12445,31 @@ class GameEngine {
     }
 
     if (this.state === 'title') {
-      this.menuCam.x += Math.sin(this.menuCam.yaw) * -4.2 * dt;
-      this.menuCam.z += Math.cos(this.menuCam.yaw) * -4.2 * dt;
-      this.menuCam.yaw += 0.045 * dt;
-      const groundH = this.world.getSurfaceHeight(Math.floor(this.menuCam.x), Math.floor(this.menuCam.z));
-      this.menuCam.y += (Math.max(groundH + 15, SEA_LEVEL + 18) - this.menuCam.y) * Math.min(1, dt * 1.2);
-      this.world.updateChunks(this.menuCam.x, this.menuCam.z, 5, 5.0);
-      this.dayNight.update(dt * 0.6, this.weather);
-      this.renderer.render(this.world, this.menuCam, null, null, null, this.dayNight, this.weather, null, this.settings, dt);
+      const mdt = Math.min(dt, 0.05);
+      const mc = this.menuCam;
+      mc.angle += 0.055 * mdt;
+      mc.x = mc.cx + Math.cos(mc.angle) * mc.radius;
+      mc.z = mc.cz + Math.sin(mc.angle) * mc.radius;
+      mc.yaw = -(mc.angle + Math.PI * 0.35);
+      mc.pitch = -0.22 + Math.sin(mc.angle * 2.0) * 0.03;
+
+      // Sample a clearance ring around the camera so it never clips blocks or trees
+      let maxLocalH = this.world.getSurfaceHeight(Math.floor(mc.x), Math.floor(mc.z));
+      for (let i = 0; i < 8; i++) {
+        const a = i * (Math.PI / 4);
+        const h = this.world.getSurfaceHeight(Math.floor(mc.x + Math.cos(a) * 6), Math.floor(mc.z + Math.sin(a) * 6));
+        if (h > maxLocalH) maxLocalH = h;
+      }
+      const targetY = Math.max(mc.baseY, maxLocalH + 12, SEA_LEVEL + 20) + Math.sin(mc.angle * 2.0) * 1.4;
+      mc.y += (targetY - mc.y) * (1 - Math.exp(-mdt * 1.8));
+      if (mc.y < maxLocalH + 6) mc.y = maxLocalH + 6;
+
+      this.world.updateChunks(mc.cx, mc.y, mc.cz, 5, 4.0);
+      this.dayNight.update(mdt * 0.6, this.weather);
+      this.renderer.render(this.world, mc, null, null, null, this.dayNight, this.weather, null, this.settings, mdt);
     } else if (this.world && this.player) {
       const vd = this.settings.data.viewDistance || 7;
-      this.world.updateChunks(this.player.x, this.player.z, vd, 6.5);
+      this.world.updateChunks(this.player.x, this.player.y, this.player.z, vd, 6.5);
 
       if (this.state === 'playing' || this.state === 'container') {
         this.dayNight.update(dt, this.weather);
