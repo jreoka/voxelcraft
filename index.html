@@ -10394,6 +10394,8 @@ class InputManager {
     this._forwardWasUp = true;
     this.pointerLocked = false;
     this.rebindingAction = null;
+    this._escResumeArmed = false;
+    this._escDownAt = 0;
     this.gpMoveX = 0; this.gpMoveY = 0;
     this.containerRightDragging = false;
     this._bindEvents();
@@ -10407,8 +10409,9 @@ class InputManager {
   async lockKeyboard() {
     if (navigator.keyboard && typeof navigator.keyboard.lock === 'function') {
       try {
-        // Lock common game & shortcut keys (Ctrl+W, Ctrl+T, Ctrl+1..9, Tab) while leaving Escape unlocked
+        // Lock Escape (so short press pauses and holding Escape exits fullscreen) along with common game & shortcut keys
         await navigator.keyboard.lock([
+          'Escape',
           'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ', 'KeyT', 'KeyR', 'KeyN',
           'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
           'Tab', 'Space', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight'
@@ -10484,7 +10487,7 @@ class InputManager {
 
       // Chat Input handling
       if (this.engine.ui && this.engine.ui.chatOpen) {
-        if (e.code === 'Escape') { e.preventDefault(); this.engine.ui.closeChat(); }
+        if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) this.engine.ui.closeChat(); }
         else if (e.code === 'Enter') { e.preventDefault(); this.engine.ui.submitChat(); }
         return;
       }
@@ -10510,7 +10513,7 @@ class InputManager {
       if (this.engine.state === 'container') {
         if (e.code === 'Escape' || e.code === k.inventory) {
           e.preventDefault();
-          this.engine.ui.closeContainer();
+          if (!e.repeat) this.engine.ui.closeContainer();
           return;
         }
         if (e.code.startsWith('Digit')) {
@@ -10555,15 +10558,19 @@ class InputManager {
       }
 
       if (e.code === 'Escape') {
+        e.preventDefault();
+        if (e.repeat) return;
         if (this.engine.ui && this.engine.ui.pendingDeleteWorld) {
-          e.preventDefault();
           this.engine.ui.closeDeleteWorldConfirm();
           return;
         }
         if (this.engine.state === 'playing') {
+          this._escResumeArmed = false;
           this.engine.pause();
         } else if (this.engine.state === 'paused' && performance.now() - (this.engine._pausedAt || 0) > 300) {
-          this.engine.resume();
+          // Resume on short tap release so holding Escape to exit fullscreen stays paused
+          this._escResumeArmed = true;
+          this._escDownAt = performance.now();
         }
         return;
       }
@@ -10600,6 +10607,12 @@ class InputManager {
 
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
+      if (e.code === 'Escape' && this._escResumeArmed) {
+        this._escResumeArmed = false;
+        if (this.engine.state === 'paused' && performance.now() - this._escDownAt < 400 && performance.now() - (this.engine._pausedAt || 0) > 300) {
+          this.engine.resume();
+        }
+      }
       if (e.code === this.settings.data.keys.forward) {
         this._forwardWasUp = true;
         this.doubleTapSprint = false;
@@ -10611,10 +10624,11 @@ class InputManager {
     });
     window.addEventListener('blur', () => {
       this.keys.clear(); this.mouseLeft = false; this.mouseRight = false; this.containerRightDragging = false;
-      this.doubleTapSprint = false; this._forwardWasUp = true;
+      this.doubleTapSprint = false; this._forwardWasUp = true; this._escResumeArmed = false;
       if (this.engine.ui) this.engine.ui.setTabListVisible(false);
     });
     document.addEventListener('fullscreenchange', () => {
+      this._escResumeArmed = false;
       if (document.fullscreenElement) this.lockKeyboard();
       else this.unlockKeyboard();
       if (this.engine.ui) this.engine.ui.updateFullscreenButtons();
@@ -12160,7 +12174,7 @@ class UIManager {
   }
 
   updateFullscreenButtons() {
-    const label = document.fullscreenElement ? 'Exit Fullscreen (F11)' : 'Enter Fullscreen (F11)';
+    const label = document.fullscreenElement ? 'Exit Fullscreen (F11 / Hold Esc)' : 'Enter Fullscreen (F11)';
     const b1 = this._el('btnPauseFullscreen'); if (b1) b1.textContent = label;
     const b2 = this._el('btnSettingsFullscreen'); if (b2) b2.textContent = label;
   }
