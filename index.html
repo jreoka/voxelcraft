@@ -4526,21 +4526,21 @@ class TextureAtlas {
           case 'pickaxe':
             plot([
               '..................',
-              '.....oooooo.......',
-              '....oHHLLMMoo.....',
-              '...oHLooooMMMo....',
-              '...oo....ocMMMo...',
-              '.........obMMMo...',
-              '........ocbMDMo...',
-              '.......ocbo.oMo...',
-              '......ocbo...oo...',
-              '.....ocbo.........',
-              '....ocbo..........',
-              '...ocbo...........',
-              '..ocbo............',
-              '..obo.............',
-              '...o..............',
-              '..................',
+              '......oooooo......',
+              '.....oHHLLMMoo....',
+              '....oHLLooLLMMo...',
+              '...oHLo....oMMMo..',
+              '...oo.....wcbMMo..',
+              '.........wcbwMMMo.',
+              '........wcbw.oMMo.',
+              '.......wcbw..oMMo.',
+              '......wcbw...oMDo.',
+              '.....wcbw....oDDo.',
+              '....wcbw.....oDDo.',
+              '...wcbw.....oDDo..',
+              '..wcbw......oDo...',
+              '..wabw......oo....',
+              '..www.............',
               '..................',
               '..................'
             ], tp);
@@ -4548,21 +4548,21 @@ class TextureAtlas {
           case 'axe':
             plot([
               '..................',
-              '........ooooo.....',
-              '.......oHHLLMo....',
+              '.......oooooo.....',
               '......oHHLLMMo....',
-              '......oHLLMMDo....',
-              '......oLMMbMDo....',
-              '.......ooobDo.....',
-              '........ocbo......',
-              '.......ocbo.......',
-              '......ocbo........',
-              '.....ocbo.........',
-              '....ocbo..........',
-              '...ocbo...........',
-              '..ocbo............',
-              '..obo.............',
-              '...o..............',
+              '.....oHHLLMMMo....',
+              '....oHLLMMcbMo....',
+              '....oLLMMcbwDo....',
+              '....oLMMcbwDo.....',
+              '.....oocbw.oo.....',
+              '......wcbw........',
+              '.....wcbw.........',
+              '....wcbw..........',
+              '...wcbw...........',
+              '..wcbw............',
+              '..wabw............',
+              '..www.............',
+              '..................',
               '..................',
               '..................'
             ], tp);
@@ -4570,21 +4570,21 @@ class TextureAtlas {
           case 'shovel':
             plot([
               '..................',
-              '...........ooo....',
-              '..........oHLLo...',
-              '.........oHLLMo...',
-              '.........oLMMDo...',
-              '.........oMMDo....',
-              '........ocbDo.....',
-              '.......ocboo......',
-              '......ocbo........',
-              '.....ocbo.........',
-              '....ocbo..........',
-              '...ocbo...........',
-              '..ocbo............',
-              '..obo.............',
-              '...o..............',
-              '..................',
+              '...........oooo...',
+              '..........oHHLLo..',
+              '.........oHHLLMMo.',
+              '.........oHLLMMDo.',
+              '.........oLLMMDDo.',
+              '.........oMMDDDoo.',
+              '........wcbDooo...',
+              '.......wcbw.......',
+              '......wcbw........',
+              '.....wcbw.........',
+              '....wcbw..........',
+              '...wcbw...........',
+              '..wcbw............',
+              '..wabw............',
+              '..www.............',
               '..................',
               '..................'
             ], tp);
@@ -4592,21 +4592,21 @@ class TextureAtlas {
           case 'hoe':
             plot([
               '..................',
-              '......ooooooo.....',
-              '.....oHHLLMMMo....',
-              '.....oHLooMMMo....',
-              '......oo.ocMDo....',
-              '.........oboo.....',
-              '........ocbo......',
-              '.......ocbo.......',
-              '......ocbo........',
-              '.....ocbo.........',
-              '....ocbo..........',
-              '...ocbo...........',
-              '..ocbo............',
-              '..obo.............',
-              '...o..............',
               '..................',
+              '.......ooooooo....',
+              '......oHHLLMMMo...',
+              '.....oHLLooMMMo...',
+              '.....oHo..oMMDo...',
+              '.....oo..wcbDDo...',
+              '........wcbw.oo...',
+              '.......wcbw.......',
+              '......wcbw........',
+              '.....wcbw.........',
+              '....wcbw..........',
+              '...wcbw...........',
+              '..wcbw............',
+              '..wabw............',
+              '..www.............',
               '..................',
               '..................'
             ], tp);
@@ -4614,21 +4614,21 @@ class TextureAtlas {
           case 'sword':
             plot([
               '..................',
-              '.............oo...',
-              '............oHHo..',
-              '...........oHHLo..',
-              '..........oHLLMo..',
-              '.........oHLLMo...',
-              '........oHLLMo....',
-              '.......oHLLMo.....',
-              '....oooHLLMo......',
-              '...oDDHLLMo.......',
-              '....ooDDoo........',
-              '....ocbDo.........',
-              '...ocbDo..........',
-              '..oDDoo...........',
-              '..oDo.............',
-              '...o..............',
+              '..............ooo.',
+              '.............oHHo.',
+              '............oHLLo.',
+              '...........oHLMDo.',
+              '..........oHLMDo..',
+              '....oo...oHLMDo...',
+              '...oLLo.oHLMDo....',
+              '...oDMooHLMDo.....',
+              '....oDMHLMDo......',
+              '.....oDMMDo.......',
+              '....wcboDMDo......',
+              '...wcbw.oDMoo.....',
+              '..oDDo...oDDo.....',
+              '..oMDo....oo......',
+              '..ooo.............',
               '..................',
               '..................'
             ], tp);
@@ -6819,7 +6819,7 @@ class VoxelMesher {
               this._emitBox(false, x, y+0.82, z, x+1, y+1, z+1, blk, col, sky, bl, flags);
             }
           } else if (id === B.LANTERN) {
-            // Proper lantern model: glowing glass body, iron cap, base trim and loop handle (sub-UV atlas zones)
+            // Proper lantern model: floor-standing (meta=0) or ceiling-hanging with iron chain (meta=1)
             const boxUV = (x0, y0, z0, x1, y1, z1, side, cap, f) => {
               const q = (r) => [r[0], r[3], r[2], r[3], r[2], r[1], r[0], r[1]];
               const su = q(side), cu = q(cap);
@@ -6832,27 +6832,44 @@ class VoxelMesher {
             };
             const BODY = [0.01, 0.01, 0.49, 0.55], VENT = [0.01, 0.57, 0.49, 0.99], IRON = [0.52, 0.01, 0.98, 0.49];
             const glow = flags | 2;
-            boxUV(x+0.3125, y,        z+0.3125, x+0.6875, y+0.4375, z+0.6875, BODY, VENT, glow);
-            boxUV(x+0.3750, y+0.4375, z+0.3750, x+0.6250, y+0.5625, z+0.6250, IRON, IRON, flags);
+            const hanging = (meta & 1) !== 0;
+            const yo = hanging ? 0.125 : 0;
+            boxUV(x+0.3125, y+yo,        z+0.3125, x+0.6875, y+yo+0.4375, z+0.6875, BODY, VENT, glow);
+            boxUV(x+0.3750, y+yo+0.4375, z+0.3750, x+0.6250, y+yo+0.5625, z+0.6250, IRON, IRON, flags);
             // Loop handle: two posts and a top bar
-            boxUV(x+0.4375, y+0.5625, z+0.4844, x+0.4688, y+0.6875, z+0.5156, IRON, IRON, flags);
-            boxUV(x+0.5313, y+0.5625, z+0.4844, x+0.5625, y+0.6875, z+0.5156, IRON, IRON, flags);
-            boxUV(x+0.4375, y+0.6875, z+0.4844, x+0.5625, y+0.7188, z+0.5156, IRON, IRON, flags);
+            boxUV(x+0.4375, y+yo+0.5625, z+0.4844, x+0.4688, y+yo+0.6875, z+0.5156, IRON, IRON, flags);
+            boxUV(x+0.5313, y+yo+0.5625, z+0.4844, x+0.5625, y+yo+0.6875, z+0.5156, IRON, IRON, flags);
+            boxUV(x+0.4375, y+yo+0.6875, z+0.4844, x+0.5625, y+yo+0.7188, z+0.5156, IRON, IRON, flags);
+            if (hanging) {
+              // Iron chain connecting hanging lantern to ceiling block
+              boxUV(x+0.4688, y+yo+0.7188, z+0.4688, x+0.5312, y+1.0, z+0.5312, IRON, IRON, flags);
+            }
           } else if (blk.shape === 'torch') {
-            const w = 0.0625, h = 0.625;
-            if (id === B.TORCH) chunk.emitters.push(ox + x + 0.5, oy + y + h + 0.05, oz + z + 0.5, 0);
+            // Floor (meta=0) or wall-mounted angled torch (1=-Z, 2=+Z, 3=-X, 4=+X)
+            const w = 0.0625;
+            const attach = meta & 7;
             const litFlags = flags | 2;
             const su = [0.406, 0.99, 0.594, 0.99, 0.594, 0.125, 0.406, 0.125];
             const tu = [0.438, 0.25, 0.562, 0.25, 0.562, 0.125, 0.438, 0.125];
-            const x0 = x + 0.5 - w, x1 = x + 0.5 + w, z0 = z + 0.5 - w, z1 = z + 0.5 + w, y1 = y + h;
-            this._emitQuad(false, [x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0], [0,1,0], tu, T.TORCH, col, sky, bl, ones, litFlags);
-            this._emitQuad(false, [x0,y,z1],[x1,y,z1],[x1,y1,z1],[x0,y1,z1], [0,0,1], su, T.TORCH, col, sky, bl, ones, litFlags);
-            this._emitQuad(false, [x1,y,z0],[x0,y,z0],[x0,y1,z0],[x1,y1,z0], [0,0,-1], su, T.TORCH, col, sky, bl, ones, litFlags);
-            this._emitQuad(false, [x1,y,z1],[x1,y,z0],[x1,y1,z0],[x1,y1,z1], [1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
-            this._emitQuad(false, [x0,y,z0],[x0,y,z1],[x0,y1,z1],[x0,y1,z0], [-1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
+            const bu = [0.438, 0.99, 0.562, 0.99, 0.562, 0.875, 0.438, 0.875];
+            let bx = x + 0.5, by = y, bz = z + 0.5, tx = x + 0.5, ty = y + 0.625, tz = z + 0.5;
+            if (attach === 1) { bx = x + 0.5; by = y + 0.18; bz = z + 0.065; tx = x + 0.5; ty = y + 0.78; tz = z + 0.30; }
+            else if (attach === 2) { bx = x + 0.5; by = y + 0.18; bz = z + 0.935; tx = x + 0.5; ty = y + 0.78; tz = z + 0.70; }
+            else if (attach === 3) { bx = x + 0.065; by = y + 0.18; bz = z + 0.5; tx = x + 0.30; ty = y + 0.78; tz = z + 0.5; }
+            else if (attach === 4) { bx = x + 0.935; by = y + 0.18; bz = z + 0.5; tx = x + 0.70; ty = y + 0.78; tz = z + 0.5; }
+            if (id === B.TORCH) chunk.emitters.push(ox + tx, oy + ty + 0.05, oz + tz, 0);
+            this._emitQuad(false, [tx-w,ty,tz+w],[tx+w,ty,tz+w],[tx+w,ty,tz-w],[tx-w,ty,tz-w], [0,1,0], tu, T.TORCH, col, sky, bl, ones, litFlags);
+            if (attach !== 0) {
+              this._emitQuad(false, [bx-w,by,bz-w],[bx+w,by,bz-w],[bx+w,by,bz+w],[bx-w,by,bz+w], [0,-1,0], bu, T.TORCH, col, sky, bl, ones, litFlags);
+            }
+            this._emitQuad(false, [bx-w,by,bz+w],[bx+w,by,bz+w],[tx+w,ty,tz+w],[tx-w,ty,tz+w], [0,0,1], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [bx+w,by,bz-w],[bx-w,by,bz-w],[tx-w,ty,tz-w],[tx+w,ty,tz-w], [0,0,-1], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [bx+w,by,bz+w],[bx+w,by,bz-w],[tx+w,ty,tz-w],[tx+w,ty,tz+w], [1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [bx-w,by,bz-w],[bx-w,by,bz+w],[tx-w,ty,tz+w],[tx-w,ty,tz-w], [-1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
           } else if (blk.shape === 'lever') {
-            // 3D Cobblestone base + angled wooden lever handle that visibly flips between OFF and ON!
+            // 3D Cobblestone base + angled wooden lever handle on floor (0), 4 walls (1..4), or ceiling (5)!
             const on = (meta & 1) !== 0;
+            const attach = (meta >> 1) & 7;
             const baseUV = [0.04, 0.96, 0.96, 0.96, 0.96, 0.54, 0.04, 0.54];
             const handleUV = [0.04, 0.46, 0.96, 0.46, 0.96, 0.04, 0.04, 0.04];
             const emitUVBox = (x0, y0, z0, x1, y1, z1, uvR, fl) => {
@@ -6863,20 +6880,57 @@ class VoxelMesher {
               this._emitQuad(false, [x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1], [1,0,0], uvR, T.LEVER, col, sky, bl, ones, fl);
               this._emitQuad(false, [x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0], [-1,0,0], uvR, T.LEVER, col, sky, bl, ones, fl);
             };
-            // Cobble base plate
-            emitUVBox(x + 0.3125, y, z + 0.25, x + 0.6875, y + 0.1875, z + 0.75, baseUV, flags);
-            // Tilted lever handle (shear along Z based on ON/OFF state)
-            const tilt = on ? 0.24 : -0.24;
             const hw = 0.055;
-            const by0 = y + 0.14, by1 = y + 0.62;
-            const bz0 = z + 0.5, bz1 = z + 0.5 + tilt;
-            const hx0 = x + 0.5 - hw, hx1 = x + 0.5 + hw;
             const lFlags = on ? (flags | 2) : flags;
-            this._emitQuad(false, [hx0,by1,bz1+hw],[hx1,by1,bz1+hw],[hx1,by1,bz1-hw],[hx0,by1,bz1-hw], [0,1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
-            this._emitQuad(false, [hx0,by0,bz0+hw],[hx1,by0,bz0+hw],[hx1,by1,bz1+hw],[hx0,by1,bz1+hw], [0,0,1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
-            this._emitQuad(false, [hx1,by0,bz0-hw],[hx0,by0,bz0-hw],[hx0,by1,bz1-hw],[hx1,by1,bz1-hw], [0,0,-1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
-            this._emitQuad(false, [hx1,by0,bz0+hw],[hx1,by0,bz0-hw],[hx1,by1,bz1-hw],[hx1,by1,bz1+hw], [1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
-            this._emitQuad(false, [hx0,by0,bz0-hw],[hx0,by0,bz0+hw],[hx0,by1,bz1+hw],[hx0,by1,bz1-hw], [-1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            if (attach === 0 || attach === 5) {
+              const ceil = attach === 5;
+              if (ceil) emitUVBox(x + 0.3125, y + 0.8125, z + 0.25, x + 0.6875, y + 1.0, z + 0.75, baseUV, flags);
+              else emitUVBox(x + 0.3125, y, z + 0.25, x + 0.6875, y + 0.1875, z + 0.75, baseUV, flags);
+              const tilt = on ? 0.24 : -0.24;
+              const y0 = ceil ? y + 0.38 : y + 0.14;
+              const y1 = ceil ? y + 0.86 : y + 0.62;
+              const z0 = ceil ? z + 0.5 + tilt : z + 0.5;
+              const z1 = ceil ? z + 0.5 : z + 0.5 + tilt;
+              const hx0 = x + 0.5 - hw, hx1 = x + 0.5 + hw;
+              this._emitQuad(false, [hx0,y1,z1+hw],[hx1,y1,z1+hw],[hx1,y1,z1-hw],[hx0,y1,z1-hw], [0,1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,y0,z0-hw],[hx1,y0,z0-hw],[hx1,y0,z0+hw],[hx0,y0,z0+hw], [0,-1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,y0,z0+hw],[hx1,y0,z0+hw],[hx1,y1,z1+hw],[hx0,y1,z1+hw], [0,0,1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx1,y0,z0-hw],[hx0,y0,z0-hw],[hx0,y1,z1-hw],[hx1,y1,z1-hw], [0,0,-1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx1,y0,z0+hw],[hx1,y0,z0-hw],[hx1,y1,z1-hw],[hx1,y1,z1+hw], [1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,y0,z0-hw],[hx0,y0,z0+hw],[hx0,y1,z1+hw],[hx0,y1,z1-hw], [-1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            } else if (attach === 1 || attach === 2) {
+              const negZ = attach === 1;
+              if (negZ) emitUVBox(x + 0.3125, y + 0.25, z, x + 0.6875, y + 0.75, z + 0.1875, baseUV, flags);
+              else emitUVBox(x + 0.3125, y + 0.25, z + 0.8125, x + 0.6875, y + 0.75, z + 1.0, baseUV, flags);
+              const tiltY = on ? -0.24 : 0.24;
+              const z0 = negZ ? z + 0.14 : z + 0.38;
+              const z1 = negZ ? z + 0.62 : z + 0.86;
+              const ya = negZ ? y + 0.5 : y + 0.5 + tiltY;
+              const yb = negZ ? y + 0.5 + tiltY : y + 0.5;
+              const hx0 = x + 0.5 - hw, hx1 = x + 0.5 + hw;
+              this._emitQuad(false, [hx0,yb-hw,z1],[hx1,yb-hw,z1],[hx1,yb+hw,z1],[hx0,yb+hw,z1], [0,0,1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx1,ya-hw,z0],[hx0,ya-hw,z0],[hx0,ya+hw,z0],[hx1,ya+hw,z0], [0,0,-1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,yb+hw,z1],[hx1,yb+hw,z1],[hx1,ya+hw,z0],[hx0,ya+hw,z0], [0,1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,ya-hw,z0],[hx1,ya-hw,z0],[hx1,yb-hw,z1],[hx0,yb-hw,z1], [0,-1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx1,yb-hw,z1],[hx1,ya-hw,z0],[hx1,ya+hw,z0],[hx1,yb+hw,z1], [1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [hx0,ya-hw,z0],[hx0,yb-hw,z1],[hx0,yb+hw,z1],[hx0,ya+hw,z0], [-1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            } else {
+              const negX = attach === 3;
+              if (negX) emitUVBox(x, y + 0.25, z + 0.3125, x + 0.1875, y + 0.75, z + 0.6875, baseUV, flags);
+              else emitUVBox(x + 0.8125, y + 0.25, z + 0.3125, x + 1.0, y + 0.75, z + 0.6875, baseUV, flags);
+              const tiltY = on ? -0.24 : 0.24;
+              const x0 = negX ? x + 0.14 : x + 0.38;
+              const x1 = negX ? x + 0.62 : x + 0.86;
+              const ya = negX ? y + 0.5 : y + 0.5 + tiltY;
+              const yb = negX ? y + 0.5 + tiltY : y + 0.5;
+              const hz0 = z + 0.5 - hw, hz1 = z + 0.5 + hw;
+              this._emitQuad(false, [x1,yb-hw,hz1],[x1,yb-hw,hz0],[x1,yb+hw,hz0],[x1,yb+hw,hz1], [1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [x0,ya-hw,hz0],[x0,ya-hw,hz1],[x0,ya+hw,hz1],[x0,ya+hw,hz0], [-1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [x0,ya+hw,hz1],[x1,yb+hw,hz1],[x1,yb+hw,hz0],[x0,ya+hw,hz0], [0,1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [x0,ya-hw,hz0],[x1,yb-hw,hz0],[x1,yb-hw,hz1],[x0,ya-hw,hz1], [0,-1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [x0,ya-hw,hz1],[x1,yb-hw,hz1],[x1,yb+hw,hz1],[x0,ya+hw,hz1], [0,0,1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+              this._emitQuad(false, [x1,yb-hw,hz0],[x0,ya-hw,hz0],[x0,ya+hw,hz0],[x1,yb+hw,hz0], [0,0,-1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            }
           } else if (blk.shape === 'redstone') {
             // Proper auto-connecting Redstone Dust (4 cardinal directions + 1-block step-up & step-down + powered glow!)
             const powered = (meta & 1) !== 0;
@@ -6951,8 +7005,14 @@ class VoxelMesher {
             this._emitBox(false, x+0.08, y, z+0.08, x+0.92, y + (pressed ? 0.03 : 0.08), z+0.92, blk, col, sky, bl, flags);
           } else if (blk.shape === 'button') {
             const pressed = (meta & 1) !== 0;
+            const attach = (meta >> 1) & 7;
             const h = pressed ? 0.06 : 0.13;
-            this._emitBox(false, x+0.30, y, z+0.36, x+0.70, y+h, z+0.64, blk, col, sky, bl, flags);
+            if (attach === 1) this._emitBox(false, x+0.30, y+0.36, z, x+0.70, y+0.64, z+h, blk, col, sky, bl, flags);
+            else if (attach === 2) this._emitBox(false, x+0.30, y+0.36, z+1-h, x+0.70, y+0.64, z+1, blk, col, sky, bl, flags);
+            else if (attach === 3) this._emitBox(false, x, y+0.36, z+0.30, x+h, y+0.64, z+0.70, blk, col, sky, bl, flags);
+            else if (attach === 4) this._emitBox(false, x+1-h, y+0.36, z+0.30, x+1, y+0.64, z+0.70, blk, col, sky, bl, flags);
+            else if (attach === 5) this._emitBox(false, x+0.30, y+1-h, z+0.36, x+0.70, y+1, z+0.64, blk, col, sky, bl, flags);
+            else this._emitBox(false, x+0.30, y, z+0.36, x+0.70, y+h, z+0.64, blk, col, sky, bl, flags);
           } else if (blk.shape === 'carpet') {
             this._emitBox(false, x, y, z, x+1, y+0.0625, z+1, blk, col, sky, bl, flags);
           }
@@ -7407,6 +7467,81 @@ class World {
       }
     }
     return Math.max(SEA_LEVEL + 1, baseH + 1);
+  }
+
+  // Check whether a block at (wx, wy, wz) with (id, meta) has valid solid support (prevents floating torches, dust, etc.)
+  hasBlockSupport(wx, wy, wz, id, meta = 0) {
+    const isFull = (sid) => {
+      const sb = BLOCKS.get(sid);
+      return !!(sb && sb.solid && !sb.liquid && sb.shape === 'cube');
+    };
+    const isFloor = (sid) => {
+      const sb = BLOCKS.get(sid);
+      return !!(sb && sb.solid && !sb.liquid && (sb.shape === 'cube' || sb.shape === 'slab' || sb.shape === 'stairs'));
+    };
+    const isTop = (sid) => {
+      const sb = BLOCKS.get(sid);
+      return !!(sb && sb.solid && !sb.liquid && (sb.shape === 'cube' || sb.shape === 'slab' || sb.shape === 'stairs' || sb.shape === 'fence'));
+    };
+    const wallSup = (attach) => {
+      if (attach === 1) return isFull(this.getBlock(wx, wy, wz - 1));
+      if (attach === 2) return isFull(this.getBlock(wx, wy, wz + 1));
+      if (attach === 3) return isFull(this.getBlock(wx - 1, wy, wz));
+      if (attach === 4) return isFull(this.getBlock(wx + 1, wy, wz));
+      return false;
+    };
+    const blk = BLOCKS.get(id);
+    if (!blk || id === B.AIR) return true;
+    if (id === B.TORCH) {
+      const attach = meta & 7;
+      if (attach === 0) return isTop(this.getBlock(wx, wy - 1, wz));
+      return wallSup(attach);
+    }
+    if (id === B.LANTERN) {
+      return (meta & 1) ? isTop(this.getBlock(wx, wy + 1, wz)) : isTop(this.getBlock(wx, wy - 1, wz));
+    }
+    if (id === B.LEVER || id === B.STONE_BUTTON) {
+      const attach = (meta >> 1) & 7;
+      if (attach === 0) return isFloor(this.getBlock(wx, wy - 1, wz));
+      if (attach === 5) return isFloor(this.getBlock(wx, wy + 1, wz));
+      return wallSup(attach);
+    }
+    if (id === B.LADDER) {
+      const lf = meta & 3;
+      if (lf === 0) return isFull(this.getBlock(wx, wy, wz + 1));
+      if (lf === 1) return isFull(this.getBlock(wx + 1, wy, wz));
+      if (lf === 2) return isFull(this.getBlock(wx, wy, wz - 1));
+      return isFull(this.getBlock(wx - 1, wy, wz));
+    }
+    if (id === B.REDSTONE_WIRE || id === B.PRESSURE_PLATE || id === B.CAMPFIRE || id === B.BED) {
+      return isFloor(this.getBlock(wx, wy - 1, wz));
+    }
+    if (id === B.CARPET_RED) {
+      const below = this.getBlock(wx, wy - 1, wz);
+      return below !== B.AIR && !BLOCKS.get(below).liquid;
+    }
+    if (blk.shape === 'door') {
+      if (meta & 8) return this.getBlock(wx, wy - 1, wz) === id;
+      return isFloor(this.getBlock(wx, wy - 1, wz));
+    }
+    if (id === B.WHEAT) return this.getBlock(wx, wy - 1, wz) === B.FARMLAND;
+    if (id === B.REEDS) {
+      const below = this.getBlock(wx, wy - 1, wz);
+      return below === B.REEDS || isFloor(below);
+    }
+    if (id === B.BAMBOO) {
+      const below = this.getBlock(wx, wy - 1, wz);
+      return below === B.BAMBOO || isFloor(below);
+    }
+    if (id === B.CACTUS) {
+      const below = this.getBlock(wx, wy - 1, wz);
+      return below === B.CACTUS || below === B.SAND || below === B.RED_SAND;
+    }
+    if (id === B.TALL_GRASS || id === B.POPPY || id === B.DANDELION || id === B.ORCHID ||
+        id === B.MUSHROOM_RED || id === B.MUSHROOM_BROWN || id === B.DEAD_BUSH || id === B.SEAGRASS) {
+      return isFloor(this.getBlock(wx, wy - 1, wz));
+    }
+    return true;
   }
 
   setBlock(wx, wy, wz, id, meta = 0, recordDelta = true) {
@@ -11303,6 +11438,56 @@ class MiningSystem {
         this.ui.refreshHotbar();
       }
     }
+
+    // Pop any neighboring blocks that depended on this block for support (torches, redstone, levers, buttons, ladders, etc.)
+    this._popUnsupportedAround([[x, y, z]]);
+  }
+
+  _popUnsupportedAround(origins) {
+    const mp = !!(this.net && this.net.connected);
+    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    const queue = [];
+    const queued = new Set();
+    const enqueueNeighbors = (bx, by, bz) => {
+      for (const [dx, dy, dz] of dirs) {
+        const nx = bx + dx, ny = by + dy, nz = bz + dz;
+        const k = `${nx},${ny},${nz}`;
+        if (!queued.has(k)) { queued.add(k); queue.push([nx, ny, nz]); }
+      }
+    };
+    for (const [ox, oy, oz] of origins) enqueueNeighbors(ox, oy, oz);
+
+    let safety = 0;
+    while (queue.length > 0 && safety++ < 256) {
+      const [nx, ny, nz] = queue.shift();
+      const nid = this.world.getBlock(nx, ny, nz);
+      if (nid === B.AIR) continue;
+      const nmeta = this.world.getMeta(nx, ny, nz);
+      if (this.world.hasBlockSupport(nx, ny, nz, nid, nmeta)) continue;
+
+      const nblk = BLOCKS.get(nid);
+      this.world.setBlock(nx, ny, nz, B.AIR, 0, true);
+      if (nblk.shape === 'door') {
+        const py2 = (nmeta & 8) ? ny - 1 : ny + 1;
+        if (this.world.getBlock(nx, py2, nz) === nid) {
+          this.world.setBlock(nx, py2, nz, B.AIR, 0, true);
+          enqueueNeighbors(nx, py2, nz);
+        }
+      }
+      if (nid === B.REDSTONE_WIRE || nid === B.LEVER || nid === B.PRESSURE_PLATE || nid === B.STONE_BUTTON) {
+        this.world.redstone.refreshAround(nx, ny, nz, this);
+      }
+      const isFlat = nblk.shape === 'redstone' || nblk.shape === 'carpet' || nblk.shape === 'pressure_plate';
+      this.particles.spawnBlockBurst(nx + 0.5, isFlat ? ny + 0.14 : ny + 0.5, nz + 0.5, nid, 10, 3.2, 0.1, isFlat ? 0.45 : 0.65, nmeta);
+      if (!mp && this.player.mode === 'survival') {
+        // Only drop once for doors (avoid dropping for top half if bottom half already handled)
+        if (nblk.shape !== 'door' || (nmeta & 8) === 0) {
+          const res = computeBlockDrops(nblk, nmeta, null);
+          for (const d of res.drops) this.spawnDrop(nx + 0.5, ny + 0.4, nz + 0.5, d.id, d.count);
+        }
+      }
+      enqueueNeighbors(nx, ny, nz);
+    }
   }
 
   _handleRightClick(held, heldIt, eye, dir, dayNight) {
@@ -11583,17 +11768,46 @@ class MiningSystem {
       const deg = ((p.yaw * 180 / Math.PI) % 360 + 360) % 360;
       let facing = deg < 45 || deg >= 315 ? 0 : deg < 135 ? 1 : deg < 225 ? 2 : 3;
 
-      // Wall-attached Ladders attach cleanly to the clicked wall face!
+      // Wall/floor/ceiling attachment metadata for torches, lanterns, levers, buttons, ladders
+      let meta = facing;
       if (blk.shape === 'ladder') {
-        if (t.nz === -1) facing = 0;      // clicked north face of block -> attach to +Z side of ladder cell
-        else if (t.nx === -1) facing = 1; // clicked west face -> attach to +X side
-        else if (t.nz === 1) facing = 2;  // clicked south face -> attach to -Z side
-        else if (t.nx === 1) facing = 3;  // clicked east face -> attach to -X side
+        if (t.ny !== 0) return; // Ladders must be placed on a side wall
+        if (t.nz === -1) meta = 0;      // clicked north face of block -> attach to +Z side of ladder cell
+        else if (t.nx === -1) meta = 1; // clicked west face -> attach to +X side
+        else if (t.nz === 1) meta = 2;  // clicked south face -> attach to -Z side
+        else if (t.nx === 1) meta = 3;  // clicked east face -> attach to -X side
+      } else if (heldIt.blockId === B.TORCH) {
+        if (t.ny === 1) meta = 0;       // floor
+        else if (t.nz === 1) meta = 1;  // -Z wall
+        else if (t.nz === -1) meta = 2; // +Z wall
+        else if (t.nx === 1) meta = 3;  // -X wall
+        else if (t.nx === -1) meta = 4; // +X wall
+        else return;                    // cannot place torch on ceiling
+      } else if (heldIt.blockId === B.LANTERN) {
+        if (t.ny === -1) meta = 1;      // hanging from ceiling
+        else if (t.ny === 1) meta = 0;  // standing on floor
+        else {
+          // Clicking side of a block: prefer floor if supported, else hang from ceiling if supported
+          if (this.world.hasBlockSupport(px, py, pz, B.LANTERN, 0)) meta = 0;
+          else if (this.world.hasBlockSupport(px, py, pz, B.LANTERN, 1)) meta = 1;
+          else return;
+        }
+      } else if (heldIt.blockId === B.LEVER || heldIt.blockId === B.STONE_BUTTON) {
+        let attach = 0;
+        if (t.ny === 1) attach = 0;       // floor
+        else if (t.ny === -1) attach = 5; // ceiling
+        else if (t.nz === 1) attach = 1;  // -Z wall
+        else if (t.nz === -1) attach = 2; // +Z wall
+        else if (t.nx === 1) attach = 3;  // -X wall
+        else if (t.nx === -1) attach = 4; // +X wall
+        meta = attach << 1;               // bit 0 = 0 (unpowered/unpressed)
+      } else {
+        if (blk.shape === 'slab' && t.ny < 0) meta |= 8;
+        if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.PRESSURE_PLATE) meta = 0;
       }
 
-      let meta = facing;
-      if (blk.shape === 'slab' && t.ny < 0) meta |= 8;
-      if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.LEVER || heldIt.blockId === B.PRESSURE_PLATE || heldIt.blockId === B.STONE_BUTTON) meta = 0;
+      // Never allow placing support-dependent blocks floating in mid-air!
+      if (!this.world.hasBlockSupport(px, py, pz, heldIt.blockId, meta)) return;
 
       this.world.setBlock(px, py, pz, heldIt.blockId, meta, true);
       if (this.net && this.net.connected) this.net.sendBlockPlace(px, py, pz, heldIt.blockId, meta);
@@ -11685,6 +11899,7 @@ class MiningSystem {
       }
       this.world.setBlock(bx, by, bz, B.AIR, 0, true);
     }
+    this._popUnsupportedAround(cells.map(([dx, dy, dz]) => [cx + dx, cy + dy, cz + dz]));
     const pdx = this.player.x - (cx + 0.5), pdy = (this.player.y + 0.9) - (cy + 0.5), pdz = this.player.z - (cz + 0.5);
     const dist = Math.hypot(pdx, pdy, pdz) || 0.1;
     if (dist < radius + 10) {

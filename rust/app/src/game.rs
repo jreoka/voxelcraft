@@ -2265,7 +2265,71 @@ impl ServerState {
                     p.pl.add_xp(res.xp);
                 }
         }
+        self.pop_unsupported_around(shard_id, &[(x, y, z)], !creative);
         self.schedule_world_save(5000);
+    }
+
+    fn pop_unsupported_around(&mut self, shard_id: u64, origins: &[(i32, i32, i32)], drop_items: bool) {
+        use std::collections::{HashSet, VecDeque};
+        const DIRS: [(i32, i32, i32); 6] = [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)];
+        let mut queue: VecDeque<(i32, i32, i32)> = VecDeque::new();
+        let mut queued: HashSet<(i32, i32, i32)> = HashSet::new();
+        for &(ox, oy, oz) in origins {
+            for &(dx, dy, dz) in &DIRS {
+                let p = (ox + dx, oy + dy, oz + dz);
+                if queued.insert(p) {
+                    queue.push_back(p);
+                }
+            }
+        }
+        let mut popped: Vec<[i32; 5]> = Vec::new();
+        let mut drops_to_spawn: Vec<(i32, i32, i32, ItemStack)> = Vec::new();
+        let mut safety = 0;
+        let mut rng = rand::thread_rng();
+        while let Some((nx, ny, nz)) = queue.pop_front() {
+            if safety >= 256 { break; }
+            safety += 1;
+            let (nid, nmeta, supported) = {
+                let sh = self.shards.get_mut(&shard_id).unwrap();
+                let nid = sh.core.get_block_ensured(nx, ny, nz, &mut self.world.tables);
+                if nid == B::AIR { continue; }
+                let nmeta = sh.core.get_meta(nx, ny, nz);
+                let sup = sh.core.has_block_support(nx, ny, nz, nid, nmeta, &mut self.world.tables);
+                (nid, nmeta, sup)
+            };
+            if supported { continue; }
+            let nblk = BLOCKS.get(nid);
+            self.shards.get_mut(&shard_id).unwrap().core.set_block(nx, ny, nz, B::AIR, 0, true, &mut self.world.tables, None);
+            popped.push([nx, ny, nz, B::AIR as i32, 0]);
+            if nblk.shape == "door" {
+                let py2 = if (nmeta & 8) != 0 { ny - 1 } else { ny + 1 };
+                let other = self.shards.get_mut(&shard_id).unwrap().core.get_block_ensured(nx, py2, nz, &mut self.world.tables);
+                if other == nid {
+                    self.shards.get_mut(&shard_id).unwrap().core.set_block(nx, py2, nz, B::AIR, 0, true, &mut self.world.tables, None);
+                    popped.push([nx, py2, nz, B::AIR as i32, 0]);
+                    for &(dx, dy, dz) in &DIRS {
+                        let p = (nx + dx, py2 + dy, nz + dz);
+                        if queued.insert(p) { queue.push_back(p); }
+                    }
+                }
+            }
+            if drop_items && (nblk.shape != "door" || (nmeta & 8) == 0) {
+                let res = compute_block_drops(nblk, nmeta, None, || rng.r#gen());
+                for d in res.drops {
+                    drops_to_spawn.push((nx, ny, nz, d));
+                }
+            }
+            for &(dx, dy, dz) in &DIRS {
+                let p = (nx + dx, ny + dy, nz + dz);
+                if queued.insert(p) { queue.push_back(p); }
+            }
+        }
+        if !popped.is_empty() {
+            self.bcast_shard(shard_id, &json!({ "type": "blocks", "list": popped }), None);
+        }
+        for (dx, dy, dz, stack) in drops_to_spawn {
+            self.spawn_drop(shard_id, dx as f64 + 0.5, dy as f64 + 0.4, dz as f64 + 0.5, stack, None, 0.4);
+        }
     }
 
     #[expect(clippy::too_many_arguments, reason = "Matches JS HANDLERS._bucketFill signature")]
@@ -2372,6 +2436,17 @@ impl ServerState {
         }
 
         if need_free && cur != B::AIR && !cur_b.liquid && !cur_b.cross {
+            self.revert_block(pid, shard_id, x, y, z, None);
+            return;
+        }
+        if need_free
+            && !self
+                .shards
+                .get_mut(&shard_id)
+                .unwrap()
+                .core
+                .has_block_support(x, y, z, id, meta, &mut self.world.tables)
+        {
             self.revert_block(pid, shard_id, x, y, z, None);
             return;
         }

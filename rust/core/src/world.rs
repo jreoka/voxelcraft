@@ -323,6 +323,116 @@ impl CoreWorld {
         self.get_meta(wx, wy, wz)
     }
 
+    pub fn has_block_support(
+        &mut self,
+        wx: i32,
+        wy: i32,
+        wz: i32,
+        id: u8,
+        meta: u8,
+        tables: &mut SharedWorldTables,
+    ) -> bool {
+        let is_full = |sid: u8| {
+            let sb = BLOCKS.get(sid);
+            sb.solid && !sb.liquid && sb.shape == "cube"
+        };
+        let is_floor = |sid: u8| {
+            let sb = BLOCKS.get(sid);
+            sb.solid && !sb.liquid && matches!(sb.shape, "cube" | "slab" | "stairs")
+        };
+        let is_top = |sid: u8| {
+            let sb = BLOCKS.get(sid);
+            sb.solid && !sb.liquid && matches!(sb.shape, "cube" | "slab" | "stairs" | "fence")
+        };
+        let wall_sup = |w: &mut Self, t: &mut SharedWorldTables, attach: u8| -> bool {
+            match attach {
+                1 => is_full(w.get_block_ensured(wx, wy, wz - 1, t)),
+                2 => is_full(w.get_block_ensured(wx, wy, wz + 1, t)),
+                3 => is_full(w.get_block_ensured(wx - 1, wy, wz, t)),
+                4 => is_full(w.get_block_ensured(wx + 1, wy, wz, t)),
+                _ => false,
+            }
+        };
+        if id == B::AIR {
+            return true;
+        }
+        let blk = BLOCKS.get(id);
+        if id == B::TORCH {
+            let attach = meta & 7;
+            return if attach == 0 {
+                is_top(self.get_block_ensured(wx, wy - 1, wz, tables))
+            } else {
+                wall_sup(self, tables, attach)
+            };
+        }
+        if id == B::LANTERN {
+            return if (meta & 1) != 0 {
+                is_top(self.get_block_ensured(wx, wy + 1, wz, tables))
+            } else {
+                is_top(self.get_block_ensured(wx, wy - 1, wz, tables))
+            };
+        }
+        if id == B::LEVER || id == B::STONE_BUTTON {
+            let attach = (meta >> 1) & 7;
+            return match attach {
+                0 => is_floor(self.get_block_ensured(wx, wy - 1, wz, tables)),
+                5 => is_floor(self.get_block_ensured(wx, wy + 1, wz, tables)),
+                _ => wall_sup(self, tables, attach),
+            };
+        }
+        if id == B::LADDER {
+            return match meta & 3 {
+                0 => is_full(self.get_block_ensured(wx, wy, wz + 1, tables)),
+                1 => is_full(self.get_block_ensured(wx + 1, wy, wz, tables)),
+                2 => is_full(self.get_block_ensured(wx, wy, wz - 1, tables)),
+                _ => is_full(self.get_block_ensured(wx - 1, wy, wz, tables)),
+            };
+        }
+        if matches!(id, B::REDSTONE_WIRE | B::PRESSURE_PLATE | B::CAMPFIRE | B::BED) {
+            return is_floor(self.get_block_ensured(wx, wy - 1, wz, tables));
+        }
+        if id == B::CARPET_RED {
+            let below = self.get_block_ensured(wx, wy - 1, wz, tables);
+            return below != B::AIR && !BLOCKS.get(below).liquid;
+        }
+        if blk.shape == "door" {
+            return if (meta & 8) != 0 {
+                self.get_block_ensured(wx, wy - 1, wz, tables) == id
+            } else {
+                is_floor(self.get_block_ensured(wx, wy - 1, wz, tables))
+            };
+        }
+        if id == B::WHEAT {
+            return self.get_block_ensured(wx, wy - 1, wz, tables) == B::FARMLAND;
+        }
+        if id == B::REEDS {
+            let below = self.get_block_ensured(wx, wy - 1, wz, tables);
+            return below == B::REEDS || is_floor(below);
+        }
+        if id == B::BAMBOO {
+            let below = self.get_block_ensured(wx, wy - 1, wz, tables);
+            return below == B::BAMBOO || is_floor(below);
+        }
+        if id == B::CACTUS {
+            let below = self.get_block_ensured(wx, wy - 1, wz, tables);
+            return matches!(below, B::CACTUS | B::SAND | B::RED_SAND);
+        }
+        if matches!(
+            id,
+            B::TALL_GRASS
+                | B::POPPY
+                | B::DANDELION
+                | B::ORCHID
+                | B::MUSHROOM_RED
+                | B::MUSHROOM_BROWN
+                | B::DEAD_BUSH
+                | B::SEAGRASS
+        ) {
+            return is_floor(self.get_block_ensured(wx, wy - 1, wz, tables));
+        }
+        true
+    }
+
     pub fn get_light_at(&mut self, wx: i32, wy: i32, wz: i32) -> (u8, u8) {
         let cx = floor_div(wx, CHUNK_SIZE);
         let cy = floor_div(wy, CHUNK_SIZE);
