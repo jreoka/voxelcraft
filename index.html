@@ -8311,6 +8311,7 @@ class Player {
     this.coyoteTimer = 0;
     this.jumpBuffer = 0;
     this.ladderJumpTimer = 0;
+    this.ladderLaunch = false;
     this.ladderCoyote = 0;
     this.fallStartY = 70;
     this.hurtCooldown = 0;
@@ -8651,6 +8652,7 @@ class PlayerPhysics {
         // Full jump off or up from a ladder — effortlessly clears a 1-block ledge!
         player.vy = 9.0;
         player.ladderJumpTimer = 0.24;
+        player.ladderLaunch = true;
         player.jumpBuffer = 0;
         player.onGround = false;
         if (audio) audio.playSound('jump');
@@ -8663,6 +8665,7 @@ class PlayerPhysics {
           // Smooth automatic vault boost when reaching top of ladder so player pops right onto the ledge!
           player.vy = 7.4;
           player.ladderJumpTimer = 0.16;
+          player.ladderLaunch = true;
         } else {
           player.vy = input.isAction('jump') ? 5.2 : 4.4;
         }
@@ -8680,15 +8683,19 @@ class PlayerPhysics {
       const jumpHeldOnGround = player.onGround && input.isAction('jump') && !player.inCobweb;
       if ((player.jumpBuffer > 0 && (player.coyoteTimer > 0 || player.ladderCoyote > 0)) || jumpHeldOnGround) {
         player.vy = 9.0;
-        // Authentic sprint-jump forward momentum impulse
+        // Sprint-jump forward impulse, hard-capped so repeated hops can't stack speed
         if (player.sprinting && mLen > 0.1) {
-          player.vx += moveX * 1.45;
-          player.vz += moveZ * 1.45;
+          player.vx += moveX * 0.9;
+          player.vz += moveZ * 0.9;
+          const cap = speed * 1.12;
+          const hs = Math.hypot(player.vx, player.vz);
+          if (hs > cap) { player.vx *= cap / hs; player.vz *= cap / hs; }
         }
         player.onGround = false;
         player.coyoteTimer = 0;
         player.ladderCoyote = 0;
         player.ladderJumpTimer = 0.22;
+        player.ladderLaunch = false;
         player.jumpBuffer = 0;
         if (audio) audio.playSound('jump');
       }
@@ -8701,7 +8708,8 @@ class PlayerPhysics {
     const preLandVy = player.vy;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(player.vx), Math.abs(player.vy), Math.abs(player.vz)) * dt / 0.22));
     const sdt = dt / steps;
-    const canStepUp = player.onGround || player.onLadder || player.ladderCoyote > 0 || player.ladderJumpTimer > 0;
+    // Mid-air step-up only applies to ladder launches; normal jumps must clear ledges on their own
+    const canStepUp = player.onGround || player.onLadder || player.ladderCoyote > 0 || (player.ladderJumpTimer > 0 && player.ladderLaunch);
 
     for (let s = 0; s < steps; s++) {
       // X movement + auto step-up (0.55m for slabs/stairs/ladder ledges) + sneak edge safety
