@@ -2574,6 +2574,7 @@ class TextureAtlas {
     this.ctx = this.canvas.getContext('2d');
     this.iconCache = new Map();
     this.iconCanvases = new Map();
+    this.tileSamples = new Array(ATLAS_TILES * ATLAS_TILES);
     this._generateAllTiles();
   }
 
@@ -2598,6 +2599,54 @@ class TextureAtlas {
     };
     fn(setPx, rng);
     ctx.putImageData(img, ox, oy);
+    this._indexTileSamples(idx, d);
+  }
+
+  // Precompute valid opaque UV regions for each tile so block-break particles never sample
+  // empty/transparent cutouts (flowers, torches, glass interior, ladders, cobwebs, lanterns, etc.)
+  _indexTileSamples(idx, d) {
+    const S = TILE_PX + 1;
+    const sat = new Int16Array(S * S);
+    let opaqueCount = 0;
+    for (let y = 0; y < TILE_PX; y++) {
+      let row = 0;
+      for (let x = 0; x < TILE_PX; x++) {
+        const ok = d[(y * TILE_PX + x) * 4 + 3] >= 80 ? 1 : 0;
+        row += ok;
+        opaqueCount += ok;
+        sat[(y + 1) * S + (x + 1)] = sat[y * S + (x + 1)] + row;
+      }
+    }
+    if (opaqueCount === TILE_PX * TILE_PX) {
+      this.tileSamples[idx] = null; // 100% opaque tile: fast path
+      return;
+    }
+    const W = 6;
+    const windows = [];
+    for (let y = 1; y <= TILE_PX - W - 1; y++) {
+      for (let x = 1; x <= TILE_PX - W - 1; x++) {
+        const cnt = sat[(y + W) * S + (x + W)] - sat[y * S + (x + W)] - sat[(y + W) * S + x] + sat[y * S + x];
+        if (cnt >= W * W - 4) windows.push((x << 8) | y);
+      }
+    }
+    if (windows.length >= 12) {
+      this.tileSamples[idx] = { mode: 'win', list: windows };
+      return;
+    }
+    const pixels = [];
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        if (d[(y * TILE_PX + x) * 4 + 3] >= 80) pixels.push((x << 8) | y);
+      }
+    }
+    if (!pixels.length) {
+      for (let y = 0; y < TILE_PX; y++) {
+        for (let x = 0; x < TILE_PX; x++) {
+          if (d[(y * TILE_PX + x) * 4 + 3] >= 20) pixels.push((x << 8) | y);
+        }
+      }
+    }
+    this.tileSamples[idx] = pixels.length ? { mode: 'px', list: pixels } : null;
   }
 
   _fillNoise(setPx, rng, base, variance, scale = 2) {
@@ -7938,9 +7987,11 @@ class WeatherSystem {
 }
 
 class ParticleSystem {
-  constructor(maxParticles = 1400) {
+  constructor(maxParticles = 1400, atlas = null, world = null) {
     this.max = maxParticles;
     this.list = [];
+    this.atlas = atlas;
+    this.world = world;
   }
 
   spawn(x, y, z, vx, vy, vz, color, size = 0.12, life = 0.7, gravity = true, extra = null) {
@@ -7970,21 +8021,69 @@ class ParticleSystem {
     }
   }
 
-  // Block-break debris that samples the block's actual texture (with biome tint for grass/leaves)
-  spawnBlockBurst(x, y, z, blockId, count = 14, speed = 4.2, size = 0.12, spread = 0.5) {
+  // Block-break debris that samples the block's actual texture (with exact biome / state tints & opaque UV sampling)
+  spawnBlockBurst(x, y, z, blockId, count = 14, speed = 4.2, size = 0.12, spread = 0.5, meta = 0) {
     const blk = BLOCKS.get(blockId);
     if (!blk || !blk.tex) { this.spawnBurst(x, y, z, [0.7, 0.7, 0.7], count, speed, size); return; }
-    const tint = blk.biomeTint === 2 ? [0.46, 0.74, 0.30] : (blk.biomeTint === 1 && blk.cross) ? [0.55, 0.80, 0.36] : [1, 1, 1];
+    const bm = (blk.biomeTint && this.world) ? this.world.getBiomeAt(Math.floor(x), Math.floor(z)) : null;
+    const isFlat = blk.shape === 'redstone' || blk.shape === 'carpet' || blk.shape === 'pressure_plate';
+    const spreadY = isFlat ? spread * 0.25 : spread;
+    const samples = this.atlas ? this.atlas.tileSamples : null;
+
     for (let i = 0; i < count; i++) {
-      const useTop = blk.biomeTint === 1 && !blk.cross ? false : Math.random() < 0.3;
-      const tile = useTop ? blk.tex[0] : (blk.tex[2] !== undefined ? blk.tex[2] : blk.tex[0]);
-      const t = (blk.biomeTint === 1 && !blk.cross) ? [1, 1, 1] : tint;
+      let tile, t = [1, 1, 1], emissive = false;
+      if (blockId === B.REDSTONE_WIRE) {
+        const powered = (meta & 1) !== 0;
+        tile = T.REDSTONE_WIRE;
+        t = powered ? [1.0, 0.14, 0.07] : [0.52, 0.04, 0.04];
+        emissive = powered;
+      } else if (blockId === B.GRASS) {
+        if (Math.random() < 0.3) {
+          tile = T.GRASS_TOP;
+          t = bm ? bm.grass : [0.46, 0.76, 0.30];
+        } else {
+          tile = T.DIRT;
+        }
+      } else if (blockId === B.WHEAT) {
+        tile = (meta & 3) < 2 ? T.WHEAT_YOUNG : T.WHEAT;
+      } else if (blockId === B.FARMLAND) {
+        tile = Math.random() < 0.4 ? (meta > 0 ? T.FARMLAND_WET : T.FARMLAND_TOP) : T.DIRT;
+      } else if (blk.shape === 'door') {
+        tile = ((meta & 8) !== 0 && blk.tex[3] !== undefined) ? blk.tex[3] : blk.tex[2];
+      } else {
+        const useTop = Math.random() < 0.3;
+        tile = useTop ? blk.tex[0] : (blk.tex[2] !== undefined ? blk.tex[2] : blk.tex[0]);
+        if (blk.biomeTint === 1) t = bm ? bm.grass : [0.55, 0.80, 0.36];
+        else if (blk.biomeTint === 2) t = bm ? bm.leaf : [0.46, 0.74, 0.30];
+        else if (blk.biomeTint === 3) t = bm ? bm.water : [0.24, 0.56, 0.90];
+      }
+
+      let su, sv, span;
+      const samp = samples ? samples[tile] : null;
+      if (!samp) {
+        su = Math.random() * 0.75 + 0.02;
+        sv = Math.random() * 0.75 + 0.02;
+        span = 0.18;
+      } else {
+        const packed = samp.list[(Math.random() * samp.list.length) | 0];
+        const px = packed >> 8, py = packed & 0xff;
+        if (samp.mode === 'win') {
+          su = (px + 0.1) / TILE_PX;
+          sv = (py + 0.1) / TILE_PX;
+          span = 5.8 / TILE_PX;
+        } else {
+          su = (px + 0.25) / TILE_PX;
+          sv = (py + 0.25) / TILE_PX;
+          span = 0.5 / TILE_PX;
+        }
+      }
+
       const shade = 0.85 + Math.random() * 0.2;
       this.spawn(
-        x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spread, z + (Math.random() - 0.5) * spread,
+        x + (Math.random() - 0.5) * spread, y + (Math.random() - 0.5) * spreadY, z + (Math.random() - 0.5) * spread,
         (Math.random() - 0.5) * speed, Math.random() * speed * 0.7 + 1.0, (Math.random() - 0.5) * speed,
         [t[0] * shade, t[1] * shade, t[2] * shade], size * (0.7 + Math.random() * 0.6), 0.5 + Math.random() * 0.6, true,
-        { tile: blk.biomeTint === 1 && !blk.cross ? T.DIRT : tile, su: Math.random(), sv: Math.random() });
+        { tile, su, sv, span, emissive });
     }
   }
 
@@ -9389,11 +9488,14 @@ class Renderer {
         const lifeK = Math.min(1, pt.life / (pt.maxLife * 0.35));
         const s = pt.size * (pt.tile !== undefined || pt.glow ? lifeK : 1);
         if (pt.tile !== undefined) {
-          // Textured 3D tumbling block-break debris: random 4x4px window of the block's own texture
+          // Textured 3D tumbling block-break debris: sampled from an opaque region of the block's texture
           const ts = 1 / ATLAS_TILES;
-          const u = (pt.tile % ATLAS_TILES) * ts + pt.su * ts * 0.75 + ts * 0.02, v = Math.floor(pt.tile / ATLAS_TILES) * ts + pt.sv * ts * 0.75 + ts * 0.02;
+          const span = pt.span !== undefined ? pt.span : 0.18;
+          const u = (pt.tile % ATLAS_TILES) * ts + pt.su * ts;
+          const v = Math.floor(pt.tile / ATLAS_TILES) * ts + pt.sv * ts;
           const R = this._rot(pt.ry || 0, pt.rx || 0, 0);
-          this._pushOrientedBox(rx, ry, rz, s, s, s, R, pt.r, pt.g, pt.b, 1, () => ({ sel: 1, u0: u, v0: v, u1: u + ts * 0.18, v1: v + ts * 0.18 }));
+          const sel = pt.emissive ? 5 : 1;
+          this._pushOrientedBox(rx, ry, rz, s, s, s, R, pt.r, pt.g, pt.b, 1, () => ({ sel, u0: u, v0: v, u1: u + ts * span, v1: v + ts * span }));
         } else if (pt.glow) {
           this._pushOrientedBox(rx, ry, rz, s, s, s, this._rot(0, 0, 0), pt.r, pt.g, pt.b, 1, () => ({ sel: 4, u0: 0, v0: 0, u1: 0, v1: 0 }));
         } else {
@@ -11071,7 +11173,7 @@ class MiningSystem {
           this.tapTimer = 0;
           this.audio.playMaterial(blk.sound, 'mine');
           // chip debris from the face being mined
-          this.particles.spawnBlockBurst(t.x + 0.5 + t.nx * 0.55, t.y + 0.5 + t.ny * 0.55, t.z + 0.5 + t.nz * 0.55, t.id, 4, 2.2, 0.09, 0.7);
+          this.particles.spawnBlockBurst(t.x + 0.5 + t.nx * 0.55, t.y + 0.5 + t.ny * 0.55, t.z + 0.5 + t.nz * 0.55, t.id, 4, 2.2, 0.09, 0.7, this.world.getMeta(t.x, t.y, t.z));
         }
         if (this.progress >= 1.0) {
           const elapsedMs = performance.now() - this.mineStartMs;
@@ -11186,7 +11288,8 @@ class MiningSystem {
     }
 
     this.audio.playMaterial(blk.sound, 'break');
-    this.particles.spawnBlockBurst(x + 0.5, y + 0.5, z + 0.5, blk.id, 22, 4.2, 0.12, 0.8);
+    const isFlat = blk.shape === 'redstone' || blk.shape === 'carpet' || blk.shape === 'pressure_plate';
+    this.particles.spawnBlockBurst(x + 0.5, isFlat ? y + 0.14 : y + 0.5, z + 0.5, blk.id, 22, 4.2, 0.12, isFlat ? 0.5 : 0.8, meta);
 
     if (this.player.mode === 'survival') {
       if (!mp) {
@@ -11571,7 +11674,7 @@ class MiningSystem {
       const bx = cx + dx, by = cy + dy, bz = cz + dz;
       const id = this.world.getBlock(bx, by, bz);
       if (id === B.AIR || id === B.BEDROCK || id === B.OBSIDIAN || id === B.OBSIDIAN_CRYING || id === B.TNT) continue;
-      if (Math.random() < 0.22) this.particles.spawnBlockBurst(bx + 0.5, by + 0.5, bz + 0.5, id, 2, 7.5, 0.14, 0.4);
+      if (Math.random() < 0.22) this.particles.spawnBlockBurst(bx + 0.5, by + 0.5, bz + 0.5, id, 2, 7.5, 0.14, 0.4, this.world.getMeta(bx, by, bz));
       // Containers spill their contents instead of deleting them
       const ent = this.world.getBlockEntity(bx, by, bz);
       if (ent && ent.slots) {
@@ -15179,7 +15282,7 @@ class GameEngine {
     this.player = null;
     this.mobMgr = null;
     this.mining = null;
-    this.particles = new ParticleSystem();
+    this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.dayNight = new DayNightSystem();
     this.weather = new WeatherSystem();
 
@@ -15318,7 +15421,7 @@ class GameEngine {
     this.weather.serverControlled = true;
     this.applyServerWeather(msg.weather || 'clear');
 
-    this.particles = new ParticleSystem();
+    this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.world.serverTicks = true;
     this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
@@ -15360,7 +15463,7 @@ class GameEngine {
 
     this.dayNight = new DayNightSystem();
     this.weather = new WeatherSystem();
-    this.particles = new ParticleSystem();
+    this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.mobMgr = new MobManager(this.world);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
@@ -15438,7 +15541,7 @@ class GameEngine {
     this.weather = new WeatherSystem();
     if (rec.weather) Object.assign(this.weather, rec.weather);
 
-    this.particles = new ParticleSystem();
+    this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.mobMgr = new MobManager(this.world);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
