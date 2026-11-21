@@ -2044,7 +2044,7 @@ class CraftingSystem {
     return true;
   }
 
-  craftFromInventory(recipe, inv, hasTable) {
+  craftFromInventory(recipe, inv, hasTable, usedOut = null) {
     if (!this.canCraftFromInventory(recipe, inv, hasTable)) return false;
     // Consume ingredients
     for (const [req, need] of recipe.ingredients) {
@@ -2053,6 +2053,7 @@ class CraftingSystem {
         const s = inv.slots[i];
         if (s && this.matchesIngredient(s.id, req)) {
           const take = Math.min(s.count, rem);
+          if (usedOut) usedOut.push([s.id, take]);
           s.count -= take;
           rem -= take;
           if (s.count <= 0) inv.slots[i] = null;
@@ -2188,6 +2189,32 @@ function rollEnchants(it, cost, rng) {
   }
   return result;
 }
+// Bookshelf power around an enchanting table: shelves in the 5x5 ring (1 block gap), at table level and one above
+function computeEnchantPower(world, x, y, z) {
+  let power = 0;
+  for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+    if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
+    for (let dy = 0; dy <= 1; dy++) {
+      if (world.getBlock(x + dx, y + dy, z + dz) !== B.BOOKSHELF) continue;
+      // Gap block between table and shelf must be air
+      const gap = world.getBlock(Math.abs(dx) === 2 ? x + Math.sign(dx) : x + dx, y + dy, Math.abs(dz) === 2 ? z + Math.sign(dz) : z + dz);
+      if (gap === B.AIR || gap === 0) power++;
+    }
+  }
+  return Math.min(15, power);
+}
+
+// The three enchanting-table offers for an item. Deterministic from (item, power, seed) so the
+// multiplayer server can recompute exactly what the player was shown.
+function computeEnchantOffers(itemSt, power, seed) {
+  const it = itemSt ? ITEMS.get(itemSt.id) : null;
+  if (!it || !enchKindsOf(it).length || itemSt.enchant) return [];
+  const rng = seededRng(seed ^ (itemSt.id * 2654435761));
+  const base = 1 + Math.floor(rng() * 8) + Math.floor(power / 2) + Math.floor(rng() * (power + 1));
+  const costs = [Math.max(1, Math.floor(base / 3)), Math.floor(base * 2 / 3) + 1, Math.max(base, power * 2)];
+  return costs.map((cost, i) => ({ cost: Math.min(30, cost), lapis: i + 1, list: rollEnchants(it, Math.min(30, cost), seededRng((seed + i * 7919 + itemSt.id) >>> 0)) }));
+}
+
 function seededRng(seed) {
   let a = seed >>> 0;
   return () => {
@@ -3543,7 +3570,8 @@ class StructureGenerator {
     const setChest = (wx, wy, wz, seed, tier) => {
       if (wx < minX || wx > maxX || wy < minY || wy > maxY || wz < minZ || wz > maxZ) return;
       chunk.setBlock(wx - minX, wy - minY, wz - minZ, B.CHEST, 0);
-      if (world && !world.getBlockEntity(wx, wy, wz)) {
+      // A recorded edit at this spot means the chest was broken/replaced: don't conjure fresh loot
+      if (world && !world.getBlockEntity(wx, wy, wz) && !world.hasModificationAt(wx, wy, wz)) {
         world.setBlockEntity(wx, wy, wz, this.generateLoot(seed, tier), false);
       }
     };
@@ -5187,6 +5215,21 @@ class FluidSystem {
       const level = this.world.getMeta(wx, wy, wz) & 7;
       const maxSpread = id === B.WATER ? 6 : 3;
 
+      // Flowing fluid (level > 0) needs a feeder: same fluid above, or a neighbour closer to a source.
+      // Without one it dries up, which cascades outward so flows recede when the source is removed.
+      if (level > 0) {
+        let fed = this.world.getBlock(wx, wy + 1, wz) === id;
+        if (!fed) {
+          for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+            if (this.world.getBlock(wx + dx, wy, wz + dz) === id && (this.world.getMeta(wx + dx, wy, wz + dz) & 7) < level) { fed = true; break; }
+          }
+        }
+        if (!fed) {
+          this.world.setBlock(wx, wy, wz, B.AIR, 0, true);
+          continue;
+        }
+      }
+
       // Water + Lava interaction check
       const other = id === B.WATER ? B.LAVA : B.WATER;
       const dirs = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,-1,0]];
@@ -5472,6 +5515,11 @@ class World {
     }
   }
 
+  hasModificationAt(wx, wy, wz) {
+    const map = this.modifications.get(`${floorDiv(wx, CHUNK_SIZE)},${floorDiv(wy, CHUNK_SIZE)},${floorDiv(wz, CHUNK_SIZE)}`);
+    return !!(map && map.has(Chunk.idx(floorMod(wx, CHUNK_SIZE), floorMod(wy, CHUNK_SIZE), floorMod(wz, CHUNK_SIZE))));
+  }
+
   getBlockEntity(wx, wy, wz) { return this.blockEntities.get(`${wx},${wy},${wz}`) || null; }
   setBlockEntity(wx, wy, wz, data, mark = true) {
     this.blockEntities.set(`${wx},${wy},${wz}`, data);
@@ -5603,6 +5651,8 @@ class World {
       if (id === B.CAMPFIRE && particles) {
         particles.spawn(wx + 0.5, wy + 0.8, wz + 0.5, (Math.random()-0.5)*0.4, 1.8, (Math.random()-0.5)*0.4, [0.62, 0.64, 0.68], 0.22, 1.9, false);
         particles.spawn(wx + 0.5, wy + 0.5, wz + 0.5, (Math.random()-0.5)*0.8, 2.4, (Math.random()-0.5)*0.8, [1.0, 0.65, 0.2], 0.08, 0.9, false);
+      } else if (this.serverTicks) {
+        // multiplayer: crop growth & farmland hydration are simulated by the server
       } else if (id === B.FARMLAND) {
         let nearW = false;
         for (let dz = -4; dz <= 4 && !nearW; dz++) {
@@ -5883,7 +5933,8 @@ class WeatherSystem {
 
   update(dt, player, world, particles, audio) {
     this.timer -= dt;
-    if (this.timer <= 0) {
+    // In multiplayer the server decides the weather (time_sync); don't roll our own changes
+    if (this.timer <= 0 && !this.serverControlled) {
       const r = Math.random();
       if (this.state === 'clear') {
         this.state = r < 0.65 ? 'rain' : 'thunder';
@@ -5934,7 +5985,8 @@ class WeatherSystem {
     }
 
     // Gentle snow accumulation on cold exposed grass/stone during snowstorms
-    if (this.activeType === 'snow' && this.intensity > 0.5) {
+    // (skipped in multiplayer: these edits are local-only and would desync from other players)
+    if (this.activeType === 'snow' && this.intensity > 0.5 && !this.serverControlled) {
       this.snowAccumTimer += dt;
       if (this.snowAccumTimer > 1.8) {
         this.snowAccumTimer = 0;
@@ -8104,6 +8156,21 @@ class Inventory {
     return count; // leftover
   }
 
+  // Whether `count` of an item would fit completely (used before asking the server for a pickup)
+  canFit(id, count, enchant) {
+    const def = ITEMS.get(id);
+    if (!def) return false;
+    const maxS = def.stack || 64;
+    let room = 0;
+    for (let i = 0; i < 36; i++) {
+      const s = this.slots[i];
+      if (!s) room += maxS;
+      else if (maxS > 1 && !enchant && !s.enchant && s.id === id) room += maxS - s.count;
+      if (room >= count) return true;
+    }
+    return false;
+  }
+
   consumeSlot(idx, amt = 1) {
     const s = this.slots[idx];
     if (!s) return;
@@ -8283,17 +8350,19 @@ class Player {
 
   addXP(amt) {
     this.xp += amt;
-    const need = 15 + this.level * 10;
-    if (this.xp >= need) {
-      this.xp -= need;
+    let leveled = false;
+    while (this.xp >= 15 + this.level * 10) {
+      this.xp -= 15 + this.level * 10;
       this.level++;
-      return true;
+      leveled = true;
     }
-    return false;
+    return leveled;
   }
 
   hurt(dmg, reason, audio, ui, kx = 0, ky = 0, kz = 0) {
     if (this.mode === 'creative' || this.dead || this.hurtCooldown > 0) return false;
+    // Multiplayer: environmental damage is reported to the server, which owns the real health value
+    if (this.onLocalDamage && !this._serverHurt) this.onLocalDamage(dmg, reason);
     const def = this.inventory.getDefense();
     const shieldMul = (this.blocking && this.inventory.armor[4]) ? 0.35 : 1.0;
     const rs = String(reason || '');
@@ -8333,7 +8402,9 @@ class Player {
     this.x = this.spawnPoint.x;
     this.z = this.spawnPoint.z;
     world.ensureImmediateChunks(this.x, this.spawnPoint.y, this.z, 2, 2);
-    this.y = Math.max(this.spawnPoint.y, world.getSurfaceHeight(Math.floor(this.x), Math.floor(this.z)) + 0.2);
+    const spY = this.spawnPoint.y;
+    const spotFree = isFinite(spY) && !PlayerPhysics.aabbCollides(world, this.x, spY, this.z, this.width * 0.5, this.height);
+    this.y = spotFree ? spY : Math.max(spY, world.getSurfaceHeight(Math.floor(this.x), Math.floor(this.z)) + 0.2);
     this.visualEyeY = this.y + this.eyeHeight;
     this.fallStartY = this.y;
   }
@@ -8791,8 +8862,10 @@ class PlayerPhysics {
         if (player.saturation > 0) player.saturation = Math.max(0, player.saturation - 0.8);
         else player.hunger = Math.max(0, player.hunger - 0.5);
       }
-      // Natural Health Regeneration when well-fed
-      if (player.hunger >= 17 && player.health < player.maxHealth) {
+      // Natural Health Regeneration when well-fed (multiplayer: the server regenerates & starves)
+      if (player.serverStats) {
+        // health/hunger come from the server's 'stats' packets
+      } else if (player.hunger >= 17 && player.health < player.maxHealth) {
         player.regenTimer += dt;
         if (player.regenTimer >= 2.2) {
           player.regenTimer = 0;
@@ -8842,7 +8915,9 @@ class MiningSystem {
     return map[id] || [0.68, 0.68, 0.66];
   }
 
-  spawnDrop(x, y, z, id, count = 1, dur = undefined, enchant = undefined) {
+  spawnDrop(x, y, z, id, count = 1, dur = undefined, enchant = undefined, netId = 0) {
+    // Multiplayer drops are shared server entities; local code never conjures items
+    if (this.net && this.net.connected && !netId) return null;
     const it = ITEMS.get(id);
     if (!it) return;
     let col = this.getBlockColor(id);
@@ -8859,7 +8934,7 @@ class MiningSystem {
       phase: Math.random() * 6.28,
       age: 0, pickupDelay: 0.4,
       onGround: false, inWater: false, groundY: undefined,
-      collecting: 0, mergeTimer: Math.random() * 0.5
+      collecting: 0, mergeTimer: Math.random() * 0.5, netId
     };
     this.drops.push(d);
     // keep memory bounded: oldest drops despawn first
@@ -8943,7 +9018,7 @@ class MiningSystem {
 
       // Merge with nearby identical stacks (only plain stackable items)
       d.mergeTimer -= dt;
-      if (d.mergeTimer <= 0 && d.dur === undefined && !d.enchant) {
+      if (d.mergeTimer <= 0 && d.dur === undefined && !d.enchant && !d.netId) {
         d.mergeTimer = 0.5;
         const it = ITEMS.get(d.id);
         const max = it ? (it.stack || 64) : 64;
@@ -8968,7 +9043,14 @@ class MiningSystem {
           const pull = 9 * dt / dist;
           d.vx += dx * pull * 2.2; d.vy += dy * pull * 2.2; d.vz += dz * pull * 2.2;
         }
-        if (dist < 1.3) {
+        if (dist < 1.3 && d.netId) {
+          // Ask the server for it; the item is added when the server confirms (pickup_ok)
+          const now = performance.now();
+          if (!(d.pickupPending > now) && p.inventory.canFit(d.id, d.count, d.enchant)) {
+            d.pickupPending = now + 1500;
+            this.net.sendPickup(d.netId);
+          }
+        } else if (dist < 1.3) {
           const left = p.inventory.addItem(d.id, d.count, d.dur, d.enchant);
           if (left < d.count) {
             this.audio.playSound('pickup');
@@ -9000,6 +9082,7 @@ class MiningSystem {
         inv.slots[inv.selected] = inv.slots[i];
         inv.slots[i] = tmp;
         this.ui.refreshHotbar();
+        if (this.net && this.net.connected) this.net.sendInventorySync();
         return;
       }
     }
@@ -9104,6 +9187,7 @@ class MiningSystem {
         if (e.t >= e.dur) {
           p.eating = null;
           if (it && it.food) {
+            if (this.net && this.net.connected) this.net.sendEat(it.id);
             p.hunger = Math.min(p.maxHunger, p.hunger + it.food);
             p.saturation = Math.min(20, p.saturation + (it.sat || 2));
             if (it.heal) p.health = Math.min(p.maxHealth, p.health + it.heal);
@@ -9151,8 +9235,11 @@ class MiningSystem {
   _breakBlock(x, y, z, blk, held, heldIt, elapsedMs = 200) {
     const meta = this.world.getMeta(x, y, z);
     // Drop Chest/Barrel/Furnace contents before removing
+    const mp = !!(this.net && this.net.connected);
     const ent = this.world.getBlockEntity(x, y, z);
-    if (ent && ent.slots) {
+    if (mp) {
+      // the server spills container contents as shared drops
+    } else if (ent && ent.slots) {
       for (const s of ent.slots) if (s) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, s.id, s.count, s.dur, s.enchant);
     } else if (ent && ent.type === 'furnace') {
       for (const s of [ent.input, ent.fuel, ent.output]) if (s) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, s.id, s.count, s.dur, s.enchant);
@@ -9179,43 +9266,10 @@ class MiningSystem {
     this.particles.spawnBlockBurst(x + 0.5, y + 0.5, z + 0.5, blk.id, 22, 4.2, 0.12, 0.8);
 
     if (this.player.mode === 'survival') {
-      const toolTier = (heldIt && heldIt.toolType === blk.tool) ? (heldIt.tier || 0) : 0;
-      const canDrop = blk.minTier === 0 || toolTier >= blk.minTier;
-      const fortuneLvl = enchLvl(held, 'Fortune');
-      const silk = enchLvl(held, 'Silk Touch') > 0;
-      const silkOk = silk && blk.shape === 'cube' && !blk.liquid && ITEMS.get(blk.id) && blk.drop !== blk.id;
-
-      if (canDrop) {
-        if (silkOk) {
-          this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, blk.id, 1);
-        } else if (blk.isLeaf) {
-          const r = Math.random();
-          if (r < 0.11) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.APPLE, 1);
-          else if (r < 0.17) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.SWEET_BERRIES, 1);
-          else if (r < 0.30) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.STICK, 1);
-        } else if (blk.id === B.TALL_GRASS) {
-          if (Math.random() < 0.28) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.WHEAT_SEEDS, 1);
-        } else if (blk.id === B.WHEAT) {
-          const mature = (meta & 3) >= 2;
-          if (mature) {
-            this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.WHEAT_ITEM, 1 + (fortuneLvl && Math.random() < 0.5 ? 1 : 0));
-            this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.WHEAT_SEEDS, 1 + Math.floor(Math.random() * 2));
-          } else {
-            this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.WHEAT_SEEDS, 1);
-          }
-        } else if (blk.id === B.GRAVEL && Math.random() < 0.22) {
-          this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, IT.FLINT, 1);
-        } else if (blk.drop > 0) {
-          let cnt = blk.dropCount || 1;
-          if (fortuneLvl > 0 && blk.id >= B.COAL_ORE && blk.id <= B.EMERALD_ORE) {
-            cnt += Math.floor(Math.random() * (fortuneLvl + 1));
-          }
-          this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, blk.drop, cnt);
-        }
-        // Grant XP for ores
-        if (!silkOk && blk.id >= B.COAL_ORE && blk.id <= B.ANCIENT_DEBRIS) {
-          if (this.player.addXP(4)) this.audio.playSound('levelup');
-        }
+      if (!mp) {
+        const res = computeBlockDrops(blk, meta, held);
+        for (const d of res.drops) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, d.id, d.count);
+        if (res.xp && this.player.addXP(res.xp)) this.audio.playSound('levelup');
       }
       if (heldIt && heldIt.maxDur) {
         this.player.inventory.damageHeldTool(1);
@@ -9260,6 +9314,7 @@ class MiningSystem {
           ent = { type: 'furnace', input: null, fuel: null, output: null, burnTime: 0, burnMax: 1, progress: 0 };
           this.world.setBlockEntity(t.x, t.y, t.z, ent);
         }
+        if (this.net && this.net.connected) this.net.sendContainerOpen(t.x, t.y, t.z);
         this.ui.openContainer('furnace', { x: t.x, y: t.y, z: t.z, ent });
         return;
       }
@@ -9269,6 +9324,7 @@ class MiningSystem {
           ent = { type: t.id === B.BARREL ? 'barrel' : 'chest', slots: new Array(27).fill(null) };
           this.world.setBlockEntity(t.x, t.y, t.z, ent);
         }
+        if (this.net && this.net.connected) this.net.sendContainerOpen(t.x, t.y, t.z);
         this.audio.playSound('chest');
         this.ui.openContainer('chest', { x: t.x, y: t.y, z: t.z, ent, title: t.id === B.BARREL ? 'Barrel' : 'Chest' });
         return;
@@ -9318,13 +9374,10 @@ class MiningSystem {
       }
       if (t.id === B.CAMPFIRE) {
         // Cook raw meat/fish/potato right on the campfire!
-        const cookMap = {
-          [IT.RAW_BEEF]: IT.STEAK, [IT.RAW_PORK]: IT.COOKED_PORK,
-          [IT.RAW_MUTTON]: IT.COOKED_MUTTON, [IT.RAW_CHICKEN]: IT.COOKED_CHICKEN,
-          [IT.RAW_FISH]: IT.COOKED_FISH, [IT.POTATO]: IT.BAKED_POTATO
-        };
+        const cookMap = CAMPFIRE_COOK;
         if (held && cookMap[held.id]) {
           const cooked = cookMap[held.id];
+          if (this.net && this.net.connected) this.net.sendCook(t.x, t.y, t.z, held.id);
           if (p.mode === 'survival') p.inventory.consumeSlot(p.inventory.selected, 1);
           p.inventory.addItem(cooked, 1);
           this.audio.playSound('sizzle');
@@ -9353,7 +9406,7 @@ class MiningSystem {
       if (heldIt.toolType === 'hoe' && (t.id === B.GRASS || t.id === B.DIRT || t.id === B.COARSE_DIRT || t.id === B.PODZOL)) {
         if (this.world.getBlock(t.x, t.y + 1, t.z) === B.AIR) {
           this.world.setBlock(t.x, t.y, t.z, B.FARMLAND, 0, true);
-          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, B.FARMLAND, 0);
+          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, B.FARMLAND, 0, 'hoe', held.id);
           p.swingActive = true;
           this.audio.playMaterial('grass', 'place');
           if (p.mode === 'survival') { p.inventory.damageHeldTool(1); this.ui.refreshHotbar(); }
@@ -9375,22 +9428,24 @@ class MiningSystem {
       if (held.id === IT.BONE_MEAL) {
         if (t.id === B.WHEAT && (this.world.getMeta(t.x, t.y, t.z) & 3) < 3) {
           this.world.setBlock(t.x, t.y, t.z, B.WHEAT, 3, true);
-          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, B.WHEAT, 3);
+          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, B.WHEAT, 3, 'bonemeal');
           this.particles.spawnBurst(t.x + 0.5, t.y + 0.6, t.z + 0.5, [0.35, 0.95, 0.42], 14, 3.2, 0.11);
           this.audio.playSound('pickup');
           if (p.mode === 'survival') { p.inventory.consumeSlot(p.inventory.selected, 1); this.ui.refreshHotbar(); }
           return;
         } else if (t.id === B.GRASS) {
           const plants = [B.TALL_GRASS, B.TALL_GRASS, B.POPPY, B.DANDELION, B.ORCHID];
+          const grown = [];
           for (let k = 0; k < 6; k++) {
             const gx = t.x + Math.floor(Math.random() * 5) - 2;
             const gz = t.z + Math.floor(Math.random() * 5) - 2;
             if (this.world.getBlock(gx, t.y, gz) === B.GRASS && this.world.getBlock(gx, t.y + 1, gz) === B.AIR) {
               const pl = plants[Math.floor(Math.random() * plants.length)];
               this.world.setBlock(gx, t.y + 1, gz, pl, 0, true);
-              if (this.net && this.net.connected) this.net.sendBlockPlace(gx, t.y + 1, gz, pl, 0);
+              grown.push([gx, t.y + 1, gz, pl]);
             }
           }
+          if (this.net && this.net.connected) this.net.sendBonemeal(t.x, t.y, t.z, grown);
           this.particles.spawnBurst(t.x + 0.5, t.y + 1.2, t.z + 0.5, [0.35, 0.95, 0.42], 14, 3.2, 0.11);
           this.audio.playSound('pickup');
           if (p.mode === 'survival') { p.inventory.consumeSlot(p.inventory.selected, 1); this.ui.refreshHotbar(); }
@@ -9417,7 +9472,14 @@ class MiningSystem {
           if (!enchLvl(held, 'Infinity')) p.inventory.consumeSlot(arrowSlot, 1);
           p.inventory.damageHeldTool(1);
         }
-        this.mobMgr.spawnArrow(eye.x + dir.x*0.5, eye.y + dir.y*0.5, eye.z + dir.z*0.5, dir.x*28, dir.y*28 + 2.2, dir.z*28, 'player', 8 * (pow ? 1 + 0.25 * (pow + 1) : 1), arrowExtra);
+        const ao = [eye.x + dir.x*0.5, eye.y + dir.y*0.5, eye.z + dir.z*0.5], av = [dir.x*28, dir.y*28 + 2.2, dir.z*28];
+        if (this.net && this.net.connected) {
+          // The server spawns the real (damaging) arrow; we show a display-only copy
+          this.net.sendShoot(ao, av);
+          this.mobMgr.spawnArrow(ao[0], ao[1], ao[2], av[0], av[1], av[2], 'visual', 0);
+        } else {
+          this.mobMgr.spawnArrow(ao[0], ao[1], ao[2], av[0], av[1], av[2], 'player', 8 * (pow ? 1 + 0.25 * (pow + 1) : 1), arrowExtra);
+        }
         this.audio.playSound('bow');
         this.ui.refreshHotbar();
         return;
@@ -9445,10 +9507,19 @@ class MiningSystem {
       }
       if (held.id === IT.BUCKET) {
         const fl = this.world.getBlock(px, py, pz);
-        if (fl === B.WATER || fl === B.LAVA) {
+        if ((fl === B.WATER || fl === B.LAVA) && (this.world.getMeta(px, py, pz) & 7) === 0) {
           this.world.setBlock(px, py, pz, B.AIR, 0, true);
-          if (this.net && this.net.connected) this.net.sendBlockBreak(px, py, pz, IT.BUCKET, 100);
-          p.inventory.slots[p.inventory.selected] = { id: fl === B.WATER ? IT.WATER_BUCKET : IT.LAVA_BUCKET, count: 1 };
+          if (this.net && this.net.connected) this.net.sendBucketFill(px, py, pz);
+          const filled = fl === B.WATER ? IT.WATER_BUCKET : IT.LAVA_BUCKET;
+          if (p.mode === 'creative') {
+            // creative keeps the empty bucket
+          } else if (held.count > 1) {
+            // stacked empty buckets: fill one, keep the rest
+            p.inventory.consumeSlot(p.inventory.selected, 1);
+            if (p.inventory.addItem(filled, 1) > 0) this.spawnDrop(p.x, p.y + 0.5, p.z, filled, 1);
+          } else {
+            p.inventory.slots[p.inventory.selected] = { id: filled, count: 1 };
+          }
           this.audio.playMaterial('water', 'place');
           this.ui.refreshHotbar();
           return;
@@ -9514,28 +9585,89 @@ class MiningSystem {
   }
 
   detonateTNT(cx, cy, cz, radius = 3.2) {
-    this.world.setBlock(cx, cy, cz, B.AIR, 0, true);
-    if (this.net && this.net.connected) this.net.sendBlockInteract(cx, cy, cz, 'tnt', Math.round(radius * 10));
-    this.audio.playSound('explosion', cx, cy, cz);
-    this.particles.spawnBurst(cx + 0.5, cy + 0.5, cz + 0.5, [1.0, 0.72, 0.28], 38, 10.5, 0.24);
-    this.particles.spawnBurst(cx + 0.5, cy + 0.6, cz + 0.5, [0.28, 0.28, 0.30], 22, 6.5, 0.28);
+    if (this.world.getBlock(cx, cy, cz) !== B.TNT) return;
+    if (this.net && this.net.connected) {
+      // Multiplayer: the server owns explosions (terrain, chain reactions, damage) and relays the result
+      this.net.sendTntIgnite(cx, cy, cz);
+      return;
+    }
+    this.explodeAt(cx, cy, cz, radius);
+  }
+
+  // Generic explosion (TNT, creepers). Singleplayer only; multiplayer explosions come from the server.
+  explodeAt(cx, cy, cz, radius = 3.2) {
+    const cells = [];
     const r = Math.ceil(radius);
     for (let dy = -r; dy <= r; dy++) {
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
-          if (dx*dx + dy*dy + dz*dz > radius * radius) continue;
+          if ((dx === 0 && dy === 0 && dz === 0) || dx*dx + dy*dy + dz*dz > radius * radius) continue;
           const bx = cx + dx, by = cy + dy, bz = cz + dz;
           const id = this.world.getBlock(bx, by, bz);
           if (id === B.AIR || id === B.BEDROCK || id === B.OBSIDIAN || id === B.OBSIDIAN_CRYING) continue;
-          if (Math.random() < 0.22) this.particles.spawnBlockBurst(bx + 0.5, by + 0.5, bz + 0.5, id, 2, 7.5, 0.14, 0.4);
-          this.world.setBlock(bx, by, bz, B.AIR, 0, true);
+          if (id === B.TNT) {
+            // Chain reaction: nearby TNT goes off a moment later instead of just vanishing
+            this.queueTNT(bx, by, bz, 0.35 + Math.random() * 0.4);
+            continue;
+          }
+          cells.push([dx, dy, dz]);
         }
       }
+    }
+    if (this.world.getBlock(cx, cy, cz) === B.TNT) this.world.setBlock(cx, cy, cz, B.AIR, 0, true);
+    this.applyExplosion(cx, cy, cz, radius, cells);
+  }
+
+  queueTNT(x, y, z, delay) {
+    if (!this._tntQueue) this._tntQueue = [];
+    if (this._tntQueue.length > 256 || this._tntQueue.some(q => q.x === x && q.y === y && q.z === z)) return;
+    this._tntQueue.push({ x, y, z, t: delay });
+  }
+
+  updateTNT(dt) {
+    const q = this._tntQueue;
+    if (!q || !q.length) return;
+    for (let i = q.length - 1; i >= 0; i--) {
+      q[i].t -= dt;
+      if (q[i].t <= 0) {
+        const e = q.splice(i, 1)[0];
+        this.detonateTNT(e.x, e.y, e.z);
+      }
+    }
+  }
+
+  // Shared by local detonations and explosions relayed from other players
+  applyExplosion(cx, cy, cz, radius, cells) {
+    this.audio.playSound('explosion', cx, cy, cz);
+    this.particles.spawnBurst(cx + 0.5, cy + 0.5, cz + 0.5, [1.0, 0.72, 0.28], 38, 10.5, 0.24);
+    this.particles.spawnBurst(cx + 0.5, cy + 0.6, cz + 0.5, [0.28, 0.28, 0.30], 22, 6.5, 0.28);
+    const mp = !!(this.net && this.net.connected);
+    for (const [dx, dy, dz] of cells) {
+      const bx = cx + dx, by = cy + dy, bz = cz + dz;
+      const id = this.world.getBlock(bx, by, bz);
+      if (id === B.AIR || id === B.BEDROCK || id === B.OBSIDIAN || id === B.OBSIDIAN_CRYING || id === B.TNT) continue;
+      if (Math.random() < 0.22) this.particles.spawnBlockBurst(bx + 0.5, by + 0.5, bz + 0.5, id, 2, 7.5, 0.14, 0.4);
+      // Containers spill their contents instead of deleting them
+      const ent = this.world.getBlockEntity(bx, by, bz);
+      if (ent && ent.slots) {
+        for (const s of ent.slots) if (s) this.spawnDrop(bx + 0.5, by + 0.4, bz + 0.5, s.id, s.count, s.dur, s.enchant);
+      } else if (ent && ent.type === 'furnace') {
+        for (const s of [ent.input, ent.fuel, ent.output]) if (s) this.spawnDrop(bx + 0.5, by + 0.4, bz + 0.5, s.id, s.count, s.dur, s.enchant);
+      }
+      this.world.setBlock(bx, by, bz, B.AIR, 0, true);
     }
     const pdx = this.player.x - (cx + 0.5), pdy = (this.player.y + 0.9) - (cy + 0.5), pdz = this.player.z - (cz + 0.5);
     const dist = Math.hypot(pdx, pdy, pdz) || 0.1;
     if (dist < radius + 10) {
       this.player.shake = Math.max(this.player.shake, clamp((1 - dist / (radius + 10)) * 0.9, 0.15, 0.85));
+    }
+    if (mp) {
+      // Damage to players and mobs is computed by the server; only creative players get a local push
+      if (dist < radius + 3.5 && this.player.mode === 'creative') {
+        const k = 1 - dist / (radius + 3.5);
+        this.player.vx += (pdx / dist) * k * 7; this.player.vy += Math.max(4.5, (pdy / dist) * k * 10 + 5.5) * 0.4; this.player.vz += (pdz / dist) * k * 7;
+      }
+      return;
     }
     if (dist < radius + 3.5) {
       const k = 1 - dist / (radius + 3.5);
@@ -9564,6 +9696,61 @@ class MiningSystem {
 // WILDLIFE & HOSTILE MOB AI + COMBAT SYSTEM
 // ============================================================================
 
+// Wandering Trader offers and Campfire cooking (shared with the multiplayer server)
+const TRADER_TRADES = [
+  { give: [IT.WHEAT_ITEM, 12], get: [IT.EMERALD, 1] },
+  { give: [IT.COAL, 14], get: [IT.EMERALD, 1] },
+  { give: [IT.EMERALD, 2], get: [IT.GOLDEN_APPLE, 1] },
+  { give: [IT.EMERALD, 3], get: [IT.DIAMOND, 1] },
+  { give: [IT.EMERALD, 1], get: [B.SLIME_BLOCK, 2] },
+  { give: [IT.EMERALD, 2], get: [B.SEA_LANTERN, 4] },
+  { give: [IT.EMERALD, 2], get: [B.CHERRY_PLANKS, 16] },
+  { give: [IT.EMERALD, 1], get: [IT.ARROW, 16] }
+];
+const CAMPFIRE_COOK = {
+  [IT.RAW_BEEF]: IT.STEAK, [IT.RAW_PORK]: IT.COOKED_PORK,
+  [IT.RAW_MUTTON]: IT.COOKED_MUTTON, [IT.RAW_CHICKEN]: IT.COOKED_CHICKEN,
+  [IT.RAW_FISH]: IT.COOKED_FISH, [IT.POTATO]: IT.BAKED_POTATO
+};
+const WOOL_PALETTE = [[0.94,0.94,0.92],[0.82,0.80,0.78],[0.45,0.34,0.26],[0.24,0.24,0.28]];
+
+// What a broken block drops (shared by singleplayer and the multiplayer server)
+function computeBlockDrops(blk, meta, held, rnd = Math.random) {
+  const out = { drops: [], xp: 0 };
+  const heldIt = held ? ITEMS.get(held.id) : null;
+  const toolTier = (heldIt && heldIt.toolType === blk.tool) ? (heldIt.tier || 0) : 0;
+  if (!(blk.minTier === 0 || toolTier >= blk.minTier)) return out;
+  const fortuneLvl = enchLvl(held, 'Fortune');
+  const silk = enchLvl(held, 'Silk Touch') > 0;
+  const silkOk = silk && blk.shape === 'cube' && !blk.liquid && ITEMS.get(blk.id) && blk.drop !== blk.id;
+  const add = (id, count) => { if (count > 0) out.drops.push({ id, count }); };
+  if (silkOk) {
+    add(blk.id, 1);
+  } else if (blk.isLeaf) {
+    const r = rnd();
+    if (r < 0.11) add(IT.APPLE, 1);
+    else if (r < 0.17) add(IT.SWEET_BERRIES, 1);
+    else if (r < 0.30) add(IT.STICK, 1);
+  } else if (blk.id === B.TALL_GRASS) {
+    if (rnd() < 0.28) add(IT.WHEAT_SEEDS, 1);
+  } else if (blk.id === B.WHEAT) {
+    if ((meta & 3) >= 2) {
+      add(IT.WHEAT_ITEM, 1 + (fortuneLvl && rnd() < 0.5 ? 1 : 0));
+      add(IT.WHEAT_SEEDS, 1 + Math.floor(rnd() * 2));
+    } else {
+      add(IT.WHEAT_SEEDS, 1);
+    }
+  } else if (blk.id === B.GRAVEL && rnd() < 0.22) {
+    add(IT.FLINT, 1);
+  } else if (blk.drop > 0) {
+    let cnt = blk.dropCount || 1;
+    if (fortuneLvl > 0 && blk.id >= B.COAL_ORE && blk.id <= B.EMERALD_ORE) cnt += Math.floor(rnd() * (fortuneLvl + 1));
+    add(blk.drop, cnt);
+  }
+  if (!silkOk && blk.id >= B.COAL_ORE && blk.id <= B.ANCIENT_DEBRIS) out.xp = 4;
+  return out;
+}
+
 const MOB_DEFS = {
   cow:      { hp: 10, spd: 2.1, hostile: false, drops: [[IT.RAW_BEEF, 2], [IT.LEATHER, 1]], xp: 3, h: 1.3 },
   pig:      { hp: 10, spd: 2.3, hostile: false, drops: [[IT.RAW_PORK, 2]], xp: 3, h: 1.0 },
@@ -9585,6 +9772,7 @@ const MOB_DEFS = {
   stalker:  { hp: 28, spd: 3.4, hostile: true, dmg: 5, underground: true, drops: [[IT.AMETHYST_SHARD, 2], [IT.DIAMOND, 1]], xp: 14, h: 1.9 },
   golem:    { hp: 55, spd: 2.2, hostile: true, dmg: 7, underground: true, drops: [[IT.IRON_INGOT, 4], [IT.EMERALD, 1]], xp: 22, h: 2.5 }
 };
+const MOB_TYPES = Object.keys(MOB_DEFS); // stable index for network snapshots
 
 class MobManager {
   constructor(world) {
@@ -9598,7 +9786,7 @@ class MobManager {
   spawnMob(type, x, y, z, opts = {}) {
     const def = MOB_DEFS[type];
     if (!def) return null;
-    const woolPalette = [[0.94,0.94,0.92],[0.82,0.80,0.78],[0.45,0.34,0.26],[0.24,0.24,0.28]];
+    const woolIdx = Number.isInteger(opts.wool) ? opts.wool : Math.floor(Math.random() * WOOL_PALETTE.length);
     const m = {
       id: this.nextId++, type, x, y, z, vx: 0, vy: 0, vz: 0,
       yaw: Math.random() * Math.PI * 2,
@@ -9612,7 +9800,7 @@ class MobManager {
       fleeTimer: 0, loveTimer: 0, baby: !!opts.baby,
       arctic: !!opts.arctic,
       dying: false, deathTimer: 0, wasInWater: false,
-      woolColor: woolPalette[Math.floor(Math.random() * woolPalette.length)]
+      woolIdx, woolColor: WOOL_PALETTE[woolIdx] || WOOL_PALETTE[0]
     };
     m.targetYaw = m.yaw;
     this.mobs.push(m);
@@ -9649,23 +9837,29 @@ class MobManager {
     if (!best) return false;
     const held = player.inventory.getHeld();
     const it = held ? ITEMS.get(held.id) : null;
-    let dmg = (it && it.dmg) ? it.dmg : 2;
-    const bestDef = MOB_DEFS[best.type];
-    dmg += enchLvl(held, 'Sharpness') * 1.25;
-    if (bestDef && bestDef.burnsDay) dmg += enchLvl(held, 'Smite') * 2.5;
     const crit = !player.onGround && player.vy < -1.0;
-    if (crit) dmg = Math.round(dmg * 1.5);
-    const kbMul = 1 + enchLvl(held, 'Knockback') * 0.9;
-    best.lootingLvl = enchLvl(held, 'Looting');
-    const fa = enchLvl(held, 'Fire Aspect');
-    if (fa > 0) best.fireTimer = Math.max(best.fireTimer || 0, fa * 4);
-    if (enchList(held).length) particles.spawnBurst(best.x, best.y + bestDef.h * 0.6, best.z, [0.66, 0.42, 1.0], 8, 2.6, 0.08);
-    this._damageMob(best, dmg, dir.x * 6 * kbMul, 4.8 + (kbMul - 1) * 1.5, dir.z * 6 * kbMul, player, particles, audio, ui);
+    this.applyMelee(best, player, held, dir, crit, particles, audio, ui);
     if (it && it.maxDur && player.mode === 'survival') {
       player.inventory.damageHeldTool(1);
       ui.refreshHotbar();
     }
     return true;
+  }
+
+  // Melee damage from a held item (also used by the multiplayer server for authoritative hits)
+  applyMelee(m, player, held, dir, crit, particles, audio, ui) {
+    const it = held ? ITEMS.get(held.id) : null;
+    let dmg = (it && it.dmg) ? it.dmg : 2;
+    const def = MOB_DEFS[m.type];
+    dmg += enchLvl(held, 'Sharpness') * 1.25;
+    if (def && def.burnsDay) dmg += enchLvl(held, 'Smite') * 2.5;
+    if (crit) dmg = Math.round(dmg * 1.5);
+    const kbMul = 1 + enchLvl(held, 'Knockback') * 0.9;
+    m.lootingLvl = enchLvl(held, 'Looting');
+    const fa = enchLvl(held, 'Fire Aspect');
+    if (fa > 0) m.fireTimer = Math.max(m.fireTimer || 0, fa * 4);
+    if (enchList(held).length) particles.spawnBurst(m.x, m.y + def.h * 0.6, m.z, [0.66, 0.42, 1.0], 8, 2.6, 0.08);
+    this._damageMob(m, dmg, dir.x * 6 * kbMul, 4.8 + (kbMul - 1) * 1.5, dir.z * 6 * kbMul, player, particles, audio, ui);
   }
 
   tryFeedAnimal(player, eye, dir, particles, audio) {
@@ -9764,16 +9958,24 @@ class MobManager {
     }
   }
 
-  update(dt, player, dayNight, difficulty, particles, audio, ui) {
+  // `players` is one player (singleplayer) or an array (the multiplayer server): every mob reacts to
+  // the nearest valid player, and spawning/caps are evaluated around each player separately.
+  update(dt, players, dayNight, difficulty, particles, audio, ui) {
+    const list = (Array.isArray(players) ? players : [players]).filter(Boolean);
+    if (!list.length) return;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 2.6;
-      const passiveCount = this.mobs.filter(m => !m.hostile).length;
-      const hostileCount = this.mobs.filter(m => m.hostile).length;
       const maxHostile = difficulty === 'peaceful' ? 0 : difficulty === 'easy' ? 7 : difficulty === 'hard' ? 16 : 11;
-
-      if (passiveCount < 14) this._trySpawn(player, false, dayNight);
-      if (hostileCount < maxHostile) this._trySpawn(player, true, dayNight);
+      for (const pl of list) {
+        let passiveCount = 0, hostileCount = 0;
+        for (const m of this.mobs) {
+          if (Math.abs(m.x - pl.x) > 64 || Math.abs(m.z - pl.z) > 64) continue;
+          if (m.hostile) hostileCount++; else passiveCount++;
+        }
+        if (passiveCount < 14) this._trySpawn(pl, false, dayNight);
+        if (hostileCount < maxHostile) this._trySpawn(pl, true, dayNight);
+      }
     }
 
     const dmgScale = difficulty === 'easy' ? 0.7 : difficulty === 'hard' ? 1.5 : 1.0;
@@ -9781,13 +9983,22 @@ class MobManager {
     for (let i = this.mobs.length - 1; i >= 0; i--) {
       const m = this.mobs[i];
       const def = MOB_DEFS[m.type];
+      // Nearest player overall (for despawning) and nearest attackable one (for hostile AI)
+      let player = list[0], dist = Infinity, target = null, tDist = Infinity;
+      for (const pl of list) {
+        const d = Math.hypot(pl.x - m.x, pl.y - m.y, pl.z - m.z);
+        if (d < dist) { dist = d; player = pl; }
+        if (!pl.dead && pl.mode === 'survival' && d < tDist) { tDist = d; target = pl; }
+      }
+      if (m.hostile && target && tDist < 24) { player = target; dist = tDist; }
       const dx = player.x - m.x, dy = player.y - m.y, dz = player.z - m.z;
-      const dist = Math.hypot(dx, dy, dz);
 
       if (dist > 74 || (m.hostile && difficulty === 'peaceful')) {
         this.mobs.splice(i, 1);
         continue;
       }
+      // Freeze mobs whose chunk isn't loaded, so they never fall through missing terrain
+      if (!this.world.getChunk(floorDiv(Math.floor(m.x), CHUNK_SIZE), floorDiv(Math.floor(m.y), CHUNK_SIZE), floorDiv(Math.floor(m.z), CHUNK_SIZE))) continue;
 
       // Smooth death tip-over animation before puffing into smoke
       if (m.dying) {
@@ -9848,7 +10059,7 @@ class MobManager {
             if (m.fuse < dt * 1.5) audio.playSound('sizzle');
             if (m.fuse >= 1.45) {
               this.mobs.splice(i, 1);
-              if (player.miningRef) player.miningRef.detonateTNT(Math.floor(m.x), Math.floor(m.y), Math.floor(m.z), 3.0);
+              if (player.miningRef) player.miningRef.explodeAt(Math.floor(m.x), Math.floor(m.y), Math.floor(m.z), 3.0);
               continue;
             }
           } else {
@@ -9998,7 +10209,9 @@ class MobManager {
         if (audio) audio.playMaterial('wood', 'step');
         continue;
       }
+      if (pr.owner === 'visual') continue; // multiplayer display-only arrow
       if (pr.owner === 'player') {
+        const shooter = pr.shooter || list[0];
         let hit = false;
         for (const m of this.mobs) {
           if (m.dying) continue;
@@ -10006,15 +10219,18 @@ class MobManager {
           if (Math.hypot(m.x - pr.x, m.y + def.h * 0.5 - pr.y, m.z - pr.z) < 0.95) {
             const pm = 1 + (pr.punch || 0) * 0.8;
             if (pr.flame) m.fireTimer = Math.max(m.fireTimer || 0, 5);
-            this._damageMob(m, pr.dmg, pr.vx * 0.25 * pm, 3.8 + (pr.punch || 0), pr.vz * 0.25 * pm, player, particles, audio, ui);
+            this._damageMob(m, pr.dmg, pr.vx * 0.25 * pm, 3.8 + (pr.punch || 0), pr.vz * 0.25 * pm, shooter, particles, audio, ui);
             hit = true; break;
           }
         }
         if (hit) this.projectiles.splice(i, 1);
-      } else if (Math.hypot(player.x - pr.x, player.y + 0.9 - pr.y, player.z - pr.z) < 0.75) {
-        const spd = Math.hypot(pr.vx, pr.vz) || 1;
-        player.hurt(pr.dmg, 'Shot by a Skeleton.', audio, ui, (pr.vx / spd) * 5.2, 3.6, (pr.vz / spd) * 5.2);
-        this.projectiles.splice(i, 1);
+      } else {
+        const victim = list.find(pl => !pl.dead && Math.hypot(pl.x - pr.x, pl.y + 0.9 - pr.y, pl.z - pr.z) < 0.75);
+        if (victim) {
+          const spd = Math.hypot(pr.vx, pr.vz) || 1;
+          victim.hurt(pr.dmg, 'Shot by a Skeleton.', audio, ui, (pr.vx / spd) * 5.2, 3.6, (pr.vz / spd) * 5.2);
+          this.projectiles.splice(i, 1);
+        }
       }
     }
   }
@@ -10440,7 +10656,12 @@ class InputManager {
 
   requestLock() {
     if (this.canvas.requestPointerLock) {
-      try { this.canvas.requestPointerLock(); } catch {}
+      // Modern browsers return a promise that rejects without a user gesture (e.g. after a
+      // network-triggered world join); swallow that so it doesn't surface as an unhandled error
+      try {
+        const r = this.canvas.requestPointerLock();
+        if (r && typeof r.catch === 'function') r.catch(() => {});
+      } catch {}
     }
   }
 
@@ -11237,29 +11458,32 @@ class UIManager {
       const es = this.enchSlots[i];
       if (es) {
         const left = inv.addItem(es.id, es.count, es.dur, es.enchant);
-        if (left > 0 && this.engine.mining) {
-          const p = this.engine.player;
-          this.engine.mining.spawnDrop(p.x, p.y + 1.2, p.z, es.id, left, es.dur, es.enchant);
-        }
+        if (left > 0) this.engine.throwItem({ ...es, count: left }, left);
         this.enchSlots[i] = null;
       }
     }
     for (let i = 0; i < 9; i++) {
-      if (this.craftGrid[i]) {
-        inv.addItem(this.craftGrid[i].id, this.craftGrid[i].count, this.craftGrid[i].dur, this.craftGrid[i].enchant);
+      const g = this.craftGrid[i];
+      if (g) {
+        const left = inv.addItem(g.id, g.count, g.dur, g.enchant);
+        if (left > 0) this.engine.throwItem({ ...g, count: left }, left);
         this.craftGrid[i] = null;
       }
     }
     if (this.cursorStack) {
-      inv.addItem(this.cursorStack.id, this.cursorStack.count, this.cursorStack.dur, this.cursorStack.enchant);
+      const c = this.cursorStack;
+      const left = inv.addItem(c.id, c.count, c.dur, c.enchant);
+      if (left > 0) this.engine.throwItem({ ...c, count: left }, left);
       this.cursorStack = null;
     }
-    // Sync container block entity & player inventory to server in Multiplayer
+    // Multiplayer: commit container + inventory together so the server can check nothing was duplicated
     if (this.engine.isMultiplayer()) {
-      if (this.containerRef && this.containerRef.ent) {
-        this.engine.net.sendBlockEntity(this.containerRef.x, this.containerRef.y, this.containerRef.z, this.containerRef.ent);
+      const ref = this.containerRef;
+      if (ref && ref.ent && (ref.ent.type === 'chest' || ref.ent.type === 'barrel' || ref.ent.type === 'furnace')) {
+        this.engine.net.sendContainerCommit(ref.x, ref.y, ref.z, ref.ent);
+      } else {
+        this.engine.net.sendInventorySync();
       }
-      this.engine.net.sendInventorySync();
     }
     this._updateCursorEl();
     this._el('itemTooltip').style.display = 'none';
@@ -11419,7 +11643,10 @@ class UIManager {
     const cur = this.hoveredSlot.getStack();
     if (!cur) return;
     const amt = fullStack ? cur.count : 1;
-    this.engine.throwItem(cur, amt);
+    const zone = this.hoveredSlot.opts.zone;
+    const ref = this.containerRef;
+    const src = (ref && (zone === 'chest' || zone === 'furnace')) ? { x: ref.x, y: ref.y, z: ref.z } : null;
+    this.engine.throwItem(cur, amt, src);
     cur.count -= amt;
     if (cur.count <= 0) this.hoveredSlot.setStack(null);
     this.engine.audio.playSound('click');
@@ -11753,16 +11980,24 @@ class UIManager {
       this._bindSlotEvents(outEl, () => outStack, () => {}, {
         onCraftTake: (bulk) => {
           if (!match) return;
+          const used = new Map();
+          let crafts = 0;
           const consumeGrid = () => {
+            crafts++;
             for (let i = 0; i < n; i++) {
               if (this.craftGrid[i]) {
+                used.set(this.craftGrid[i].id, (used.get(this.craftGrid[i].id) || 0) + 1);
                 this.craftGrid[i].count--;
                 if (this.craftGrid[i].count <= 0) this.craftGrid[i] = null;
               }
             }
           };
+          const report = () => {
+            if (crafts > 0 && this.engine.isMultiplayer()) this.engine.net.sendCraft(CRAFTING.recipes.indexOf(match), crafts, [...used]);
+          };
           if (bulk) {
             // Shift-click: craft as many as possible straight into the inventory
+            let overflow = 0;
             for (let t = 0; t < 64; t++) {
               const curMatch = CRAFTING.matchGrid(this.craftGrid.slice(0, n), hasTable);
               if (!curMatch || curMatch.outId !== match.outId) break;
@@ -11770,12 +12005,14 @@ class UIManager {
               if (left > 0) { // inventory full: put the overflow back on the cursor or the ground
                 if (!this.cursorStack) this.cursorStack = { id: curMatch.outId, count: left };
                 else if (this.cursorStack.id === curMatch.outId && !this.cursorStack.enchant) this.cursorStack.count += left;
-                else this.engine.throwItem({ id: curMatch.outId, count: left }, left);
+                else overflow = left;
                 consumeGrid();
                 break;
               }
               consumeGrid();
             }
+            report(); // the server credits the output before we throw any overflow
+            if (overflow > 0) this.engine.throwItem({ id: match.outId, count: overflow }, overflow);
           } else {
             // Normal click: result goes onto the cursor (stacking with a matching held item)
             const maxS = this._maxStackOf(match.outId);
@@ -11788,6 +12025,7 @@ class UIManager {
               this.cursorStack.count += match.outCount;
             } else return;
             consumeGrid();
+            report();
             this._updateCursorEl();
           }
           this.engine.audio.playSound('pickup');
@@ -11834,22 +12072,8 @@ class UIManager {
       const canEnch = !!(it && enchKindsOf(it).length && !itemSt.enchant);
       const lapisCnt = lapisSt ? lapisSt.count : 0;
 
-      // Bookshelf power: shelves in the 5x5 ring around the table (1 block gap), at table level and one above
-      let power = 0;
       const ref = this.containerRef;
-      if (ref && ref.enchTable) {
-        const w = this.engine.world;
-        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
-          if (Math.abs(dx) !== 2 && Math.abs(dz) !== 2) continue;
-          for (let dy = 0; dy <= 1; dy++) {
-            if (w.getBlock(ref.x + dx, ref.y + dy, ref.z + dz) !== B.BOOKSHELF) continue;
-            // Gap block between table and shelf must be air
-            const gap = w.getBlock(Math.abs(dx) === 2 ? ref.x + Math.sign(dx) : ref.x + dx, ref.y + dy, Math.abs(dz) === 2 ? ref.z + Math.sign(dz) : ref.z + dz);
-            if (gap === B.AIR || gap === 0) power++;
-          }
-        }
-      }
-      power = Math.min(15, power);
+      const power = (ref && ref.enchTable) ? computeEnchantPower(this.engine.world, ref.x, ref.y, ref.z) : 0;
       if (p.enchSeed === undefined) p.enchSeed = (Math.random() * 4294967296) >>> 0;
 
       const wrap = document.createElement('div');
@@ -11898,13 +12122,7 @@ class UIManager {
         return out.trim();
       };
 
-      let offers = [];
-      if (canEnch) {
-        const rng = seededRng(p.enchSeed ^ (itemSt.id * 2654435761));
-        const base = 1 + Math.floor(rng() * 8) + Math.floor(power / 2) + Math.floor(rng() * (power + 1));
-        const costs = [Math.max(1, Math.floor(base / 3)), Math.floor(base * 2 / 3) + 1, Math.max(base, power * 2)];
-        offers = costs.map((cost, i) => ({ cost: Math.min(30, cost), lapis: i + 1, list: rollEnchants(it, Math.min(30, cost), seededRng((p.enchSeed + i * 7919 + itemSt.id) >>> 0)) }));
-      }
+      const offers = canEnch ? computeEnchantOffers(itemSt, power, p.enchSeed) : [];
 
       for (let i = 0; i < 3; i++) {
         const off = offers[i];
@@ -11937,8 +12155,13 @@ class UIManager {
             ls.count -= off.lapis;
             if (ls.count <= 0) this.enchSlots[1] = null;
           }
+          if (this.engine.isMultiplayer()) {
+            this.engine.net.sendEnchant(ref.x, ref.y, ref.z, i, st.id, st.dur);
+            p.enchSeedPending = true; // a fresh seed arrives in the next 'stats' packet
+          } else {
+            p.enchSeed = (Math.random() * 4294967296) >>> 0;
+          }
           st.enchant = makeEnchant(off.list);
-          p.enchSeed = (Math.random() * 4294967296) >>> 0;
           this.engine.audio.playSound('enchant');
           const pp = this.engine.player;
           if (this.engine.particles) this.engine.particles.spawnBurst(pp.x, pp.y + 1.4, pp.z, [0.72, 0.45, 1.0], 18, 2.4, 0.1);
@@ -11960,16 +12183,7 @@ class UIManager {
         : `Your level: ${p.level}${creative ? ' (Creative: free)' : ''}. Green number = level required; purple = Lapis & levels spent.`;
       top.appendChild(hint);
     } else if (type === 'trader') {
-      const trades = [
-        { give: [IT.WHEAT_ITEM, 12], get: [IT.EMERALD, 1] },
-        { give: [IT.COAL, 14], get: [IT.EMERALD, 1] },
-        { give: [IT.EMERALD, 2], get: [IT.GOLDEN_APPLE, 1] },
-        { give: [IT.EMERALD, 3], get: [IT.DIAMOND, 1] },
-        { give: [IT.EMERALD, 1], get: [B.SLIME_BLOCK, 2] },
-        { give: [IT.EMERALD, 2], get: [B.SEA_LANTERN, 4] },
-        { give: [IT.EMERALD, 2], get: [B.CHERRY_PLANKS, 16] },
-        { give: [IT.EMERALD, 1], get: [IT.ARROW, 16] }
-      ];
+      const trades = TRADER_TRADES;
       const list = document.createElement('div');
       list.style.cssText = 'display:flex;flex-direction:column;gap:7px;width:100%;max-height:220px;overflow-y:auto';
       for (const tr of trades) {
@@ -11985,6 +12199,7 @@ class UIManager {
         b.textContent = 'Trade';
         b.disabled = !can;
         b.onclick = () => {
+          if (this.engine.isMultiplayer()) this.engine.net.sendTrade(TRADER_TRADES.indexOf(tr));
           let rem = tr.give[1];
           for (let i = 0; i < 36 && rem > 0; i++) {
             if (inv.slots[i] && inv.slots[i].id === tr.give[0]) {
@@ -12100,9 +12315,15 @@ class UIManager {
       row.addEventListener('click', (e) => {
         const maxRuns = e.shiftKey ? Math.max(1, Math.floor((outIt.stack || 64) / r.outCount)) : 1;
         let crafted = 0;
+        const used = [];
         for (let k = 0; k < maxRuns; k++) {
-          if (!CRAFTING.craftFromInventory(r, inv, hasTable)) break;
+          if (!CRAFTING.craftFromInventory(r, inv, hasTable, used)) break;
           crafted++;
+        }
+        if (crafted > 0 && this.engine.isMultiplayer()) {
+          const agg = new Map();
+          for (const [id, c] of used) agg.set(id, (agg.get(id) || 0) + c);
+          this.engine.net.sendCraft(CRAFTING.recipes.indexOf(r), crafted, [...agg]);
         }
         if (crafted > 0) {
           this.engine.audio.playSound('pickup');
@@ -12419,6 +12640,125 @@ class UIManager {
 // MULTIPLAYER WEBSOCKET CLIENT (SYNC, INTERPOLATION, PVP, ANTI-CHEAT RECONCILIATION)
 // ============================================================================
 
+// Multiplayer view of the server's mobs: the server simulates them, we interpolate and animate snapshots.
+// Inherits MobManager so the renderer, trader detection and melee targeting work unchanged.
+class RemoteMobView extends MobManager {
+  constructor(world, net) {
+    super(world);
+    this.net = net;
+    this.byId = new Map();
+  }
+
+  applySnapshot(list, audio) {
+    const seen = new Set();
+    for (const r of list || []) {
+      const [id, ti, x, y, z, yaw, hy, hp, flags, fuse, wool] = r;
+      const type = MOB_TYPES[ti];
+      if (!type) continue;
+      seen.add(id);
+      let m = this.byId.get(id);
+      if (!m) {
+        m = this.spawnMob(type, x, y, z, { baby: !!(flags & 4), arctic: !!(flags & 8), wool });
+        m.id = id; m.yaw = yaw; m.tx = x; m.ty = y; m.tz = z;
+        this.byId.set(id, m);
+      }
+      m.tx = x; m.ty = y; m.tz = z; m.tyaw = yaw;
+      m.headYaw = hy; m.headPitch = hp;
+      if ((flags & 1) && !m._wasHurt && audio) audio.playSound('hit');
+      m._wasHurt = !!(flags & 1);
+      if (flags & 1) m.hurtTimer = Math.max(m.hurtTimer, 0.15);
+      if ((flags & 2) && !m.dying) { m.dying = true; m.deathTimer = 0; }
+      if (fuse > 0 && !(m.fuse > 0) && audio) audio.playSound('sizzle');
+      m.fuse = fuse;
+      m.fireTimer = (flags & 16) ? 1 : 0;
+    }
+    for (const [id, m] of this.byId) {
+      if (seen.has(id)) continue;
+      if (m.dying) continue; // let the death animation finish
+      this.byId.delete(id);
+      const i = this.mobs.indexOf(m);
+      if (i >= 0) this.mobs.splice(i, 1);
+    }
+  }
+
+  update(dt, player, dayNight, difficulty, particles, audio, ui) {
+    const k = Math.min(1, dt * 12);
+    for (let i = this.mobs.length - 1; i >= 0; i--) {
+      const m = this.mobs[i];
+      if (m.dying) {
+        m.deathTimer += dt;
+        if (m.deathTimer >= 0.42) {
+          particles.spawnBurst(m.x, m.y + 0.65, m.z, [0.92, 0.92, 0.94], 14, 3.6, 0.16);
+          this.mobs.splice(i, 1);
+          this.byId.delete(m.id);
+        }
+        continue;
+      }
+      const px = m.x, py = m.y, pz = m.z;
+      m.x = lerp(m.x, m.tx, k); m.y = lerp(m.y, m.ty, k); m.z = lerp(m.z, m.tz, k);
+      let dYaw = (m.tyaw ?? m.yaw) - m.yaw;
+      while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+      while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+      m.yaw += dYaw * k;
+      m.vx = (m.x - px) / (dt || 1); m.vy = (m.y - py) / (dt || 1); m.vz = (m.z - pz) / (dt || 1);
+      const spd = Math.hypot(m.vx, m.vz);
+      if (spd > 0.15) m.walkPhase += dt * spd * 2.7;
+      if (m.hurtTimer > 0) m.hurtTimer -= dt;
+      if (m.fireTimer > 0 && Math.random() < dt * 14) {
+        particles.spawnBurst(m.x + (Math.random() - 0.5) * 0.6, m.y + Math.random() * (MOB_DEFS[m.type].h || 1), m.z + (Math.random() - 0.5) * 0.6, [1.0, 0.65, 0.12], 1, 1.2, 0.08);
+      }
+    }
+    // Display-only arrows (the server does the hit detection)
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const pr = this.projectiles[i];
+      pr.life -= dt;
+      if (pr.life <= 0) { this.projectiles.splice(i, 1); continue; }
+      if (pr.stuck) { if (pr.quiver > 0) pr.quiver = Math.max(0, pr.quiver - dt * 2.8); continue; }
+      pr.vy -= 18 * dt;
+      pr.x += pr.vx * dt; pr.y += pr.vy * dt; pr.z += pr.vz * dt;
+      const bx = Math.floor(pr.x), by = Math.floor(pr.y), bz = Math.floor(pr.z);
+      if (BLOCKS.get(this.world.getBlock(bx, by, bz)).solid) {
+        pr.stuck = true; pr.bx = bx; pr.by = by; pr.bz = bz;
+        pr.yaw = Math.atan2(pr.vx, pr.vz);
+        pr.pitch = -Math.atan2(pr.vy, Math.hypot(pr.vx, pr.vz) || 0.001);
+        pr.quiver = 1.0; pr.life = Math.min(pr.life, 6.0);
+        continue;
+      }
+      // hide the arrow once it reaches a mob or player (the server applies the damage)
+      if (this.mobs.some(m => !m.dying && Math.hypot(m.x - pr.x, m.y + MOB_DEFS[m.type].h * 0.5 - pr.y, m.z - pr.z) < 0.95)) {
+        this.projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  spawnArrow(x, y, z, vx, vy, vz) {
+    this.projectiles.push({ x, y, z, vx, vy, vz, owner: 'visual', dmg: 0, life: 4.5 });
+  }
+
+  // Local hit feedback only; the server computes damage, knockback, drops and XP
+  applyMelee(m, player, held, dir, crit, particles, audio) {
+    this.net.sendMobHit(m.id, crit, held ? held.id : 0);
+    m.hurtTimer = 0.3;
+    audio.playSound('hit');
+    particles.spawnBurst(m.x, m.y + 0.9, m.z, [0.95, 0.22, 0.22], 8, 3.6, 0.11);
+  }
+
+  tryFeedAnimal(player, eye, dir, particles, audio) {
+    const held = player.inventory.getHeld();
+    for (const m of this.mobs) {
+      if (m.hostile || m.baby || m.type === 'trader' || m.dying) continue;
+      if (Math.hypot(m.x - eye.x, m.y + 0.7 - eye.y, m.z - eye.z) > 4.0) continue;
+      this.net.sendFeed(held ? held.id : 0);
+      particles.spawnBurst(m.x, m.y + 1.2, m.z, [1.0, 0.25, 0.45], 10, 2.2, 0.14);
+      audio.playSound('pickup');
+      return true;
+    }
+    return false;
+  }
+
+  _damageMob() { /* server-authoritative */ }
+}
+
 class MultiplayerClient {
   constructor(engine) {
     this.engine = engine;
@@ -12437,7 +12777,7 @@ class MultiplayerClient {
     this._moveAccum = 0;
     this._pingAccum = 0;
     this._invAccum = 0;
-    this._lastSentPos = null;
+    this._lastInvJson = '';
     this._lastAttackMs = 0;
   }
 
@@ -12460,7 +12800,7 @@ class MultiplayerClient {
     }, 8000);
 
     this.ws.onopen = () => {
-      this._send({ type: 'join', name: this.playerName, password, authMode, version: 2 });
+      this._send({ type: 'join', name: this.playerName, password, authMode, version: 3 });
     };
 
     this.ws.onmessage = (ev) => {
@@ -12477,6 +12817,7 @@ class MultiplayerClient {
         this.maxPlayers = msg.maxPlayers || 32;
         this.isOp = !!msg.isOp;
         this.pvp = msg.pvp !== false;
+        this._lastInvJson = '';
         this._send({ type: 'ping', t: Date.now() });
         this.engine.enterMultiplayerWorld(msg);
       } else if (msg.type === 'auth_error' || (!this.connected && msg.type === 'kick')) {
@@ -12484,7 +12825,7 @@ class MultiplayerClient {
         this.disconnect();
         this.engine.ui.showMpError(msg.reason || 'Authentication failed.');
       } else {
-        this._handleMessage(msg);
+        try { this._handleMessage(msg); } catch (err) { console.error('[MP] Failed to handle', msg.type, err); }
       }
     };
 
@@ -12526,36 +12867,53 @@ class MultiplayerClient {
     }
   }
 
+  // ---- world edits ----
   sendBlockBreak(x, y, z, toolId, mineMs, prevId = 0, prevMeta = 0) {
-    this._send({ type: 'block_break', x, y, z, toolId, mineMs, prevId, prevMeta });
+    this._send({ type: 'block_break', x, y, z, toolId, mineMs });
   }
-  sendBlockPlace(x, y, z, id, meta) {
-    this._send({ type: 'block_place', x, y, z, id, meta });
+  sendBucketFill(x, y, z) { this._send({ type: 'block_break', x, y, z, bucket: true }); }
+  sendBlockPlace(x, y, z, id, meta, cause = '', toolId = 0) {
+    this._send({ type: 'block_place', x, y, z, id, meta, cause, toolId });
   }
+  sendBonemeal(x, y, z, plants) { this._send({ type: 'bonemeal', x, y, z, plants }); }
   sendBlockInteract(x, y, z, action, val, id = 0) {
     this._send({ type: 'block_interact', x, y, z, action, val, id });
   }
-  sendBlockEntity(x, y, z, ent) {
-    this._send({ type: 'block_entity', x, y, z, ent });
+  sendTntIgnite(x, y, z) { this._send({ type: 'block_interact', x, y, z, action: 'tnt', val: 32 }); }
+
+  // ---- inventory events (everything that can give items is validated by the server) ----
+  sendContainerOpen(x, y, z) { this._send({ type: 'container_open', x, y, z }); }
+  sendContainerCommit(x, y, z, ent) {
+    this._send({ type: 'container_commit', x, y, z, ent, ...this._invPayload() });
+    this._lastInvJson = '';
   }
-  sendChat(text) {
-    this._send({ type: 'chat', text });
-  }
-  sendRespawn() {
-    this._send({ type: 'respawn' });
-  }
-  sendInventorySync() {
+  sendCraft(r, times, used) { this._send({ type: 'craft', r, times, used }); }
+  sendTrade(idx) { this._send({ type: 'trade', idx }); }
+  sendEnchant(x, y, z, offer, itemId, dur) { this._send({ type: 'enchant', x, y, z, offer, itemId, dur }); }
+  sendEat(id) { this._send({ type: 'eat', id }); }
+  sendCook(x, y, z, id) { this._send({ type: 'cook', x, y, z, id }); }
+  sendDropItem(s, src = null) { this._send({ type: 'drop_item', s, src }); }
+  sendPickup(id) { this._send({ type: 'pickup', id }); }
+  sendShoot(o, v) { this._send({ type: 'shoot', o, v }); }
+  sendFeed(id) { this._send({ type: 'feed', id }); }
+  sendMobHit(id, crit, w) { this._send({ type: 'mob_hit', id, crit, w }); }
+  sendSelfDamage(a, r) { this._send({ type: 'self_damage', a, r }); }
+  sendChat(text) { this._send({ type: 'chat', text }); }
+  sendRespawn() { this._send({ type: 'respawn' }); }
+
+  _invPayload() {
     const p = this.engine.player;
-    if (!p) return;
-    this._send({
-      type: 'inv_sync',
-      slots: p.inventory.slots,
-      armor: p.inventory.armor,
-      health: p.health,
-      hunger: p.hunger,
-      xp: p.xp,
-      level: p.level
-    });
+    const ui = this.engine.ui;
+    // Items "in hand" in the UI (cursor, crafting grid, enchanting slots) still belong to us
+    const limbo = [ui.cursorStack || null, ...ui.craftGrid.slice(0, 9), ...(ui.enchSlots || [null, null]).slice(0, 2)];
+    return { slots: p.inventory.slots, armor: p.inventory.armor, limbo };
+  }
+
+  sendInventorySync() {
+    if (!this.engine.player) return;
+    const payload = this._invPayload();
+    this._lastInvJson = JSON.stringify(payload);
+    this._send({ type: 'inv_sync', ...payload });
   }
 
   tryPvpMelee(player, eye, dir, particles, audio) {
@@ -12583,7 +12941,7 @@ class MultiplayerClient {
     if (!this.connected || !this.engine.player) return;
     const p = this.engine.player;
 
-    // 1. Send player movement at ~18 Hz
+    // 1. Send player movement at ~18 Hz (hunger/saturation ride along: the server only accepts decreases)
     this._moveAccum += dt;
     if (this._moveAccum >= 0.055) {
       this._moveAccum = 0;
@@ -12593,9 +12951,11 @@ class MultiplayerClient {
         x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
         yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3),
         crouch: p.crouching, swing: p.swingActive ? +p.swing.toFixed(2) : 0,
-        heldId: held ? held.id : 0,
+        heldId: held ? held.id : 0, sel: p.inventory.selected,
+        sprint: !!p.sprinting, block: !!p.blocking,
         onGround: p.onGround, flying: p.flying,
-        inWater: p.inWater, onLadder: p.onLadder
+        inWater: p.inWater, onLadder: p.onLadder,
+        f: +p.hunger.toFixed(2), s: +p.saturation.toFixed(2)
       });
     }
 
@@ -12606,11 +12966,11 @@ class MultiplayerClient {
       this._send({ type: 'ping', t: Date.now(), ping: this.pingMs });
     }
 
-    // 3. Inventory / stats cloud save sync every 4s
+    // 3. Inventory arrangement sync (only when it changed)
     this._invAccum += dt;
-    if (this._invAccum >= 4.0) {
+    if (this._invAccum >= 2.0) {
       this._invAccum = 0;
-      this.sendInventorySync();
+      if (JSON.stringify(this._invPayload()) !== this._lastInvJson) this.sendInventorySync();
     }
 
     // 4. Smoothly interpolate remote player positions & limb animations
@@ -12621,7 +12981,6 @@ class MultiplayerClient {
       rp.rx = lerp(rp.rx, rp.x, lerpF);
       rp.ry = lerp(rp.ry, rp.y, lerpF);
       rp.rz = lerp(rp.rz, rp.z, lerpF);
-      // Shortest-angle yaw interpolation
       let dyaw = rp.yaw - rp.ryaw;
       while (dyaw > Math.PI) dyaw -= Math.PI * 2;
       while (dyaw < -Math.PI) dyaw += Math.PI * 2;
@@ -12630,6 +12989,38 @@ class MultiplayerClient {
       if (moveD > 0.02) rp.walkPhase += moveD * 3.8;
       if (rp.hurtTimer > 0) rp.hurtTimer -= dt;
     }
+  }
+
+  applyStats(s) {
+    const eng = this.engine, p = eng.player;
+    if (!p || !s) return;
+    p.health = s.h; p.hunger = s.f; p.saturation = s.s; p.xp = s.x;
+    if (s.l > p.level) eng.audio.playSound('levelup');
+    p.level = s.l;
+    if (Number.isFinite(s.e) && (s.e !== p.enchSeed)) {
+      p.enchSeed = s.e;
+      p.enchSeedPending = false;
+      if (eng.state === 'container' && eng.ui.containerType === 'enchant') eng.ui.renderContainer();
+    }
+    if (s.d && !p.dead) {
+      p.dead = true;
+      p.health = 0;
+      eng.ui.showDeath(p.deathReason || 'You died.');
+    }
+  }
+
+  _applyInventory(msg) {
+    const eng = this.engine, p = eng.player, ui = eng.ui;
+    if (!p) return;
+    if (Array.isArray(msg.slots)) p.inventory.slots = msg.slots.slice(0, 36).concat(new Array(Math.max(0, 36 - msg.slots.length)).fill(null));
+    if (Array.isArray(msg.armor)) p.inventory.armor = msg.armor.slice(0, 5).concat(new Array(Math.max(0, 5 - msg.armor.length)).fill(null));
+    const limbo = Array.isArray(msg.limbo) ? msg.limbo : [];
+    ui.cursorStack = limbo[0] || null;
+    for (let i = 0; i < 9; i++) ui.craftGrid[i] = limbo[1 + i] || null;
+    if (ui.enchSlots) { ui.enchSlots[0] = limbo[10] || null; ui.enchSlots[1] = limbo[11] || null; }
+    this._lastInvJson = JSON.stringify(this._invPayload());
+    if (eng.state === 'container') { ui._updateCursorEl(); ui.renderContainer(); }
+    ui.refreshHotbar();
   }
 
   _handleMessage(msg) {
@@ -12674,54 +13065,104 @@ class MultiplayerClient {
       eng.ui.addChat(`${msg.name} left the game.`, 'sys');
     } else if (msg.type === 'block_set') {
       if (eng.world) eng.world.setBlock(msg.x, msg.y, msg.z, msg.id, msg.meta || 0, true);
-    } else if (msg.type === 'tnt_explode') {
+    } else if (msg.type === 'blocks') {
+      // Batched changes computed by the server (redstone circuits, furnaces, bone meal...)
+      if (eng.world) for (const [x, y, z, id, meta] of msg.list || []) eng.world.setBlock(x, y, z, id, meta || 0, true);
+    } else if (msg.type === 'explosion' || msg.type === 'tnt_explode') {
       if (eng.world && eng.mining) {
         const radius = (msg.radius || 32) / 10;
-        const r = Math.ceil(radius);
-        for (let dy = -r; dy <= r; dy++) {
-          for (let dz = -r; dz <= r; dz++) {
-            for (let dx = -r; dx <= r; dx++) {
-              if (dx*dx + dy*dy + dz*dz > radius * radius) continue;
-              const bx = msg.x + dx, by = msg.y + dy, bz = msg.z + dz;
-              const bid = eng.world.getBlock(bx, by, bz);
-              if (bid === B.AIR || bid === B.BEDROCK || bid === B.OBSIDIAN || bid === B.OBSIDIAN_CRYING) continue;
-              eng.world.setBlock(bx, by, bz, B.AIR, 0, true);
-            }
-          }
-        }
-        eng.audio.playSound('explosion', msg.x, msg.y, msg.z);
-        eng.particles.spawnBurst(msg.x + 0.5, msg.y + 0.5, msg.z + 0.5, [1.0, 0.72, 0.28], 32, 9.0, 0.22);
+        if (eng.world.getBlock(msg.x, msg.y, msg.z) === B.TNT) eng.world.setBlock(msg.x, msg.y, msg.z, B.AIR, 0, true);
+        eng.mining.applyExplosion(msg.x, msg.y, msg.z, radius, Array.isArray(msg.cells) ? msg.cells : []);
       }
     } else if (msg.type === 'block_revert') {
-      // Anti-cheat reverted an illegal break/place
+      // Anti-cheat / server rejected an edit: restore the real block
       if (eng.world && msg.id >= 0) eng.world.setBlock(msg.x, msg.y, msg.z, msg.id, msg.meta || 0, true);
-      if (msg.reason) eng.ui.addChat(`[Anti-Cheat] ${msg.reason}`, 'warn');
+      if (msg.reason) eng.ui.addChat(`[Server] ${msg.reason}`, 'warn');
     } else if (msg.type === 'block_entity') {
-      if (eng.world) eng.world.setBlockEntity(msg.x, msg.y, msg.z, msg.ent, false);
+      if (!eng.world) return;
+      const ui = eng.ui, ref = ui.containerRef;
+      if (ref && ref.ent && ref.x === msg.x && ref.y === msg.y && ref.z === msg.z && msg.ent) {
+        // Update the open container in place (the UI holds references to this object)
+        for (const k of Object.keys(ref.ent)) delete ref.ent[k];
+        Object.assign(ref.ent, msg.ent);
+        eng.world.setBlockEntity(msg.x, msg.y, msg.z, ref.ent, false);
+        if (eng.state === 'container') ui.renderContainer();
+      } else {
+        eng.world.setBlockEntity(msg.x, msg.y, msg.z, msg.ent, false);
+      }
     } else if (msg.type === 'rubberband') {
-      // Anti-cheat movement correction
       if (eng.player) {
         eng.player.x = msg.x; eng.player.y = msg.y; eng.player.z = msg.z;
         eng.player.vx = 0; eng.player.vy = 0; eng.player.vz = 0;
         eng.player.fallStartY = msg.y;
       }
       if (msg.reason) eng.ui.addChat(`[Anti-Cheat] ${msg.reason}`, 'warn');
-    } else if (msg.type === 'pvp_damage') {
-      if (eng.player) {
-        eng.player.hurt(msg.dmg || 3, `Slain by ${msg.by || 'a player'}.`, eng.audio, eng.ui);
-        if (msg.kx) { eng.player.vx += msg.kx; eng.player.vy = Math.max(eng.player.vy, 5.0); eng.player.vz += msg.kz; }
+    } else if (msg.type === 'damage') {
+      // Damage the server dealt us (mobs, players, explosions): play the hit, adopt the real health
+      const p = eng.player;
+      if (p && !p.dead) {
+        p._serverHurt = true;
+        p.hurtCooldown = 0;
+        const prevH = p.health;
+        p.hurt(0.0001, msg.r, eng.audio, null, msg.kx || 0, msg.ky || 0, msg.kz || 0);
+        p._serverHurt = false;
+        p.health = msg.h;
+        p.dead = false;
+        p.deathReason = msg.r || p.deathReason;
+        if (msg.h < prevH) eng.ui.flashDamage();
+        if (msg.h <= 0) { p.dead = true; p.deathReason = msg.r || 'You died.'; eng.ui.showDeath(p.deathReason); }
       }
+    } else if (msg.type === 'stats') {
+      this.applyStats(msg);
+    } else if (msg.type === 'inv_set') {
+      this._applyInventory(msg);
+    } else if (msg.type === 'drop_spawn') {
+      if (eng.mining && msg.s) {
+        const d = eng.mining.spawnDrop(msg.x, msg.y, msg.z, msg.s.id, msg.s.count, msg.s.dur, msg.s.enchant, msg.id);
+        if (d) {
+          if (msg.vx !== undefined) { d.vx = msg.vx; d.vy = msg.vy; d.vz = msg.vz; }
+          d.pickupDelay = msg.delay || 0.4;
+        }
+      }
+    } else if (msg.type === 'drop_remove') {
+      if (eng.mining) {
+        const i = eng.mining.drops.findIndex(d => d.netId === msg.id);
+        if (i >= 0) {
+          // fly toward whoever picked it up, if we can see them
+          const rp = msg.by && this.remotePlayers.get(msg.by);
+          if (rp) { const d = eng.mining.drops[i]; d.vx = (rp.rx - d.x) * 6; d.vy = (rp.ry + 1 - d.y) * 6; d.vz = (rp.rz - d.z) * 6; d.age = 239.85; }
+          else eng.mining.drops.splice(i, 1);
+        }
+      }
+    } else if (msg.type === 'pickup_ok') {
+      const p = eng.player;
+      if (p && eng.mining && msg.s) {
+        p.inventory.addItem(msg.s.id, msg.s.count, msg.s.dur, msg.s.enchant);
+        const d = eng.mining.drops.find(dd => dd.netId === msg.id);
+        if (d) d.collecting = 0.0001;
+        eng.audio.playSound('pickup');
+        eng.ui.refreshHotbar();
+      }
+    } else if (msg.type === 'pickup_fail') {
+      const d = eng.mining && eng.mining.drops.find(dd => dd.netId === msg.id);
+      if (d) d.pickupPending = 0;
+    } else if (msg.type === 'mobs') {
+      if (eng.mobMgr && eng.mobMgr.applySnapshot) eng.mobMgr.applySnapshot(msg.list, eng.audio);
+    } else if (msg.type === 'arrow') {
+      if (eng.mobMgr) eng.mobMgr.spawnArrow(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, 'visual', 0);
+      eng.audio.playSound('bow', msg.x, msg.y, msg.z);
     } else if (msg.type === 'chat') {
       eng.ui.addChat(msg.text || '', msg.kind || 'normal', msg.sender || null);
       if (msg.sender !== this.playerName) eng.audio.playSound('chat');
     } else if (msg.type === 'time_sync') {
       if (eng.dayNight && msg.day !== undefined) { eng.dayNight.day = msg.day; eng.dayNight.time = msg.time; }
-      if (eng.weather && msg.weather) { eng.weather.state = msg.weather; eng.weather.targetIntensity = msg.weather === 'clear' ? 0 : msg.weather === 'thunder' ? 1.0 : 0.72; }
+      if (eng.weather && msg.weather) eng.applyServerWeather(msg.weather);
     } else if (msg.type === 'mode_change') {
       if (eng.player) {
         eng.player.mode = msg.mode;
         if (msg.mode === 'survival') eng.player.flying = false;
         eng.ui.addChat(`Game mode updated to ${msg.mode}.`, 'sys');
+        this.sendInventorySync();
       }
     } else if (msg.type === 'give_item') {
       if (eng.player && ITEMS.get(msg.id)) {
@@ -12823,6 +13264,12 @@ class GameEngine {
     return { x: 8.5, z: 8.5 };
   }
 
+  applyServerWeather(state) {
+    if (!['clear', 'rain', 'thunder'].includes(state)) return;
+    this.weather.state = state;
+    this.weather.targetIntensity = state === 'clear' ? 0 : state === 'thunder' ? 1.0 : 0.72;
+  }
+
   connectMultiplayer(url, name, password = '', authMode = 'login') {
     this.net.connect(url, name, password, authMode);
   }
@@ -12854,19 +13301,18 @@ class GameEngine {
 
     this.player = new Player(msg.mode || 'survival');
     const saved = msg.player;
-    if (saved && isFinite(saved.x) && isFinite(saved.y) && isFinite(saved.z)) {
+    // The server owns inventory, health, hunger and XP; we start from its copy
+    if (saved) {
+      if (Array.isArray(saved.slots)) this.player.inventory.slots = saved.slots.slice(0, 36);
+      if (Array.isArray(saved.armor)) this.player.inventory.armor = saved.armor.slice(0, 5);
+    }
+    this.player.serverStats = true;
+    this.player.onLocalDamage = (dmg, reason) => this.net.sendSelfDamage(dmg, reason);
+    if (saved && isFinite(saved.x) && isFinite(saved.y) && isFinite(saved.z) && saved.x !== null) {
       this.world.ensureImmediateChunks(saved.x, saved.y, saved.z, 2, 2);
       this.player.x = saved.x; this.player.y = saved.y; this.player.z = saved.z;
-      this.player.health = saved.health ?? 20; this.player.hunger = saved.hunger ?? 20;
-      this.player.xp = saved.xp ?? 0; this.player.level = saved.level ?? 0;
-      if (Array.isArray(saved.slots)) this.player.inventory.slots = saved.slots;
-      if (Array.isArray(saved.armor)) this.player.inventory.armor = saved.armor;
       const sp = this._findGoodSpawn(this.world);
       this.player.spawnPoint = { x: sp.x, y: this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2, z: sp.z };
-      if (this.player.health <= 0) {
-        this.player.respawn(this.world);
-        this.net.sendRespawn();
-      }
     } else {
       const sp = this._findGoodSpawn(this.world);
       const estY = this.world.generator.getColumn(Math.floor(sp.x), Math.floor(sp.z)).height;
@@ -12881,21 +13327,32 @@ class GameEngine {
     if (msg.day) this.dayNight.day = msg.day;
     if (msg.time !== undefined) this.dayNight.time = msg.time;
     this.weather = new WeatherSystem();
-    if (msg.weather) { this.weather.state = msg.weather; this.weather.targetIntensity = msg.weather === 'clear' ? 0 : 0.75; }
+    this.weather.serverControlled = true;
+    this.applyServerWeather(msg.weather || 'clear');
 
     this.particles = new ParticleSystem();
-    this.mobMgr = new MobManager(this.world);
+    this.world.serverTicks = true;
+    this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
     this.player.miningRef = this.mining;
 
     if (Array.isArray(msg.players)) this.net._handleMessage({ type: 'players', list: msg.players });
+    if (Array.isArray(msg.drops)) {
+      for (const [id, x, y, z, s] of msg.drops) {
+        const d = this.mining.spawnDrop(x, y, z, s.id, s.count, s.dur, s.enchant, id);
+        if (d) { d.vx = d.vy = d.vz = 0; d.pickupDelay = 0; }
+      }
+    }
+    if (msg.stats) this.net.applyStats(msg.stats);
+    const wasDead = !!(msg.stats && msg.stats.d);
 
     this.state = 'playing';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.addChat(msg.motd || `Connected to ${msg.serverName || 'Server'}! Press T to chat, Tab for player list.`, 'sys');
     this.ui.toast(`Connected to ${msg.serverName || 'Multiplayer Server'}!`);
-    this.input.requestLock();
+    if (wasDead) this.ui.showDeath('You died before you left.');
+    else this.input.requestLock();
   }
 
   startNewWorld(meta) {
@@ -13034,8 +13491,14 @@ class GameEngine {
     this.ui.showScreen('titleScreen');
   }
 
-  throwItem(stack, amt = 1) {
+  throwItem(stack, amt = 1, src = null) {
     if (!stack || amt <= 0 || !this.player || !this.mining) return;
+    if (this.isMultiplayer()) {
+      // The server removes it from our ledger and spawns the shared drop for everyone
+      this.net.sendDropItem({ id: stack.id, count: amt, dur: stack.dur, enchant: stack.enchant }, src);
+      this.player.swingActive = true;
+      return;
+    }
     const eye = this.player.getEyePos();
     const dir = this.player.getLookDir();
     const d = this.mining.spawnDrop(eye.x + dir.x * 0.6, eye.y - 0.3, eye.z + dir.z * 0.6, stack.id, amt, stack.dur, stack.enchant);
@@ -13130,6 +13593,18 @@ class GameEngine {
   }
 
   _loop(now) {
+    try {
+      this._frame(now);
+    } catch (err) {
+      // Never let one bad frame kill requestAnimationFrame for good; log each distinct error once
+      const key = String(err && err.message);
+      if (this._lastFrameError !== key) { this._lastFrameError = key; console.error('[VoxelCraft] Frame error:', err); }
+      try { this.input.endFrame(); } catch {}
+    }
+    requestAnimationFrame((t) => this._loop(t));
+  }
+
+  _frame(now) {
     const dt = Math.min(0.05, Math.max(0.001, (now - this._lastTime) / 1000));
     this._lastTime = now;
     this._vmDt = dt;
@@ -13185,6 +13660,7 @@ class GameEngine {
           this.mining.update(dt, this.input, this.dayNight);
         }
         this.mining._updateDrops(dt);
+        this.mining.updateTNT(dt);
         this._updateAmbientEmitters(dt);
 
         if (!this.isMultiplayer()) {
@@ -13227,7 +13703,6 @@ class GameEngine {
     }
 
     this.input.endFrame();
-    requestAnimationFrame((t) => this._loop(t));
   }
 }
 

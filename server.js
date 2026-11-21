@@ -6,7 +6,9 @@
  * Zero external dependencies — runs directly on any server with Node.js 18+:
  *   node server.js
  *
- * Serves voxelcraft.html over HTTP AND accepts WebSocket connections on the same port.
+ * Serves the game client (index.html) over HTTP AND accepts WebSocket connections on the same port.
+ * The server loads the game rules from that same client file (see core-loader.js) and is
+ * authoritative for the world, mobs, dropped items, player inventories and health (see game.js).
  */
 
 const http = require('http');
@@ -14,6 +16,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { loadGameCore } = require('./core-loader');
+const { Game } = require('./game');
 
 // ============================================================================
 // CLI / ENVIRONMENT OPTIONS
@@ -27,7 +31,19 @@ function getArg(name, fallback) {
 }
 const NO_CONSOLE = argv.includes('--no-console') || !process.stdin.isTTY;
 const DATA_DIR = path.resolve(getArg('data-dir', process.env.DATA_DIR || __dirname));
-const CLIENT_HTML_PATH = path.resolve(getArg('client', process.env.CLIENT_HTML || path.join(__dirname, 'voxelcraft.html')));
+function resolveClientPath() {
+  const explicit = getArg('client', process.env.CLIENT_HTML || null);
+  if (explicit) return path.resolve(explicit);
+  // Prefer index.html (the file shipped in this repo), fall back to the legacy voxelcraft.html name
+  for (const name of ['index.html', 'voxelcraft.html']) {
+    const candidate = path.join(__dirname, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(__dirname, 'index.html');
+}
+const CLIENT_HTML_PATH = resolveClientPath();
+let SERVER_VERSION = '2.1.0';
+try { SERVER_VERSION = require('./package.json').version || SERVER_VERSION; } catch {}
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -63,6 +79,9 @@ const DEFAULT_CONFIG = {
   pvp: true,
   maxPlayers: 32,
   maxPerIp: 4,
+  // Only trust X-Forwarded-For when running behind your own reverse proxy (nginx, Caddy, ...).
+  // Otherwise any client can spoof its IP and bypass per-IP limits and IP bans.
+  trustProxy: false,
   saveIntervalSec: 60,
   ops: [],
   bans: [],
@@ -121,6 +140,12 @@ function loadConfig() {
   const cliPort = getArg('port', null);
   if (cliHost) cfg.host = cliHost;
   if (cliPort) cfg.port = parseInt(cliPort, 10) || cfg.port;
+  // Guard against hand-edited configs with wrong types
+  if (!Array.isArray(cfg.ops)) cfg.ops = [];
+  if (!Array.isArray(cfg.bans)) cfg.bans = [];
+  cfg.ops = cfg.ops.map(String);
+  cfg.bans = cfg.bans.map(String);
+  if (!cfg.anticheat || typeof cfg.anticheat !== 'object') cfg.anticheat = { ...DEFAULT_CONFIG.anticheat };
   return cfg;
 }
 
@@ -135,178 +160,25 @@ function saveConfig() {
 }
 
 // ============================================================================
-// GAME CONSTANTS (MATCHES voxelcraft.html BLOCKS & ITEMS 1:1)
+// GAME CORE (the client's own simulation code, loaded from the HTML it serves)
 // ============================================================================
 
-const WORLD_HEIGHT = 128;
-const B_AIR = 0;
-const B_BEDROCK = 14;
-const B_OBSIDIAN = 72;
-const B_OBSIDIAN_CRYING = 230;
-const B_SLIME_BLOCK = 249;
-const B_TNT = 89;
-const B_WATER = 90;
-const B_LAVA = 91;
-
-// Valid placeable block IDs: 1..119 and 226..255
-function isValidBlockId(id) {
-  return Number.isInteger(id) && ((id >= 1 && id <= 119) || (id >= 226 && id <= 255));
+if (!fs.existsSync(CLIENT_HTML_PATH)) {
+  console.error(`[Fatal] Client file not found: ${CLIENT_HTML_PATH}
+The server runs the game rules from the client, so it needs index.html (or --client <path>).`);
+  process.exit(1);
 }
+const CORE = loadGameCore(CLIENT_HTML_PATH);
+const B_SLIME_BLOCK = CORE.B.SLIME_BLOCK;
 
-// Valid item/block IDs for inventory validation
+// 1 full day/night cycle in seconds (taken from the client's DayNightSystem)
+const DAY_LENGTH_SEC = new CORE.DayNightSystem().dayLength;
+
+// Enchantment names the client knows about (anything else is stripped from synced items)
+const ENCHANT_NAMES = new Set(Object.keys(CORE.ENCHANTS));
+
 function isValidItemId(id) {
-  return Number.isInteger(id) && (
-    (id >= 1 && id <= 119) ||
-    (id >= 120 && id <= 225) ||
-    (id >= 226 && id <= 255) ||
-    (id >= 260 && id <= 284)
-  );
-}
-
-// High-hardness blocks (for Survival fast-break anti-cheat)
-const BLOCK_HARDNESS = {
-  3: 2.2, 4: 2.4, 5: 3.2, 9: 1.8, 18: 2.0, 19: 2.0, 20: 2.0,
-  25: 2.6, 26: 3.2, 27: 3.0, 28: 3.4, 29: 3.5, 30: 3.5, 31: 4.5, 32: 4.5, 33: 7.0,
-  57: 2.8, 59: 2.6, 60: 2.6, 63: 4.0, 64: 4.0, 65: 5.5,
-  72: 12.0, 113: 2.4, 114: 2.0, 118: 2.5,
-  230: 12.0, 231: 3.5, 232: 5.0, 233: 10.0, 234: 2.0, 235: 3.2, 236: 2.4, 245: 4.0, 251: 5.0, 255: 4.0
-};
-
-// Tool speed tiers (pickaxes, axes, shovels)
-const PICKAXE_SPEED = {
-  170: 2.5, // wood
-  175: 4.2, // stone
-  271: 5.0, // copper
-  180: 6.2, // iron
-  185: 10.5, // gold
-  190: 8.5, // diamond
-  276: 9.0, // emerald
-  195: 10.5 // netherite
-};
-
-// Weapon base PvP damage (authoritative server-side table)
-const WEAPON_DAMAGE = {
-  174: 4, 179: 5, 275: 5.5, 184: 6, 189: 5, 194: 7.5, 280: 8, 199: 9, // swords
-  171: 4, 176: 5, 272: 5, 181: 6, 186: 5, 191: 7, 277: 7.5, 196: 8   // axes
-};
-
-// ============================================================================
-// WORLD STATE & PERSISTENCE
-// ============================================================================
-
-class WorldState {
-  constructor() {
-    this.seed = String(config.seed || 'voxelcraft-server-2026');
-    this.day = 1;
-    this.time = 0.28;
-    this.weather = 'clear';
-    this.weatherTimer = 240;
-    this.deltas = new Map();        // "wx,wy,wz" -> [wx, wy, wz, id, meta]
-    this.blockEntities = new Map(); // "wx,wy,wz" -> entObj
-    this.savedPlayers = new Map();  // lowerName -> { name, x, y, z, health, hunger, xp, level, slots, armor, mode, lastSeen }
-    this.dirty = false;
-  }
-
-  load() {
-    if (!fs.existsSync(WORLD_PATH)) {
-      // Persist initial world file on first boot so seed and map state exist on disk immediately
-      this.save();
-      console.log(`[World] Created new server world at ${WORLD_PATH} (Seed: ${this.seed}).`);
-      return;
-    }
-    try {
-      const data = JSON.parse(fs.readFileSync(WORLD_PATH, 'utf8'));
-      if (data.seed) this.seed = String(data.seed);
-      if (Number.isFinite(data.day)) this.day = data.day;
-      if (Number.isFinite(data.time)) this.time = data.time;
-      if (data.weather) this.weather = data.weather;
-      if (Array.isArray(data.deltas)) {
-        for (const d of data.deltas) {
-          if (Array.isArray(d) && d.length >= 4) {
-            const [wx, wy, wz, id, meta] = d;
-            this.deltas.set(`${wx},${wy},${wz}`, [wx | 0, wy | 0, wz | 0, id | 0, (meta | 0) & 255]);
-          }
-        }
-      }
-      if (Array.isArray(data.blockEntities)) {
-        for (const [k, ent] of data.blockEntities) {
-          if (typeof k === 'string' && ent && typeof ent === 'object') {
-            this.blockEntities.set(k, ent);
-          }
-        }
-      }
-      if (data.players && typeof data.players === 'object') {
-        for (const [k, v] of Object.entries(data.players)) {
-          if (v && typeof v === 'object') this.savedPlayers.set(k.toLowerCase(), v);
-        }
-      }
-      console.log(`[World] Loaded ${this.deltas.size} block deltas, ${this.blockEntities.size} containers, ${this.savedPlayers.size} player profiles (Seed: ${this.seed}, Day ${this.day}).`);
-    } catch (err) {
-      console.error('[World] Failed to load world-data.json:', err.message);
-    }
-  }
-
-  save() {
-    try {
-      const playersObj = {};
-      for (const [k, v] of this.savedPlayers.entries()) playersObj[k] = v;
-      const payload = {
-        version: 2,
-        seed: this.seed,
-        day: this.day,
-        time: +this.time.toFixed(4),
-        weather: this.weather,
-        deltas: Array.from(this.deltas.values()),
-        blockEntities: Array.from(this.blockEntities.entries()),
-        players: playersObj,
-        savedAt: new Date().toISOString()
-      };
-      atomicWriteJson(WORLD_PATH, payload, false);
-      this.dirty = false;
-      return true;
-    } catch (err) {
-      console.error('[World] Save failed:', err.message);
-      return false;
-    }
-  }
-
-  getDelta(x, y, z) {
-    return this.deltas.get(`${x},${y},${z}`) || null;
-  }
-
-  setBlock(x, y, z, id, meta = 0) {
-    const key = `${x},${y},${z}`;
-    this.deltas.set(key, [x | 0, y | 0, z | 0, id | 0, (meta | 0) & 255]);
-    if (id === B_AIR) this.blockEntities.delete(key);
-    this.dirty = true;
-  }
-
-  setBlockEntity(x, y, z, ent) {
-    const key = `${x},${y},${z}`;
-    if (!ent) this.blockEntities.delete(key);
-    else this.blockEntities.set(key, ent);
-    this.dirty = true;
-  }
-
-  updateTime(dt) {
-    // 1 full day = 600s (matches client DayNightSystem)
-    this.time += dt / 600;
-    if (this.time >= 1) {
-      this.time -= 1;
-      this.day++;
-    }
-    this.weatherTimer -= dt;
-    if (this.weatherTimer <= 0) {
-      const r = Math.random();
-      if (this.weather === 'clear') {
-        this.weather = r < 0.72 ? 'clear' : (r < 0.90 ? 'rain' : 'thunder');
-        this.weatherTimer = 140 + Math.random() * 200;
-      } else {
-        this.weather = 'clear';
-        this.weatherTimer = 220 + Math.random() * 260;
-      }
-    }
-  }
+  return Number.isInteger(id) && !!CORE.ITEMS.get(id);
 }
 
 // ============================================================================
@@ -348,13 +220,16 @@ class AccountStore {
     }
   }
 
+  // Async scrypt so a burst of logins never stalls the game loop for every connected player
   _hashPassword(password, salt) {
-    return crypto.scryptSync(String(password), String(salt), 64).toString('hex');
+    return new Promise((resolve, reject) => {
+      crypto.scrypt(String(password), String(salt), 64, (err, key) => err ? reject(err) : resolve(key.toString('hex')));
+    });
   }
 
-  _verifyPassword(password, salt, expectedHash) {
+  async _verifyPassword(password, salt, expectedHash) {
     try {
-      const computed = Buffer.from(this._hashPassword(password, salt), 'hex');
+      const computed = Buffer.from(await this._hashPassword(password, salt), 'hex');
       const expected = Buffer.from(String(expectedHash), 'hex');
       if (computed.length !== expected.length) return false;
       return crypto.timingSafeEqual(computed, expected);
@@ -378,7 +253,7 @@ class AccountStore {
     return { ok: true, name: cleanName, password: pw };
   }
 
-  register(rawName, rawPassword) {
+  async register(rawName, rawPassword) {
     const v = this.validateCredentials(rawName, rawPassword);
     if (!v.ok) return v;
     const key = v.name.toLowerCase();
@@ -386,7 +261,11 @@ class AccountStore {
       return { ok: false, reason: `Account "${this.accounts.get(key).name}" is already claimed. Switch to Sign In and enter your password.` };
     }
     const salt = crypto.randomBytes(16).toString('hex');
-    const hash = this._hashPassword(v.password, salt);
+    const hash = await this._hashPassword(v.password, salt);
+    // Re-check after the async hash: another connection may have claimed the name meanwhile
+    if (this.accounts.has(key)) {
+      return { ok: false, reason: `Account "${this.accounts.get(key).name}" is already claimed. Switch to Sign In and enter your password.` };
+    }
     const now = new Date().toISOString();
     const account = { name: v.name, salt, hash, createdAt: now, lastLoginAt: now };
     this.accounts.set(key, account);
@@ -394,7 +273,7 @@ class AccountStore {
     return { ok: true, account, created: true };
   }
 
-  login(rawName, rawPassword) {
+  async login(rawName, rawPassword) {
     const v = this.validateCredentials(rawName, rawPassword);
     if (!v.ok) return v;
     const key = v.name.toLowerCase();
@@ -402,19 +281,19 @@ class AccountStore {
     if (!account) {
       return { ok: false, reason: `Account "${v.name}" is not claimed yet. Switch to Create Account to claim this name.` };
     }
-    if (!this._verifyPassword(v.password, account.salt, account.hash)) {
-      return { ok: false, reason: `Incorrect password for "${account.name}".` };
+    if (!(await this._verifyPassword(v.password, account.salt, account.hash))) {
+      return { ok: false, reason: `Incorrect password for "${account.name}".`, badPassword: true };
     }
     account.lastLoginAt = new Date().toISOString();
     this.save();
     return { ok: true, account, created: false };
   }
 
-  changePassword(name, oldPassword, newPassword) {
+  async changePassword(name, oldPassword, newPassword) {
     const key = String(name || '').toLowerCase();
     const account = this.accounts.get(key);
     if (!account) return { ok: false, reason: 'Account not found.' };
-    if (!this._verifyPassword(oldPassword, account.salt, account.hash)) {
+    if (!(await this._verifyPassword(oldPassword, account.salt, account.hash))) {
       return { ok: false, reason: 'Current password is incorrect.' };
     }
     const pw = String(newPassword || '');
@@ -422,8 +301,9 @@ class AccountStore {
       return { ok: false, reason: 'New password must be between 4 and 64 characters.' };
     }
     const salt = crypto.randomBytes(16).toString('hex');
+    const hash = await this._hashPassword(pw, salt);
     account.salt = salt;
-    account.hash = this._hashPassword(pw, salt);
+    account.hash = hash;
     this.save();
     return { ok: true };
   }
@@ -571,6 +451,12 @@ class WSConnection {
       }
       this.buf = this.buf.subarray(totalLen);
 
+      // Control frames must be final and carry at most 125 bytes (RFC 6455 §5.5)
+      if ((opcode & 0x8) && (!fin || payloadLen > 125)) {
+        this.close(1002, 'Invalid control frame');
+        return;
+      }
+
       if (opcode === 0x8) { // Close
         this.close(1000, 'Closed');
         return;
@@ -579,6 +465,10 @@ class WSConnection {
       } else if (opcode === 0xA) { // Pong
         // Activity timestamp already updated
       } else if (opcode === 0x1 || opcode === 0x2) { // Text / Binary
+        if (this.fragOpcode) {
+          this.close(1002, 'New data frame during fragmented message');
+          return;
+        }
         if (fin) {
           if (opcode === 0x1 && this.onMessage) this.onMessage(data.toString('utf8'));
         } else {
@@ -769,16 +659,16 @@ class AntiCheat {
     // First movement packet initializes baseline position if player wasn't restored from save
     if (!p.hasMoved) {
       p.hasMoved = true;
-      p.x = x; p.y = y; p.z = z;
-      p.yaw = yaw; p.pitch = pitch;
       ac.lastSafeX = x; ac.lastSafeY = y; ac.lastSafeZ = z;
       ac.lastGroundY = y; ac.jumpStartY = y;
       ac.lastMoveMs = now;
+      this._acceptMove(p, msg, x, y, z, yaw, pitch);
       return true;
     }
 
     if (!this.isEnabled()) {
-      p.x = x; p.y = y; p.z = z; p.yaw = yaw; p.pitch = pitch;
+      ac.lastMoveMs = now;
+      this._acceptMove(p, msg, x, y, z, yaw, pitch);
       return true;
     }
 
@@ -794,9 +684,7 @@ class AntiCheat {
     const inKnockback = now < ac.knockbackUntilMs;
 
     // Detect if player is standing on or just left a known Slime Block -> grant bounce grace
-    const underKey = `${Math.floor(x)},${Math.floor(y - 0.35)},${Math.floor(z)}`;
-    const underDelta = this.server.world.deltas.get(underKey);
-    if (underDelta && underDelta[3] === B_SLIME_BLOCK) {
+    if (this.server.world.getBlock(Math.floor(x), Math.floor(y - 0.35), Math.floor(z)) === B_SLIME_BLOCK) {
       ac.slimeBounceUntilMs = now + 2600;
     }
     const inSlimeGrace = now < ac.slimeBounceUntilMs;
@@ -876,13 +764,18 @@ class AntiCheat {
     }
 
     ac.lastMoveMs = now;
-    p.x = x; p.y = y; p.z = z;
-    p.yaw = yaw; p.pitch = pitch;
-    p.crouch = !!msg.crouch;
-    p.swing = Number(msg.swing) || 0;
-    p.heldId = Number(msg.heldId) || 0;
-    p.onGround = !!msg.onGround;
+    this._acceptMove(p, msg, x, y, z, yaw, pitch);
     return true;
+  }
+
+  _acceptMove(p, msg, x, y, z, yaw, pitch) {
+    p.x = x; p.y = y; p.z = z;
+    p.yaw = yaw; p.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+    p.crouch = !!msg.crouch;
+    const swing = Number(msg.swing);
+    p.swing = Number.isFinite(swing) ? Math.max(0, Math.min(1, swing)) : 0;
+    p.heldId = msg.heldId | 0;
+    p.onGround = !!msg.onGround;
   }
 
   _rubberband(p, reason) {
@@ -903,112 +796,7 @@ class AntiCheat {
     return { ok: dist <= maxR, dist, maxR };
   }
 
-  checkBlockBreak(p, x, y, z, toolId, mineMs, prevId, prevMeta) {
-    if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) {
-      return { ok: false, revertId: -1, revertMeta: 0, reason: 'Invalid block coordinates.' };
-    }
-
-    // Authoritative server record if block was previously placed/modified
-    const delta = this.server.world.getDelta(x, y, z);
-    const knownId = delta ? delta[3] : (Number.isInteger(prevId) ? prevId : 0);
-    const knownMeta = delta ? delta[4] : (Number.isInteger(prevMeta) ? prevMeta : 0);
-
-    if (Math.abs(y) > 10000000) {
-      return { ok: false, revertId: knownId || -1, revertMeta: knownMeta, reason: 'Out-of-bounds block.' };
-    }
-
-    if (!this.isEnabled()) return { ok: true };
-    const isCreative = p.mode === 'creative';
-
-    // 1. Survival Bedrock protection (explicit BEDROCK ID only — world depth is infinite)
-    if (!isCreative && knownId === B_BEDROCK) {
-      return {
-        ok: false, revertId: B_BEDROCK, revertMeta: 0, reason: 'Cannot break Bedrock in Survival.',
-        flag: ['BEDROCK_BREAK', 6, `Attempted to break bedrock at (${x},${y},${z})`]
-      };
-    }
-
-    // 2. Reach check
-    const reach = this.checkReach(p, x, y, z);
-    if (!reach.ok) {
-      return {
-        ok: false, revertId: knownId || -1, revertMeta: knownMeta, reason: `Reach too far (${reach.dist.toFixed(1)}m).`,
-        flag: ['REACH', 4, `Block break reach ${reach.dist.toFixed(1)}m > ${reach.maxR}m`]
-      };
-    }
-
-    if (!isCreative) {
-      // 3. Nuker / Block Break Rate Limit
-      const now = Date.now();
-      p.ac.breakTimestamps = p.ac.breakTimestamps.filter(t => now - t < 1000);
-      p.ac.breakTimestamps.push(now);
-      const maxRate = config.anticheat.maxBlocksPerSec || 12;
-      if (p.ac.breakTimestamps.length > maxRate) {
-        return {
-          ok: false, revertId: knownId || -1, revertMeta: knownMeta, reason: 'Breaking blocks too fast (Nuker).',
-          flag: ['NUKER', 5, `Broke ${p.ac.breakTimestamps.length} blocks/sec`]
-        };
-      }
-
-      // 4. Fast-Break Hardness Validation
-      const hard = BLOCK_HARDNESS[knownId] || 0;
-      if (hard >= 2.2) {
-        const speed = PICKAXE_SPEED[toolId] || 1.0;
-        // Client mine time: hard / (speed * 1.65) seconds, with up to Efficiency III (1.9x) -> divide by 2.4 for generous anti-false-positive buffer
-        const minExpectedMs = (hard / (speed * 1.65 * 2.4)) * 1000;
-        const reportedMs = Number(mineMs) || 0;
-        if (reportedMs < minExpectedMs) {
-          return {
-            ok: false, revertId: knownId || -1, revertMeta: knownMeta, reason: `Fast-Break detected on block #${knownId}.`,
-            flag: ['FAST_BREAK', 4.5, `Broke block #${knownId} (h=${hard}) in ${reportedMs}ms (min ${Math.round(minExpectedMs)}ms, tool=${toolId})`]
-          };
-        }
-      }
-    }
-
-    return { ok: true };
-  }
-
-  checkBlockPlace(p, x, y, z, id, meta) {
-    if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) {
-      return { ok: false, revertId: B_AIR, revertMeta: 0, reason: 'Invalid block coordinates.' };
-    }
-    const prev = this.server.world.getDelta(x, y, z);
-    const revId = prev ? prev[3] : B_AIR;
-    const revMeta = prev ? prev[4] : 0;
-
-    if (Math.abs(y) > 10000000) {
-      return { ok: false, revertId: revId, revertMeta: revMeta, reason: 'Cannot build beyond coordinate limit.' };
-    }
-
-    if (!isValidBlockId(id)) {
-      return {
-        ok: false, revertId: revId, revertMeta: revMeta, reason: `Illegal block ID (${id}).`,
-        flag: ['ILLEGAL_BLOCK', 6, `Tried placing invalid block ID ${id}`]
-      };
-    }
-
-    if (!this.isEnabled()) return { ok: true };
-
-    if (p.mode !== 'creative' && id === B_BEDROCK) {
-      return {
-        ok: false, revertId: revId, revertMeta: revMeta, reason: 'Cannot place Bedrock in Survival.',
-        flag: ['ILLEGAL_BLOCK', 6, 'Tried placing Bedrock in Survival']
-      };
-    }
-
-    const reach = this.checkReach(p, x, y, z);
-    if (!reach.ok) {
-      return {
-        ok: false, revertId: revId, revertMeta: revMeta, reason: `Place reach too far (${reach.dist.toFixed(1)}m).`,
-        flag: ['REACH', 4, `Block place reach ${reach.dist.toFixed(1)}m > ${reach.maxR}m`]
-      };
-    }
-
-    return { ok: true };
-  }
-
-  checkPvpHit(attacker, target, weaponId) {
+  checkPvpHit(attacker, target) {
     if (!this.isEnabled()) return { ok: true };
     const now = Date.now();
 
@@ -1045,49 +833,22 @@ class AntiCheat {
     return { ok: true };
   }
 
-  sanitizeInventory(p, slots, armor) {
-    const isCreative = p.mode === 'creative';
-    const cleanSlots = new Array(36).fill(null);
-    const cleanArmor = new Array(5).fill(null);
-
-    if (Array.isArray(slots)) {
-      for (let i = 0; i < Math.min(36, slots.length); i++) {
-        const s = slots[i];
-        if (!s || typeof s !== 'object') continue;
-        const id = s.id | 0;
-        const cnt = s.count | 0;
-        if (!isValidItemId(id) || cnt <= 0 || cnt > 64) {
-          this.flag(p, 'ILLEGAL_INV', 3, `Invalid slot ${i}: id=${s.id}, count=${s.count}`);
-          continue;
-        }
-        if (!isCreative && id === B_BEDROCK) {
-          this.flag(p, 'ILLEGAL_INV', 4, 'Bedrock detected in Survival inventory');
-          continue;
-        }
-        cleanSlots[i] = { id, count: cnt };
-        if (Number.isFinite(s.dur)) cleanSlots[i].dur = Math.max(0, Math.min(4000, s.dur | 0));
-        if (s.enchant && typeof s.enchant.name === 'string' && Number.isInteger(s.enchant.lvl)) {
-          cleanSlots[i].enchant = { name: s.enchant.name.slice(0, 24), lvl: Math.max(1, Math.min(5, s.enchant.lvl)) };
-        }
-      }
+  _sanitizeEnchant(e) {
+    if (!e || typeof e !== 'object') return undefined;
+    const raw = Array.isArray(e.list) ? e.list : [e];
+    const list = [];
+    const seen = new Set();
+    for (const x of raw.slice(0, 8)) {
+      if (!x || typeof x.name !== 'string' || !ENCHANT_NAMES.has(x.name) || seen.has(x.name)) continue;
+      const lvl = x.lvl | 0;
+      if (lvl < 1) continue;
+      seen.add(x.name);
+      list.push({ name: x.name, lvl: Math.min(5, lvl) });
     }
-
-    if (Array.isArray(armor)) {
-      for (let i = 0; i < Math.min(5, armor.length); i++) {
-        const s = armor[i];
-        if (!s || typeof s !== 'object') continue;
-        const id = s.id | 0;
-        if (!isValidItemId(id)) continue;
-        cleanArmor[i] = { id, count: 1 };
-        if (Number.isFinite(s.dur)) cleanArmor[i].dur = Math.max(0, Math.min(4000, s.dur | 0));
-        if (s.enchant && typeof s.enchant.name === 'string' && Number.isInteger(s.enchant.lvl)) {
-          cleanArmor[i].enchant = { name: s.enchant.name.slice(0, 24), lvl: Math.max(1, Math.min(5, s.enchant.lvl)) };
-        }
-      }
-    }
-
-    return { slots: cleanSlots, armor: cleanArmor };
+    if (!list.length) return undefined;
+    return { name: list[0].name, lvl: list[0].lvl, list };
   }
+
 }
 
 // ============================================================================
@@ -1096,8 +857,8 @@ class AntiCheat {
 
 class VoxelCraftServer {
   constructor() {
-    this.world = new WorldState();
-    this.world.load();
+    this.game = new Game(this, CORE, { config, worldPath: WORLD_PATH, atomicWriteJson });
+    this.world = this.game.world;
     this.accounts = new AccountStore();
     this.accounts.load();
     this.ac = new AntiCheat(this);
@@ -1108,6 +869,23 @@ class VoxelCraftServer {
     this.httpServer = null;
     this._intervals = [];
     this._saveDebounce = null;
+    this._stopping = false;
+    this.failedLogins = new Map(); // ip -> { count, firstMs }
+  }
+
+  // Simple brute-force protection: max 6 failed password attempts per IP per 2 minutes
+  _isLoginThrottled(ip) {
+    const rec = this.failedLogins.get(ip);
+    if (!rec) return false;
+    if (Date.now() - rec.firstMs > 120000) { this.failedLogins.delete(ip); return false; }
+    return rec.count >= 6;
+  }
+
+  _noteFailedLogin(ip) {
+    const now = Date.now();
+    const rec = this.failedLogins.get(ip);
+    if (!rec || now - rec.firstMs > 120000) this.failedLogins.set(ip, { count: 1, firstMs: now });
+    else rec.count++;
   }
 
   scheduleWorldSave(delayMs = 5000) {
@@ -1134,11 +912,6 @@ class VoxelCraftServer {
       const bl = String(b).toLowerCase();
       return bl === low || (ip && bl === String(ip).toLowerCase());
     });
-  }
-
-  sanitizeName(raw) {
-    const cleaned = String(raw || '').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 18);
-    return cleaned.length >= 2 ? cleaned : `Player${this.nextId}`;
   }
 
   findPlayerByName(name) {
@@ -1173,7 +946,7 @@ class VoxelCraftServer {
 
     this.httpServer.listen(config.port, config.host, () => {
       console.log('============================================================');
-      console.log(`  VoxelCraft Server v2.0 — Running on ${config.host}:${config.port}`);
+      console.log(`  VoxelCraft Server v${SERVER_VERSION} — Running on ${config.host}:${config.port}`);
       console.log(`  Web Client : http://localhost:${config.port}/`);
       console.log(`  WebSocket  : ws://<your-server-address>:${config.port}`);
       console.log(`  Status API : http://localhost:${config.port}/status`);
@@ -1181,6 +954,7 @@ class VoxelCraftServer {
       console.log(`  World File : ${WORLD_PATH} (${this.world.deltas.size} deltas)`);
       console.log(`  Accounts   : ${this.accounts.accounts.size} claimed`);
       console.log(`  Data Dir   : ${DATA_DIR}`);
+      console.log(`  Client     : ${CLIENT_HTML_PATH}${fs.existsSync(CLIENT_HTML_PATH) ? '' : ' (NOT FOUND)'}`);
       console.log('============================================================');
       if (!NO_CONSOLE) console.log('Type /help in this terminal for server console commands.');
     });
@@ -1201,10 +975,26 @@ class VoxelCraftServer {
       this.broadcast({ type: 'players', list });
     }, 66));
 
-    // 2. World clock + Anti-Cheat VL decay @ 1 Hz
+    // 2. Game simulation @ 20 Hz: world, redstone, furnaces, mobs, drops, player vitals
+    let lastGameTick = Date.now();
     this._intervals.push(setInterval(() => {
-      this.world.updateTime(1.0);
-      this.ac.decayAll(1.0);
+      const now = Date.now();
+      const dt = Math.min(0.25, Math.max(0, (now - lastGameTick) / 1000));
+      lastGameTick = now;
+      try { this.game.tick(dt); } catch (err) { console.error('[Game] Tick error:', err); }
+    }, 50));
+
+    // 3. World clock + Anti-Cheat VL decay @ 1 Hz (measured dt so timer drift never desyncs the clock)
+    let lastTick = Date.now();
+    this._intervals.push(setInterval(() => {
+      const now = Date.now();
+      const dt = Math.min(5, Math.max(0, (now - lastTick) / 1000));
+      lastTick = now;
+      this.world.updateTime(dt, DAY_LENGTH_SEC);
+      this.ac.decayAll(dt);
+      for (const [ip, rec] of this.failedLogins) {
+        if (now - rec.firstMs > 120000) this.failedLogins.delete(ip);
+      }
     }, 1000));
 
     // 3. Time/weather sync & keepalive pings @ 5s
@@ -1241,6 +1031,8 @@ class VoxelCraftServer {
   }
 
   stop(exitProcess = true) {
+    if (this._stopping) return;
+    this._stopping = true;
     console.log('[Server] Shutting down and saving world...');
     if (this._saveDebounce) { clearTimeout(this._saveDebounce); this._saveDebounce = null; }
     for (const iv of this._intervals) clearInterval(iv);
@@ -1257,6 +1049,8 @@ class VoxelCraftServer {
       this.httpServer.close(() => {
         if (exitProcess) process.exit(0);
       });
+      // Don't hang forever on lingering keep-alive HTTP sockets
+      if (exitProcess) setTimeout(() => process.exit(0), 1500).unref();
     } else if (exitProcess) {
       process.exit(0);
     }
@@ -1269,14 +1063,14 @@ class VoxelCraftServer {
   }
 
   _savePlayerProfile(p) {
-    if (!p || !p.hasMoved) return;
-    this.world.savedPlayers.set(p.name.toLowerCase(), {
-      name: p.name,
-      x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
-      health: p.health, hunger: p.hunger, xp: p.xp, level: p.level,
-      slots: p.slots, armor: p.armor, mode: p.mode,
-      lastSeen: Date.now()
-    });
+    if (!p || !p.pl) return;
+    const prof = this.game.profileOf(p);
+    if (!p.hasMoved) {
+      // Never overwrite a saved position with the placeholder spawn of a player who hasn't moved yet
+      const old = this.world.savedPlayers.get(p.name.toLowerCase());
+      if (old) { prof.x = old.x; prof.y = old.y; prof.z = old.z; } else { prof.x = null; }
+    }
+    this.world.savedPlayers.set(p.name.toLowerCase(), prof);
     this.world.dirty = true;
   }
 
@@ -1293,6 +1087,8 @@ class VoxelCraftServer {
         playersOnline: this.players.size,
         maxPlayers: config.maxPlayers,
         playerNames: Array.from(this.players.values()).map(p => p.name),
+        mobs: this.game.mobs.mobs.length,
+        drops: this.game.drops.size,
         day: this.world.day,
         weather: this.world.weather,
         uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
@@ -1320,7 +1116,7 @@ class VoxelCraftServer {
         fs.createReadStream(CLIENT_HTML_PATH).pipe(res);
       } else {
         res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('voxelcraft.html not found next to server.js.');
+        res.end(`Client file not found: ${CLIENT_HTML_PATH}\nPlace index.html next to server.js or pass --client <path>.`);
       }
       return;
     }
@@ -1338,7 +1134,7 @@ class VoxelCraftServer {
       return;
     }
 
-    const fwd = req.headers['x-forwarded-for'];
+    const fwd = config.trustProxy ? req.headers['x-forwarded-for'] : null;
     const ip = (fwd ? String(fwd).split(',')[0].trim() : (req.socket.remoteAddress || 'unknown')).replace(/^::ffff:/, '');
 
     // Enforce per-IP connection limit
@@ -1359,6 +1155,7 @@ class VoxelCraftServer {
 
     this.ipCounts.set(ip, curIpCount + 1);
     let session = null;
+    let joinStarted = false;
 
     const ws = new WSConnection(
       socket,
@@ -1368,7 +1165,14 @@ class VoxelCraftServer {
         try { msg = JSON.parse(rawText); } catch { return; }
         if (!msg || typeof msg !== 'object') return;
         if (!session) {
-          if (msg.type === 'join') session = this._handleJoin(ws, ip, msg);
+          // Only one join attempt per socket; ignore everything else until it resolves
+          if (msg.type === 'join' && !joinStarted) {
+            joinStarted = true;
+            this._handleJoin(ws, ip, msg).then((s) => { session = s; }).catch((err) => {
+              console.error('[Join] Error:', err);
+              ws.close(1011, 'Internal server error');
+            });
+          }
           return;
         }
         if (!this.ac.checkPacketRate(session)) return;
@@ -1379,10 +1183,11 @@ class VoxelCraftServer {
         if (c <= 0) this.ipCounts.delete(ip);
         else this.ipCounts.set(ip, c);
 
-        if (session && this.players.has(session.id)) {
+        if (session) session.online = false;
+        if (session && this.players.get(session.id) === session) {
           this._savePlayerProfile(session);
           this.players.delete(session.id);
-          if (this.world.dirty) this.world.save();
+          if (this.world.dirty) this.scheduleWorldSave(1000);
           console.log(`[Leave] ${session.name} (${ip}) disconnected. Online: ${this.players.size}`);
           this.broadcast({ type: 'player_leave', id: session.id, name: session.name });
         }
@@ -1395,61 +1200,65 @@ class VoxelCraftServer {
     }, 8000);
   }
 
-  _handleJoin(ws, ip, msg) {
-    if (this.players.size >= (config.maxPlayers || 32)) {
-      ws.sendJSON({ type: 'auth_error', reason: 'Server is full.' });
-      ws.close(4002, 'Server is full.');
+  async _handleJoin(ws, ip, msg) {
+    const reject = (code, reason) => {
+      ws.sendJSON({ type: 'auth_error', reason });
+      ws.close(code, reason);
       return null;
-    }
+    };
+
+    if (this.isBanned(null, ip)) return reject(4003, 'You are banned from this server.');
+    if (this._isLoginThrottled(ip)) return reject(4006, 'Too many failed login attempts. Try again in a couple of minutes.');
 
     const authMode = (msg.authMode === 'register') ? 'register' : 'login';
     const rawName = String(msg.name || '').trim();
     const rawPassword = String(msg.password || '');
 
     const authRes = (authMode === 'register')
-      ? this.accounts.register(rawName, rawPassword)
-      : this.accounts.login(rawName, rawPassword);
+      ? await this.accounts.register(rawName, rawPassword)
+      : await this.accounts.login(rawName, rawPassword);
+
+    if (ws.closed) return null; // socket went away while hashing
 
     if (!authRes.ok) {
-      ws.sendJSON({ type: 'auth_error', reason: authRes.reason });
-      ws.close(4004, authRes.reason);
-      return null;
+      if (authRes.badPassword) this._noteFailedLogin(ip);
+      return reject(4004, authRes.reason);
     }
+    this.failedLogins.delete(ip);
 
     const name = authRes.account.name;
-    if (this.isBanned(name, ip)) {
-      ws.sendJSON({ type: 'auth_error', reason: 'You are banned from this server.' });
-      ws.close(4003, 'Banned from server.');
-      return null;
+    if (this.isBanned(name, ip)) return reject(4003, 'You are banned from this server.');
+
+    // Same account reconnecting (e.g. after a dropped connection): the password proved ownership,
+    // so replace the stale session instead of locking the player out until it times out.
+    const existing = this.findPlayerByName(name);
+    if (existing) {
+      this._savePlayerProfile(existing);
+      this.players.delete(existing.id);
+      this.broadcast({ type: 'player_leave', id: existing.id, name: existing.name });
+      this.kickPlayer(existing, 'Logged in from another location.');
     }
 
-    if (this.findPlayerByName(name)) {
-      ws.sendJSON({ type: 'auth_error', reason: `Account "${name}" is already online on this server.` });
-      ws.close(4005, 'Account already online.');
-      return null;
-    }
+    if (this.players.size >= (config.maxPlayers || 32)) return reject(4002, 'Server is full.');
 
     const id = 'p' + (this.nextId++);
     const saved = this.world.savedPlayers.get(name.toLowerCase()) || null;
 
+    const hasPos = !!(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && Number.isFinite(saved.z));
     const player = {
       id, name, ip, ws,
-      x: saved ? saved.x : 8.5,
-      y: saved ? saved.y : 80,
-      z: saved ? saved.z : 8.5,
+      x: hasPos ? saved.x : 8.5,
+      y: hasPos ? saved.y : 80,
+      z: hasPos ? saved.z : 8.5,
       yaw: 0, pitch: 0,
       crouch: false, swing: 0, heldId: 0, onGround: true,
-      hasMoved: !!saved,
-      health: saved ? (saved.health ?? 20) : 20,
-      hunger: saved ? (saved.hunger ?? 20) : 20,
-      xp: saved ? (saved.xp ?? 0) : 0,
-      level: saved ? (saved.level ?? 0) : 0,
-      slots: saved && Array.isArray(saved.slots) ? saved.slots : null,
-      armor: saved && Array.isArray(saved.armor) ? saved.armor : null,
+      hasMoved: hasPos,
       mode: (saved && saved.mode) || config.mode || 'survival',
       ping: 0,
+      online: true,
       joinedAt: Date.now()
     };
+    this.game.initPlayer(player, saved);
 
     this.ac.initPlayer(player);
     this.players.set(id, player);
@@ -1480,14 +1289,16 @@ class VoxelCraftServer {
       day: this.world.day,
       time: +this.world.time.toFixed(4),
       weather: this.world.weather,
-      player: saved ? {
-        x: saved.x, y: saved.y, z: saved.z,
-        health: saved.health, hunger: saved.hunger, xp: saved.xp, level: saved.level,
-        slots: saved.slots, armor: saved.armor
-      } : null,
+      player: {
+        x: hasPos ? saved.x : null, y: hasPos ? saved.y : null, z: hasPos ? saved.z : null,
+        health: player.pl.health, hunger: player.pl.hunger, saturation: player.pl.saturation,
+        xp: player.pl.xp, level: player.pl.level, dead: !!player.pl.dead,
+        slots: player.inv.slots, armor: player.inv.armor
+      },
       players: existingPlayers,
       deltas: Array.from(this.world.deltas.values()),
-      blockEntities: Array.from(this.world.blockEntities.entries())
+      blockEntities: Array.from(this.world.blockEntities.entries()),
+      ...this.game.welcomeExtras(player)
     });
 
     console.log(`[Join] ${name} (${ip}) ${authRes.created ? 'claimed new account & ' : ''}joined as ${id}. Online: ${this.players.size}/${config.maxPlayers}`);
@@ -1508,145 +1319,7 @@ class VoxelCraftServer {
 
       case 'move': {
         this.ac.checkMove(p, msg);
-        break;
-      }
-
-      case 'block_break': {
-        const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
-        const toolId = msg.toolId | 0;
-        const mineMs = Number(msg.mineMs) || 0;
-        const prevId = Number.isInteger(msg.prevId) ? msg.prevId : 0;
-        const prevMeta = Number.isInteger(msg.prevMeta) ? msg.prevMeta : 0;
-
-        const check = this.ac.checkBlockBreak(p, x, y, z, toolId, mineMs, prevId, prevMeta);
-        if (!check.ok) {
-          p.ws.sendJSON({ type: 'block_revert', x, y, z, id: check.revertId, meta: check.revertMeta, reason: check.reason });
-          if (check.flag) this.ac.flag(p, check.flag[0], check.flag[1], check.flag[2]);
-          return;
-        }
-        this.world.setBlock(x, y, z, B_AIR, 0);
-        this.scheduleWorldSave();
-        this.broadcast({ type: 'block_set', x, y, z, id: B_AIR, meta: 0 }, p.id);
-        break;
-      }
-
-      case 'block_place': {
-        const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
-        const id = msg.id | 0;
-        const meta = (msg.meta | 0) & 255;
-
-        const check = this.ac.checkBlockPlace(p, x, y, z, id, meta);
-        if (!check.ok) {
-          p.ws.sendJSON({ type: 'block_revert', x, y, z, id: check.revertId, meta: check.revertMeta, reason: check.reason });
-          if (check.flag) this.ac.flag(p, check.flag[0], check.flag[1], check.flag[2]);
-          return;
-        }
-        this.world.setBlock(x, y, z, id, meta);
-        this.scheduleWorldSave();
-        this.broadcast({ type: 'block_set', x, y, z, id, meta }, p.id);
-        break;
-      }
-
-      case 'block_interact': {
-        const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
-        const action = String(msg.action || '');
-        const val = (msg.val | 0) & 255;
-        if (Math.abs(y) > 10000000) return;
-
-        const reach = this.ac.checkReach(p, x, y, z);
-        if (!reach.ok) {
-          this.ac.flag(p, 'REACH', 3, `Interact (${action}) reach ${reach.dist.toFixed(1)}m`);
-          return;
-        }
-
-        if (action === 'tnt') {
-          const radius = Math.min(4.2, Math.max(1.0, (Number(msg.val) || 32) / 10));
-          const r = Math.ceil(radius);
-          for (let dy = -r; dy <= r; dy++) {
-            for (let dz = -r; dz <= r; dz++) {
-              for (let dx = -r; dx <= r; dx++) {
-                if (dx*dx + dy*dy + dz*dz > radius * radius) continue;
-                const bx = x + dx, by = y + dy, bz = z + dz;
-                const prev = this.world.getDelta(bx, by, bz);
-                if (prev && (prev[3] === B_BEDROCK || prev[3] === B_OBSIDIAN || prev[3] === B_OBSIDIAN_CRYING)) continue;
-                this.world.setBlock(bx, by, bz, B_AIR, 0);
-              }
-            }
-          }
-          this.scheduleWorldSave();
-          this.broadcast({ type: 'tnt_explode', x, y, z, radius: Math.round(radius * 10) }, p.id);
-          return;
-        }
-
-        // Door / trapdoor / fence_gate / lever / button / plate state toggle
-        const prev = this.world.getDelta(x, y, z);
-        const bid = prev ? prev[3] : (isValidBlockId(msg.id | 0) ? (msg.id | 0) : 0);
-        if (bid > 0) {
-          this.world.setBlock(x, y, z, bid, val);
-          this.scheduleWorldSave();
-          this.broadcast({ type: 'block_set', x, y, z, id: bid, meta: val }, p.id);
-        }
-        break;
-      }
-
-      case 'block_entity': {
-        const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
-        const reach = this.ac.checkReach(p, x, y, z);
-        if (!reach.ok) {
-          this.ac.flag(p, 'REACH', 3, `Container sync reach ${reach.dist.toFixed(1)}m`);
-          return;
-        }
-        if (msg.ent && typeof msg.ent === 'object') {
-          const rawStr = JSON.stringify(msg.ent);
-          if (rawStr.length > 32768) return;
-          this.world.setBlockEntity(x, y, z, msg.ent);
-          this.scheduleWorldSave();
-          this.broadcast({ type: 'block_entity', x, y, z, ent: msg.ent }, p.id);
-        }
-        break;
-      }
-
-      case 'pvp_hit': {
-        if (!config.pvp) return;
-        const target = this.players.get(String(msg.targetId || ''));
-        if (!target || target.id === p.id || target.mode === 'creative') return;
-        const weaponId = msg.weaponId | 0;
-        const chk = this.ac.checkPvpHit(p, target, weaponId);
-        if (!chk.ok) return;
-
-        let dmg = WEAPON_DAMAGE[weaponId] || 1.5;
-        if (msg.crit && !p.onGround) dmg *= 1.35;
-        dmg = Math.round(dmg);
-
-        const dx = target.x - p.x, dz = target.z - p.z;
-        const d = Math.hypot(dx, dz) || 1;
-        target.ac.knockbackUntilMs = Date.now() + 900;
-        target.ws.sendJSON({
-          type: 'pvp_damage',
-          dmg,
-          by: p.name,
-          kx: +((dx / d) * 6.5).toFixed(2),
-          kz: +((dz / d) * 6.5).toFixed(2)
-        });
-        break;
-      }
-
-      case 'inv_sync': {
-        const clean = this.ac.sanitizeInventory(p, msg.slots, msg.armor);
-        p.slots = clean.slots;
-        p.armor = clean.armor;
-        if (Number.isFinite(msg.health)) p.health = Math.max(0, Math.min(20, msg.health));
-        if (Number.isFinite(msg.hunger)) p.hunger = Math.max(0, Math.min(20, msg.hunger));
-        if (Number.isFinite(msg.xp)) p.xp = Math.max(0, Math.min(100000, msg.xp));
-        if (Number.isFinite(msg.level)) p.level = Math.max(0, Math.min(1000, msg.level | 0));
-        this._savePlayerProfile(p);
-        break;
-      }
-
-      case 'respawn': {
-        p.health = 20;
-        p.hunger = 20;
-        this.ac.grantTeleportGrace(p, 2500);
+        this.game.handle(p, msg);
         break;
       }
 
@@ -1661,6 +1334,12 @@ class VoxelCraftServer {
         }
         break;
       }
+
+      default:
+        // World, inventory, combat & mob packets are handled by the authoritative game layer
+        if (typeof msg.type === 'string' && !msg.type.startsWith('_')) {
+          try { this.game.handle(p, msg); } catch (err) { console.error(`[Game] Error handling '${msg.type}' from ${p.name}:`, err); }
+        }
     }
   }
 
@@ -1692,8 +1371,9 @@ class VoxelCraftServer {
       const oldPw = args[0] || '';
       const newPw = args[1] || '';
       if (!oldPw || !newPw) { reply('Usage: /passwd <currentPassword> <newPassword>', 'warn'); return; }
-      const res = this.accounts.changePassword(sender.name, oldPw, newPw);
-      reply(res.ok ? 'Account password updated.' : res.reason, res.ok ? 'sys' : 'err');
+      this.accounts.changePassword(sender.name, oldPw, newPw).then((res) => {
+        reply(res.ok ? 'Account password updated.' : res.reason, res.ok ? 'sys' : 'err');
+      });
       return;
     }
 
@@ -1771,7 +1451,7 @@ class VoxelCraftServer {
       if (!mode) { reply('Usage: /gamemode <survival|creative> [player]', 'warn'); return; }
       const target = args[1] ? this.findPlayerByName(args[1]) : sender;
       if (!target) { reply('Specify an online player.', 'warn'); return; }
-      target.mode = mode;
+      this.game.setMode(target, mode);
       target.ws.sendJSON({ type: 'mode_change', mode });
       reply(`Set ${target.name} to ${mode} mode.`);
     } else if (cmd === 'give') {
@@ -1779,6 +1459,7 @@ class VoxelCraftServer {
       const id = parseInt(args[1], 10);
       const cnt = Math.max(1, Math.min(64, parseInt(args[2], 10) || 1));
       if (!target || !isValidItemId(id)) { reply('Usage: /give <player> <itemId> [count]', 'warn'); return; }
+      if (target.mode !== 'creative') target.ledger.add({ id, count: cnt });
       target.ws.sendJSON({ type: 'give_item', id, count: cnt });
       reply(`Gave ${cnt}x item #${id} to ${target.name}.`);
     } else if (cmd === 'tp') {
@@ -1786,7 +1467,7 @@ class VoxelCraftServer {
         const a = this.findPlayerByName(args[0]);
         const b = this.findPlayerByName(args[1]);
         if (!a || !b) { reply('Player(s) not found.', 'warn'); return; }
-        a.x = b.x; a.y = b.y + 0.5; a.z = b.z;
+        a.x = b.x; a.y = b.y + 0.5; a.z = b.z; a.hasMoved = true;
         this.ac.grantTeleportGrace(a, 2000);
         a.ws.sendJSON({ type: 'rubberband', x: a.x, y: a.y, z: a.z, reason: `Teleported to ${b.name}.` });
         reply(`Teleported ${a.name} to ${b.name}.`);
@@ -1794,7 +1475,7 @@ class VoxelCraftServer {
         const a = this.findPlayerByName(args[0]);
         const tx = parseFloat(args[1]), ty = parseFloat(args[2]), tz = parseFloat(args[3]);
         if (!a || !Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz)) { reply('Usage: /tp <player> <x> <y> <z>', 'warn'); return; }
-        a.x = tx; a.y = ty; a.z = tz;
+        a.x = tx; a.y = ty; a.z = tz; a.hasMoved = true;
         this.ac.grantTeleportGrace(a, 2000);
         a.ws.sendJSON({ type: 'rubberband', x: tx, y: ty, z: tz, reason: `Teleported to ${tx}, ${ty}, ${tz}.` });
         reply(`Teleported ${a.name} to ${tx}, ${ty}, ${tz}.`);
@@ -1870,5 +1551,9 @@ server.start();
 process.on('SIGINT', () => server.stop(true));
 process.on('SIGTERM', () => server.stop(true));
 process.on('uncaughtException', (err) => {
-  console.error('[Fatal] Uncaught exception:', err);
+  // Keep the server alive for connected players, but make the failure visible
+  console.error('[Error] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[Error] Unhandled promise rejection:', err);
 });
