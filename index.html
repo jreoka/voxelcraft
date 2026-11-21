@@ -2011,8 +2011,8 @@ class BlockRegistry {
     def(B.LANTERN, 'Lantern', { hardness: 1.5, tool: 'pickaxe', transparent: true, shape: 'torch', light: 15, sound: 'metal', tex: T.LANTERN });
     def(B.BED, 'Bed', { hardness: 0.8, transparent: true, shape: 'slab', sound: 'wood', tex: [T.BED_TOP, T.OAK_PLANKS, T.BED_SIDE], interactable: true });
     def(B.WORKSTATION, 'Smithing Bench', { hardness: 3.0, tool: 'pickaxe', sound: 'metal', tex: [T.WORKSTATION_TOP, T.OAK_PLANKS, T.CRAFT_SIDE], interactable: true });
-    def(B.REDSTONE_WIRE, 'Redstone Dust', { hardness: 0.05, solid: false, transparent: true, shape: 'carpet', sound: 'stone', tex: T.REDSTONE_WIRE, drop: IT.REDSTONE });
-    def(B.LEVER, 'Lever', { hardness: 0.4, solid: false, transparent: true, shape: 'torch', sound: 'stone', tex: T.LEVER, interactable: true });
+    def(B.REDSTONE_WIRE, 'Redstone Dust', { hardness: 0.05, solid: false, transparent: true, shape: 'redstone', sound: 'stone', tex: T.REDSTONE_WIRE, drop: IT.REDSTONE });
+    def(B.LEVER, 'Lever', { hardness: 0.4, solid: false, transparent: true, shape: 'lever', sound: 'stone', tex: T.LEVER, interactable: true });
     def(B.PRESSURE_PLATE, 'Pressure Plate', { hardness: 0.5, solid: false, transparent: true, shape: 'pressure_plate', sound: 'stone', tex: T.PRESSURE_PLATE });
     def(B.STONE_BUTTON, 'Stone Button', { hardness: 0.4, solid: false, transparent: true, shape: 'button', sound: 'stone', tex: T.STONE_BUTTON, interactable: true });
     def(B.REDSTONE_LAMP, 'Redstone Lamp', { hardness: 0.8, sound: 'glass', tex: T.REDSTONE_LAMP });
@@ -2855,14 +2855,30 @@ class TextureAtlas {
     this._drawTile(T.GRAY_CONCRETE, (p, rng) => this._fillNoise(p, rng, [74, 80, 88], 8, 2));
     const drawMetal = (idx, c) => this._drawTile(idx, (p, rng) => {
       for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-        const b = (x < 2 || y < 2) ? 24 : (x > 29 || y > 29) ? -28 : ((x+y)%16 < 3 ? 10 : 0);
+        const outer = x < 2 || y < 2 || x > 29 || y > 29;
+        const inner = (x === 2 || y === 2 || x === 29 || y === 29) && !outer;
+        const hi = (x < 2 || y < 2) ? 34 : (x > 29 || y > 29) ? -34 : inner ? ((x === 2 || y === 2) ? -18 : 18) : 0;
+        const sheen = ((x + y >= 10 && x + y <= 14) || (x + y >= 42 && x + y <= 45)) && !outer ? 16 : 0;
         const n = (rng.next() - 0.5) * 8;
-        p(x, y, c[0]+b+n, c[1]+b+n, c[2]+b+n);
+        p(x, y, c[0]+hi+sheen+n, c[1]+hi+sheen+n, c[2]+hi+sheen+n);
       }
     });
-    drawMetal(T.IRON_BLOCK, [214, 220, 226]);
-    drawMetal(T.GOLD_BLOCK, [242, 202, 56]);
-    drawMetal(T.DIAMOND_BLOCK, [86, 226, 220]);
+    drawMetal(T.IRON_BLOCK, [216, 222, 228]);
+    drawMetal(T.GOLD_BLOCK, [244, 200, 48]);
+    this._drawTile(T.DIAMOND_BLOCK, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const edge = Math.min(x, y, 31 - x, 31 - y);
+        const topLeft = x + y < 31;
+        let r = 74, g = 220, b = 216;
+        if (edge < 2) { r = topLeft ? 156 : 36; g = topLeft ? 250 : 152; b = topLeft ? 246 : 158; }
+        else if (edge < 4) { r = topLeft ? 114 : 48; g = topLeft ? 238 : 182; b = topLeft ? 234 : 184; }
+        else if ((x + y >= 14 && x + y <= 18) || (x === 8 && y >= 8 && y <= 14) || (y === 8 && x >= 8 && x <= 14)) {
+          r = 186; g = 255; b = 252;
+        }
+        const n = (rng.next() - 0.5) * 10;
+        p(x, y, r + n, g + n, b + n);
+      }
+    });
 
     this._drawTile(T.WOOL_WHITE, (p, rng) => this._fillNoise(p, rng, [232, 232, 228], 12, 2));
     this._drawTile(T.WOOL_RED, (p, rng) => this._fillNoise(p, rng, [182, 48, 48], 14, 2));
@@ -2902,48 +2918,114 @@ class TextureAtlas {
 
     // Functional Blocks
     this._drawTile(T.CRAFT_TOP, (p, rng) => {
-      this._fillNoise(p, rng, [168, 124, 76], 10, 2);
+      this._fillNoise(p, rng, [172, 126, 76], 10, 2);
       for (let i = 0; i < 32; i++) {
-        for (const k of [0,1,10,21,30,31]) { p(i, k, 92, 62, 34); p(k, i, 92, 62, 34); }
+        for (const k of [0, 1, 30, 31]) { p(i, k, 96, 62, 32); p(k, i, 96, 62, 32); }
+        for (const k of [10, 11, 20, 21]) { p(i, k, 82, 52, 28); p(k, i, 82, 52, 28); }
+      }
+      // Subtle wood bevel inside each 3x3 cell
+      for (const cy of [2, 12, 22]) for (const cx of [2, 12, 22]) {
+        for (let k = 0; k < 8; k++) { p(cx + k, cy, 196, 152, 96); p(cx, cy + k, 190, 146, 92); }
       }
     });
     this._drawTile(T.CRAFT_SIDE, (p, rng) => {
-      this._fillNoise(p, rng, [162, 122, 74], 10, 2);
-      for (let x = 0; x < 32; x++) for (let y = 0; y < 5; y++) p(x, y, 102, 68, 38);
-      for (let y = 10; y < 24; y++) { p(8, y, 76, 82, 92); p(9, y, 76, 82, 92); p(22, y, 110, 74, 42); }
+      this._fillNoise(p, rng, [164, 122, 74], 10, 2);
+      // Dark top apron & vertical plank seams
+      for (let x = 0; x < 32; x++) {
+        for (let y = 0; y < 5; y++) p(x, y, 102, 66, 34);
+        p(x, 5, 76, 48, 24);
+        p(x, 30, 118, 82, 46); p(x, 31, 96, 64, 34);
+      }
+      for (const sx of [0, 15, 31]) for (let y = 6; y < 30; y++) p(sx, y, 116, 80, 44);
+      // Hanging iron saw (left)
+      for (let y = 9; y < 23; y++) {
+        p(6, y, 176, 184, 194); p(7, y, 144, 152, 162);
+        if (y % 2 === 0 && y > 11) p(8, y, 198, 206, 214);
+      }
+      for (let x = 5; x < 10; x++) { p(x, 8, 98, 62, 32); p(x, 9, 124, 80, 42); }
+      // Hanging hammer (right)
+      for (let y = 12; y < 25; y++) { p(22, y, 112, 74, 38); p(23, y, 134, 92, 48); }
+      for (let y = 9; y < 13; y++) for (let x = 19; x < 27; x++) p(x, y, 86, 92, 102);
+      for (let x = 19; x < 27; x++) p(x, 9, 132, 138, 148);
     });
     this._drawTile(T.FURNACE_TOP, (p, rng) => {
       this._fillNoise(p, rng, [132, 136, 140], 14, 2);
-      for (let i = 0; i < 32; i++) { p(i, 0, 84,88,92); p(i, 31, 84,88,92); p(0, i, 84,88,92); p(31, i, 84,88,92); }
+      for (let i = 0; i < 32; i++) {
+        p(i, 0, 82, 86, 90); p(i, 1, 104, 108, 112); p(i, 31, 74, 78, 82);
+        p(0, i, 82, 86, 90); p(1, i, 104, 108, 112); p(31, i, 74, 78, 82);
+        if (i > 3 && i < 28) { p(i, 15, 96, 100, 104); p(15, i, 96, 100, 104); }
+      }
     });
-    this._drawTile(T.FURNACE_SIDE, (p, rng) => this._fillNoise(p, rng, [126, 130, 134], 16, 2));
+    this._drawTile(T.FURNACE_SIDE, (p, rng) => {
+      this._fillNoise(p, rng, [126, 130, 134], 16, 2);
+      for (let x = 0; x < 32; x++) {
+        for (const y of [0, 1, 15, 16, 30, 31]) p(x, y, 88, 92, 96);
+        p(x, 2, 150, 154, 158); p(x, 17, 148, 152, 156);
+      }
+    });
     const drawFurnaceFront = (idx, lit) => this._drawTile(idx, (p, rng) => {
-      this._fillNoise(p, rng, [126, 130, 134], 14, 2);
-      for (let y = 6; y < 14; y++) for (let x = 6; x < 26; x++) p(x, y, 36, 38, 42);
+      this._fillNoise(p, rng, [124, 128, 132], 14, 2);
+      for (let i = 0; i < 32; i++) {
+        p(i, 0, 84, 88, 92); p(i, 31, 74, 78, 82); p(0, i, 84, 88, 92); p(31, i, 74, 78, 82);
+      }
+      // Upper oven mouth (arched)
+      for (let y = 5; y < 14; y++) for (let x = 6; x < 26; x++) {
+        if (y === 5 && (x < 8 || x > 23)) continue;
+        p(x, y, 30, 32, 36);
+      }
+      for (let x = 6; x < 26; x++) p(x, 14, 152, 156, 160);
+      // Lower firebox
       for (let y = 18; y < 28; y++) for (let x = 7; x < 25; x++) {
-        if (lit) p(x, y, 245, 110 + rng.int(0, 120), 25);
-        else p(x, y, 32, 34, 38);
+        if (lit) {
+          const hot = y > 23 || (Math.abs(x - 15.5) < (y - 16) * 1.1);
+          if (hot) p(x, y, 255, y > 24 ? 226 : (115 + rng.int(0, 95)), y > 24 ? 95 : 22);
+          else p(x, y, 68, 28, 18);
+        } else {
+          p(x, y, 28, 30, 34);
+        }
       }
     });
     drawFurnaceFront(T.FURNACE_FRONT, false);
     drawFurnaceFront(T.FURNACE_LIT, true);
 
     const drawChest = (idx, front) => this._drawTile(idx, (p, rng) => {
-      this._fillNoise(p, rng, [154, 106, 52], 12, 2);
+      this._fillNoise(p, rng, [162, 112, 54], 12, 2);
       for (let i = 0; i < 32; i++) {
-        p(i, 0, 76,50,24); p(i, 1, 76,50,24); p(i, 30, 76,50,24); p(i, 31, 76,50,24);
-        p(0, i, 76,50,24); p(1, i, 76,50,24); p(30, i, 76,50,24); p(31, i, 76,50,24);
-        p(i, 10, 62, 42, 20);
+        p(i, 0, 72, 46, 20); p(i, 1, 96, 64, 30); p(i, 30, 86, 56, 26); p(i, 31, 64, 40, 18);
+        p(0, i, 72, 46, 20); p(1, i, 96, 64, 30); p(30, i, 86, 56, 26); p(31, i, 64, 40, 18);
+        p(i, 10, 56, 36, 16); p(i, 11, 188, 136, 72);
       }
-      if (front) for (let y = 8; y < 16; y++) for (let x = 13; x < 19; x++) p(x, y, 224, 192, 68);
+      // Iron corner brackets
+      for (const bx of [2, 27]) for (const by of [2, 27]) {
+        for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) p(bx + dx, by + dy, 74, 78, 86);
+      }
+      if (front) {
+        for (let y = 8; y < 16; y++) for (let x = 13; x < 19; x++) {
+          const edge = x === 13 || x === 18 || y === 8 || y === 15;
+          p(x, y, edge ? 112 : 226, edge ? 96 : 204, edge ? 48 : 96);
+        }
+        p(15, 12, 56, 46, 28); p(16, 12, 56, 46, 28);
+      }
     });
     drawChest(T.CHEST_TOP, false);
     drawChest(T.CHEST_SIDE, false);
     drawChest(T.CHEST_FRONT, true);
 
-    this._drawTile(T.TORCH, (p) => {
-      for (let y = 10; y < 32; y++) for (let x = 13; x < 19; x++) p(x, y, 134, 94, 48);
-      for (let y = 4; y < 12; y++) for (let x = 12; x < 20; x++) p(x, y, 255, y < 8 ? 242 : 164, 48);
+    this._drawTile(T.TORCH, (p, rng) => {
+      // Wooden shaft with grain & shading
+      for (let y = 10; y < 32; y++) for (let x = 13; x < 19; x++) {
+        const edge = x === 13 || x === 18;
+        const n = (rng.next() - 0.5) * 14;
+        p(x, y, (edge ? 96 : 148) + n, (edge ? 64 : 104) + n, (edge ? 32 : 54) + n);
+      }
+      // Charcoal ember band
+      for (let y = 9; y < 12; y++) for (let x = 13; x < 19; x++) p(x, y, 52, 42, 38);
+      // Glowing layered flame tip
+      for (let y = 3; y < 10; y++) for (let x = 12; x < 20; x++) {
+        if ((y === 3 && (x < 14 || x > 17)) || (y === 4 && (x === 12 || x === 19))) continue;
+        const core = x >= 14 && x <= 17 && y >= 5 && y <= 8;
+        p(x, y, 255, core ? 248 : (y < 6 ? 210 : 142), core ? 156 : 36);
+      }
     });
     this._drawTile(T.LANTERN, (p, rng) => {
       // Zone A (x0-15, y0-17): body side — iron frame around glowing glass with a center bar
@@ -2975,14 +3057,44 @@ class TextureAtlas {
         else p(x, y, 58 + v, 62 + v, 72 + v);
       }
     });
-    this._drawTile(T.BED_TOP, (p) => {
+    this._drawTile(T.BED_TOP, (p, rng) => {
       for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-        if (y < 10) p(x, y, 238, 238, 242);
-        else p(x, y, 186, 44, 44);
+        const n = (rng.next() - 0.5) * 10;
+        if (y < 2 || x < 2 || x > 29 || y > 29) {
+          // Subtle oak headboard / edge frame
+          p(x, y, 134 + n, 94 + n, 52 + n);
+        } else if (y < 10) {
+          // Shaded plump white pillow
+          const rim = y === 2 || y === 9 || x === 2 || x === 29;
+          const crease = (y === 5 || y === 6) && x > 6 && x < 25;
+          const v = rim ? -24 : crease ? -10 : 0;
+          p(x, y, 240 + v + n * 0.5, 240 + v + n * 0.5, 244 + v + n * 0.5);
+        } else if (y < 13) {
+          // Folded white sheet hem
+          const v = y === 12 ? -22 : 0;
+          p(x, y, 232 + v + n * 0.5, 230 + v + n * 0.5, 234 + v + n * 0.5);
+        } else {
+          // Quilted crimson blanket
+          const seam = (x % 8 === 0 || y % 8 === 0) ? -18 : 0;
+          p(x, y, 186 + seam + n, 40 + seam * 0.3 + n * 0.5, 42 + seam * 0.3 + n * 0.5);
+        }
       }
     });
-    this._drawTile(T.BED_SIDE, (p) => {
-      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) p(x, y, y < 18 ? 178 : 138, y < 18 ? 46 : 98, y < 18 ? 46 : 54);
+    this._drawTile(T.BED_SIDE, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 10;
+        if (y < 14) {
+          const trim = y === 13 ? -26 : 0;
+          p(x, y, 182 + trim + n, 42 + n * 0.5, 44 + n * 0.5);
+        } else if (y < 24) {
+          p(x, y, 146 + n, 102 + n, 56 + n);
+        } else {
+          // Bed legs at corners, shadow underneath
+          const leg = x < 5 || x > 26;
+          if (leg) p(x, y, 118 + n, 80 + n, 42 + n);
+          else p(x, y, 54, 38, 22);
+        }
+      }
     });
     this._drawTile(T.WORKSTATION_TOP, (p, rng) => this._fillNoise(p, rng, [72, 76, 86], 10, 2));
     const drawDoorPair = (botIdx, topIdx, base, trim, handle, isIron = false) => {
@@ -3032,20 +3144,87 @@ class TextureAtlas {
         if (y % 8 === 2 || y % 8 === 3) for (let x = 4; x < 28; x++) p(x, y, 168, 124, 68);
       }
     });
-    this._drawTile(T.REDSTONE_WIRE, (p) => {
-      for (let i = 0; i < 32; i++) { p(i, 15, 224, 24, 24); p(i, 16, 224, 24, 24); p(15, i, 224, 24, 24); p(16, i, 224, 24, 24); }
+    this._drawTile(T.REDSTONE_WIRE, (p, rng) => {
+      // Neutral bright speckled dust tile so vertex color cleanly tints unpowered (dark ruby) vs powered (glowing scarlet)!
+      for (let by = 0; by < 16; by++) for (let bx = 0; bx < 16; bx++) {
+        const grain = rng.next();
+        const v = grain < 0.2 ? 175 : grain < 0.7 ? 225 : 255;
+        for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+          p(bx * 2 + dx, by * 2 + dy, v, v, v, 255);
+        }
+      }
     });
-    this._drawTile(T.LEVER, (p) => {
-      for (let y = 16; y < 32; y++) for (let x = 10; x < 22; x++) p(x, y, 124, 128, 132);
-      for (let y = 6; y < 22; y++) for (let x = 14; x < 18; x++) p(x, y, 146, 104, 56);
+    this._drawTile(T.LEVER, (p, rng) => {
+      // Top half (y0..15): shaded wooden handle + redstone tip; Bottom half (y16..31): cobble base
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 14;
+        if (y < 4) p(x, y, 198 + n, 46 + n * 0.4, 42 + n * 0.4);
+        else p(x, y, 146 + n, 102 + n, 54 + n);
+      }
+      for (let y = 16; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 22;
+        const edge = x < 2 || x > 29 || y === 16 || y === 31 ? -24 : 0;
+        p(x, y, 122 + edge + n, 126 + edge + n, 130 + edge + n);
+      }
     });
-    this._drawTile(T.REDSTONE_LAMP, (p, rng) => this._fillNoise(p, rng, [118, 76, 46], 14, 2));
-    this._drawTile(T.REDSTONE_LAMP_ON, (p, rng) => this._fillNoise(p, rng, [252, 222, 132], 18, 2));
-    this._drawTile(T.TNT_TOP, (p, rng) => this._fillNoise(p, rng, [196, 54, 42], 14, 2));
+    const drawRedstoneLamp = (idx, lit) => this._drawTile(idx, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const outer = x < 2 || x > 29 || y < 2 || y > 29;
+        const diag = Math.abs(x - y) <= 1 || Math.abs((31 - x) - y) <= 1;
+        const n = (rng.next() - 0.5) * 14;
+        if (outer || diag) {
+          p(x, y, (lit ? 96 : 64) + n * 0.6, (lit ? 60 : 40) + n * 0.5, (lit ? 34 : 24) + n * 0.4);
+        } else {
+          const dist = Math.hypot(x - 15.5, y - 15.5) / 16;
+          if (lit) {
+            const g = 1 - dist * 0.35;
+            p(x, y, 255, 205 + g * 45 + n * 0.5, 105 + g * 85 + n * 0.5);
+          } else {
+            p(x, y, 132 - dist * 24 + n, 84 - dist * 16 + n, 48 - dist * 10 + n);
+          }
+        }
+      }
+    });
+    drawRedstoneLamp(T.REDSTONE_LAMP, false);
+    drawRedstoneLamp(T.REDSTONE_LAMP_ON, true);
+    this._drawTile(T.TNT_TOP, (p, rng) => {
+      // Top view of bundled red dynamite sticks with white center fuse
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const seam = (x % 8 === 0 || y % 8 === 0);
+        const n = (rng.next() - 0.5) * 14;
+        if (seam) p(x, y, 86, 26, 22);
+        else p(x, y, 198 + n, 48 + n * 0.5, 38 + n * 0.5);
+      }
+      for (let y = 13; y < 19; y++) for (let x = 13; x < 19; x++) p(x, y, 42, 38, 36);
+      for (let y = 14; y < 18; y++) for (let x = 14; x < 18; x++) p(x, y, 232, 224, 204);
+    });
     this._drawTile(T.TNT_SIDE, (p, rng) => {
-      this._fillNoise(p, rng, [196, 54, 42], 12, 2);
-      for (let y = 10; y < 22; y++) for (let x = 0; x < 32; x++) p(x, y, 236, 232, 224);
-      for (let y = 13; y < 19; y++) { p(8, y, 30,30,30); p(15, y, 30,30,30); p(22, y, 30,30,30); }
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const seam = x % 8 === 0;
+        const n = (rng.next() - 0.5) * 14;
+        if (y >= 10 && y < 22) {
+          const border = y === 10 || y === 21;
+          p(x, y, border ? 196 : 238 + n * 0.3, border ? 192 : 234 + n * 0.3, border ? 184 : 226 + n * 0.3);
+        } else {
+          p(x, y, (seam ? 124 : 204) + n, (seam ? 32 : 50) + n * 0.5, (seam ? 26 : 38) + n * 0.5);
+        }
+      }
+      // Crisp pixel-art "TNT" letters on the white band
+      const tnt = [
+        '11111010001011111',
+        '00100011001000100',
+        '00100010101000100',
+        '00100010011000100',
+        '00100010001000100'
+      ];
+      for (let r = 0; r < tnt.length; r++) {
+        for (let c = 0; c < tnt[r].length; c++) {
+          if (tnt[r][c] === '1') {
+            p(7 + c, 13 + r, 24, 24, 28);
+            p(7 + c, 14 + r, 34, 34, 38);
+          }
+        }
+      }
     });
 
     // Fluids
@@ -3245,10 +3424,46 @@ class TextureAtlas {
         p(x, y, 162, 62, 245); p(x+1, y, 212, 128, 255);
       }
     });
-    drawMetal(T.COPPER_BLOCK, [212, 118, 76]);
-    drawMetal(T.EMERALD_BLOCK, [54, 218, 112]);
-    drawMetal(T.NETHERITE_BLOCK, [68, 62, 68]);
-    drawMetal(T.QUARTZ_BLOCK, [238, 232, 224]);
+    this._drawTile(T.COPPER_BLOCK, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const seam = x === 0 || y === 0 || x === 16 || y === 16;
+        const hi = x === 1 || y === 1 || x === 17 || y === 17;
+        const rivet = ((x === 3 || x === 13 || x === 19 || x === 29) && (y === 3 || y === 13 || y === 19 || y === 29));
+        const n = (rng.next() - 0.5) * 10;
+        const d = seam ? -38 : hi ? 24 : rivet ? -24 : 0;
+        p(x, y, 206 + d + n, 114 + d * 0.7 + n, 74 + d * 0.5 + n);
+      }
+    });
+    this._drawTile(T.EMERALD_BLOCK, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const d = Math.max(Math.abs(x - 15.5), Math.abs(y - 15.5));
+        const topLeft = x + y < 31;
+        const n = (rng.next() - 0.5) * 10;
+        let r = 38, g = 204, b = 96;
+        if (d > 13.5) { r = topLeft ? 98 : 18; g = topLeft ? 244 : 124; b = topLeft ? 138 : 54; }
+        else if (d > 9.5 && d < 11.5) { r = topLeft ? 134 : 22; g = topLeft ? 255 : 148; b = topLeft ? 168 : 68; }
+        else if (d < 5.5) { r = 112; g = 248; b = 152; }
+        p(x, y, r + n, g + n, b + n);
+      }
+    });
+    this._drawTile(T.NETHERITE_BLOCK, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const d = Math.max(Math.abs(x - 15.5), Math.abs(y - 15.5));
+        const groove = (d > 10 && d < 12) || (d > 5 && d < 7);
+        const hi = x < 2 || y < 2;
+        const n = (rng.next() - 0.5) * 10;
+        const o = groove ? -22 : hi ? 18 : 0;
+        p(x, y, 66 + o + n, 60 + o + n, 66 + o + n);
+      }
+    });
+    this._drawTile(T.QUARTZ_BLOCK, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const border = x < 2 || x > 29 || y < 2 || y > 29;
+        const n = (rng.next() - 0.5) * 6;
+        const o = border ? -16 : 0;
+        p(x, y, 238 + o + n, 233 + o + n, 224 + o + n);
+      }
+    });
     drawBrick(T.DEEPSLATE_BRICKS, [76, 80, 88], [46, 48, 54]);
     this._drawTile(T.CRACKED_BRICKS, (p, rng) => {
       for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
@@ -3294,8 +3509,15 @@ class TextureAtlas {
     });
 
     // Functional New Blocks (Pressure Plate, Button, Campfire, Slime, Barrel, Enchanting Table, Jukebox, Iron Bars)
-    this._drawTile(T.PRESSURE_PLATE, (p, rng) => this._fillNoise(p, rng, [146, 150, 156], 10, 2));
-    this._drawTile(T.STONE_BUTTON, (p, rng) => this._fillNoise(p, rng, [138, 142, 148], 10, 2));
+    const drawBevelStone = (idx, base) => this._drawTile(idx, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const hi = x < 2 || y < 2 ? 22 : (x > 29 || y > 29 ? -28 : 0);
+        const n = (rng.next() - 0.5) * 12;
+        p(x, y, base[0] + hi + n, base[1] + hi + n, base[2] + hi + n);
+      }
+    });
+    drawBevelStone(T.PRESSURE_PLATE, [148, 152, 158]);
+    drawBevelStone(T.STONE_BUTTON, [138, 142, 148]);
     this._drawTile(T.CAMPFIRE_TOP, (p, rng) => {
       this._fillNoise(p, rng, [72, 46, 28], 12, 2);
       for (let y = 7; y < 25; y++) for (let x = 7; x < 25; x++) {
@@ -3395,30 +3617,168 @@ class TextureAtlas {
     const it = ITEMS.get(itemId);
     if (!it) return '';
 
-    if (it.blockId && BLOCKS.get(it.blockId)) {
+    const px = (x, y, w, h, fill) => { ctx.fillStyle = fill; ctx.fillRect(x * 2, y * 2, w * 2, h * 2); };
+    const plot = (grid, palette, ox = 0, oy = 0) => {
+      for (let y = 0; y < grid.length; y++) {
+        const row = grid[y];
+        for (let x = 0; x < row.length; x++) {
+          const ch = row[x];
+          if (ch !== '.' && ch !== ' ' && palette[ch]) px(ox + x, oy + y, 1, 1, palette[ch]);
+        }
+      }
+    };
+    const shade = (hex, k) => {
+      const n = parseInt(hex.slice(1), 16);
+      const r = clamp(Math.round(((n >> 16) & 255) * k), 0, 255);
+      const g = clamp(Math.round(((n >> 8) & 255) * k), 0, 255);
+      const b = clamp(Math.round((n & 255) * k), 0, 255);
+      return `rgb(${r},${g},${b})`;
+    };
+    const tint = (hex, mix) => {
+      const n = parseInt(hex.slice(1), 16);
+      const r = clamp(Math.round(((n >> 16) & 255) + (255 - ((n >> 16) & 255)) * mix), 0, 255);
+      const g = clamp(Math.round(((n >> 8) & 255) + (255 - ((n >> 8) & 255)) * mix), 0, 255);
+      const b = clamp(Math.round((n & 255) + (255 - (n & 255)) * mix), 0, 255);
+      return `rgb(${r},${g},${b})`;
+    };
+
+    const drawDustPile = (pal) => plot([
+      '..................',
+      '..................',
+      '..................',
+      '..................',
+      '.......oo.........',
+      '......oHHo........',
+      '.....oHMMBo.......',
+      '....oHMHHMMo......',
+      '...oHMMMMMMDo..o..',
+      '..oHMHMMMMMMDo.Mo.',
+      '..oMMMMMMMMDDo.oo.',
+      '.oMMMMMMMMMDDDo...',
+      '.oMMMDMMMMDDDDoo..',
+      '..ooDDDDDDDDDoo...',
+      '....ooooooooo.....',
+      '.....oMo...oDo....',
+      '.....ooo...ooo....',
+      '..................'
+    ], pal);
+
+    // Special block items that need bespoke crisp icons rather than raw tiles or cubes
+    if (itemId === IT.REDSTONE || itemId === B.REDSTONE_WIRE) {
+      drawDustPile({ o: '#520808', D: '#9e1111', M: '#dc1e1e', B: '#ff4238', H: '#ff9688' });
+    } else if (itemId === B.TORCH) {
+      plot([
+        '..................',
+        '........oo........',
+        '.......oYYo.......',
+        '......oYWWYo......',
+        '......oOYYOo......',
+        '.......oOOo.......',
+        '.......oCCo.......',
+        '.......oWHo.......',
+        '.......oWWo.......',
+        '.......oWDo.......',
+        '.......oWHo.......',
+        '.......oWWo.......',
+        '.......oWDo.......',
+        '.......oWHo.......',
+        '.......oWWo.......',
+        '.......oWDo.......',
+        '........oo........',
+        '..................'
+      ], { o: '#3a220e', Y: '#ffdf40', W: '#fff8c4', O: '#ff8a1f', C: '#38302c', H: '#b88244', D: '#6d4720' });
+      // Fix wood shaft middle tone
+      for (let y = 7; y <= 15; y++) px(8, y, 1, 1, y % 3 === 1 ? '#b88244' : y % 3 === 2 ? '#966432' : '#7a5026');
+    } else if (itemId === B.LEVER) {
+      plot([
+        '..................',
+        '..................',
+        '...........oo.....',
+        '..........oRRo....',
+        '..........oRDo....',
+        '.........oWHo.....',
+        '........oWHo......',
+        '.......oWHo.......',
+        '......oWHo........',
+        '.....oWHo.........',
+        '....ooWoo.........',
+        '...oLLMMMo........',
+        '..oLMMLMMDo.......',
+        '..oMMMDMMDo.......',
+        '..oDDDDDDDo.......',
+        '...ooooooo........',
+        '..................',
+        '..................'
+      ], { o: '#2d2d32', R: '#e32b2b', D: '#686c73', W: '#9c6b38', H: '#c28c4e', L: '#a8aeb8', M: '#868b94' });
+    } else if (itemId === B.BED) {
+      plot([
+        '..................',
+        '..................',
+        '..................',
+        '..................',
+        '..................',
+        '......oooooo......',
+        '....ooPPPPPPoo....',
+        '...oPPWPPPPPPPo...',
+        '..oWWWRRRRRRRRRo..',
+        '.oWWWRRBRRRRRRRRo.',
+        '.oRRRRRRRRRRRRRRo.',
+        '.oRRRRRDDDDDRRRRo.',
+        '.oWWWWWWWWWWWWWWo.',
+        '.oWWo........oWWo.',
+        '.oWWo........oWWo.',
+        '..oo..........oo..',
+        '..................',
+        '..................'
+      ], { o: '#3d2410', P: '#f0f2f5', W: '#9c6a38', R: '#c92e2e', B: '#e84a4a', D: '#8c1c1c' });
+      // Clean white pillow & sheet strip
+      px(3, 8, 2, 1, '#e8ecf0'); px(2, 9, 3, 1, '#dce2e8'); px(2, 10, 2, 1, '#c8d0d8');
+      px(4, 7, 4, 1, '#ffffff'); px(5, 6, 4, 1, '#f4f6f8');
+    } else if (it.blockId && BLOCKS.get(it.blockId) && it.blockId === itemId) {
       const b = BLOCKS.get(it.blockId);
       if (it.blockId === B.LANTERN) {
         const f = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
-        f(15, 3, 6, 2, '#3a3f48'); f(14, 5, 2, 4, '#3a3f48'); f(20, 5, 2, 4, '#3a3f48');   // handle loop
-        f(12, 9, 12, 4, '#4a505c'); f(12, 9, 12, 1, '#6a7280');                           // cap
-        f(10, 13, 16, 18, '#3e434d');                                                      // frame
-        f(12, 15, 5, 14, '#ffc35a'); f(19, 15, 5, 14, '#ffc35a');                          // glass
-        f(13, 18, 3, 7, '#ffe9a8'); f(20, 18, 3, 7, '#ffe9a8');                            // glow core
-        f(17, 15, 2, 14, '#55504c');                                                       // center bar
-        f(10, 31, 16, 2, '#2c3038');                                                       // base
+        f(15, 3, 6, 2, '#3a3f48'); f(14, 5, 2, 4, '#3a3f48'); f(20, 5, 2, 4, '#3a3f48');
+        f(12, 9, 12, 4, '#4a505c'); f(12, 9, 12, 1, '#6a7280');
+        f(10, 13, 16, 18, '#3e434d');
+        f(12, 15, 5, 14, '#ffc35a'); f(19, 15, 5, 14, '#ffc35a');
+        f(13, 18, 3, 7, '#ffe9a8'); f(20, 18, 3, 7, '#ffe9a8');
+        f(17, 15, 2, 14, '#55504c');
+        f(10, 31, 16, 2, '#2c3038');
       } else if (b.shape === 'door') {
         const [tx, ty] = this._tileOrigin(b.tex[3] !== undefined ? b.tex[3] : b.tex[2]);
         const [bx, by] = this._tileOrigin(b.tex[2]);
         ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 10, 2, 16, 16);
         ctx.drawImage(this.canvas, bx, by, TILE_PX, TILE_PX, 10, 18, 16, 16);
-      } else if (b.cross || b.shape === 'torch' || b.shape === 'ladder' || b.shape === 'carpet' || b.shape === 'bars' || b.shape === 'bamboo' || b.shape === 'campfire') {
+      } else if (b.cross || b.shape === 'ladder' || b.shape === 'bars' || b.shape === 'bamboo' || b.shape === 'campfire') {
         const [ox, oy] = this._tileOrigin(b.tex[0]);
         ctx.drawImage(this.canvas, ox, oy, TILE_PX, TILE_PX, 4, 4, 28, 28);
+      } else if (b.shape === 'carpet' || b.shape === 'pressure_plate' || b.shape === 'button') {
+        const [tx, ty] = this._tileOrigin(b.tex[0]);
+        const hScale = b.shape === 'button' ? 0.36 : 0.22;
+        const wScale = b.shape === 'button' ? 0.62 : 0.86;
+        const yOff = b.shape === 'button' ? 14 : 16;
+        ctx.save();
+        ctx.translate(18, yOff);
+        ctx.transform(wScale, wScale * 0.5, -wScale, wScale * 0.5, 0, 0);
+        ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(18 - 16 * wScale, yOff + 8 * wScale);
+        ctx.transform(wScale, wScale * 0.5, 0, hScale, 0, 0);
+        ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(18, yOff + 16 * wScale);
+        ctx.transform(wScale, -wScale * 0.5, 0, hScale, 0, 0);
+        ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
       } else {
-        // Draw crisp 3D isometric voxel icon
+        // Crisp 3D isometric voxel icon
         const [tx, ty] = this._tileOrigin(b.tex[0]);
         const [sx, sy] = this._tileOrigin(b.tex[3] !== undefined ? b.tex[3] : b.tex[2]);
-        // Top face
         ctx.save();
         ctx.translate(18, 4);
         ctx.transform(0.86, 0.44, -0.86, 0.44, 0, 0);
@@ -3429,14 +3789,12 @@ class TextureAtlas {
           ctx.fillRect(0, 0, 16, 16);
         }
         ctx.restore();
-        // Left face
         ctx.save();
         ctx.translate(4.2, 11);
         ctx.transform(0.86, 0.44, 0, 0.96, 0, 0);
         ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
         ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 0, 16, 16);
         ctx.restore();
-        // Right face
         ctx.save();
         ctx.translate(18, 18);
         ctx.transform(0.86, -0.44, 0, 0.96, 0, 0);
@@ -3445,81 +3803,1011 @@ class TextureAtlas {
         ctx.restore();
       }
     } else {
-      // Procedural pixel art icon for tools, weapons, armor, food, materials
+      // Hand-crafted 18x18 shaded pixel art for every item, tool, weapon, armor & food
       const col = it.color || '#cccccc';
-      const handle = '#7d542c';
-      const px = (x, y, w, h, fill) => { ctx.fillStyle = fill; ctx.fillRect(x*2, y*2, w*2, h*2); };
-      switch (it.iconType) {
-        case 'pickaxe':
-          for (let i = 0; i < 11; i++) px(3+i, 14-i, 2, 2, handle);
-          px(5, 2, 8, 2, col); px(12, 4, 2, 2, col); px(13, 6, 2, 4, col); px(4, 3, 2, 2, col);
-          break;
-        case 'axe':
-          for (let i = 0; i < 11; i++) px(3+i, 14-i, 2, 2, handle);
-          px(9, 2, 5, 6, col); px(8, 3, 2, 4, col);
-          break;
-        case 'shovel':
-          for (let i = 0; i < 10; i++) px(3+i, 14-i, 2, 2, handle);
-          px(11, 2, 4, 5, col); px(10, 3, 2, 4, col);
-          break;
-        case 'hoe':
-          for (let i = 0; i < 11; i++) px(3+i, 14-i, 2, 2, handle);
-          px(7, 2, 7, 2, col); px(12, 4, 2, 2, col);
-          break;
-        case 'sword':
-          px(3, 13, 2, 2, handle); px(5, 11, 2, 2, handle);
-          px(4, 9, 5, 2, '#5c4632');
-          for (let i = 0; i < 9; i++) px(7+i, 10-i, 2, 2, col);
-          break;
-        case 'helmet':
-          px(4, 4, 10, 8, col); px(6, 8, 6, 4, '#1a202c'); break;
-        case 'chestplate':
-          px(3, 4, 12, 4, col); px(5, 8, 8, 7, col); px(7, 4, 4, 2, '#1a202c'); break;
-        case 'leggings':
-          px(4, 3, 10, 4, col); px(4, 7, 4, 8, col); px(10, 7, 4, 8, col); break;
-        case 'boots':
-          px(3, 8, 4, 6, col); px(11, 8, 4, 6, col); px(2, 12, 5, 2, col); px(11, 12, 5, 2, col); break;
-        case 'shield':
-          px(4, 3, 10, 12, col); px(6, 5, 6, 8, '#cbd5e1'); break;
-        case 'bow':
-          px(5, 3, 2, 2, col); px(7, 4, 2, 2, col); px(9, 6, 2, 6, col); px(7, 12, 2, 2, col); px(5, 13, 2, 2, col);
-          px(5, 5, 1, 8, '#e2e8f0'); break;
-        case 'arrow':
-          for (let i = 0; i < 10; i++) px(4+i, 13-i, 1, 1, handle);
-          px(12, 2, 3, 3, col); px(3, 12, 3, 3, '#f8fafc'); break;
-        case 'bucket':
-          px(4, 5, 10, 9, '#b8c2cc'); px(6, 6, 6, 4, col); break;
-        case 'stick':
-          for (let i = 0; i < 11; i++) px(3+i, 14-i, 2, 2, col); break;
-        case 'ingot':
-          px(3, 7, 12, 5, col); px(5, 6, 8, 2, '#ffffff44'); break;
-        case 'gem':
-          px(6, 4, 6, 10, col); px(4, 6, 10, 6, col); px(7, 6, 3, 3, '#ffffff66'); break;
-        case 'orb':
-          px(5, 5, 8, 8, col); px(6, 4, 6, 10, col); px(4, 6, 10, 6, col); px(7, 6, 2, 2, '#ffffff66'); break;
-        case 'bread': {
-          // Rounded golden loaf with dark crust rim, glossy top and scored cuts
-          const rows = [[5, 5, 12], [6, 3, 14], [7, 2, 15], [8, 2, 15], [9, 2, 15], [10, 2, 15], [11, 2, 15], [12, 3, 14], [13, 4, 13]];
-          for (const [y, a, b] of rows) {
-            for (let x = a; x <= b; x++) {
-              const rim = x === a || x === b || y === 5 || y === 13;
-              let c = '#c98a3c';
-              if (rim) c = '#6e4118';
-              else if (y <= 7) c = '#dda24c';
-              else if (y >= 11) c = '#a46a2a';
-              px(x, y, 1, 1, c);
-            }
+      const O = shade(col, 0.36), D = shade(col, 0.70), M = col, L = tint(col, 0.35), H = tint(col, 0.72);
+      const wO = '#3b240f', wD = '#6e4722', wM = '#946334', wL = '#b88248';
+
+      // Per-item bespoke pixel art first
+      if (itemId === IT.DIAMOND) {
+        plot([
+          '..................',
+          '..................',
+          '......oooooo......',
+          '.....oHHHHLLo.....',
+          '....oHHWWLLLMo....',
+          '...oHHWLLMMMMMo...',
+          '..oHHLMMMMMMMMDo..',
+          '..oHLLMMMMMMMDDDo.',
+          '..oLMMMMMMMMDDDo..',
+          '...oMMMMMMMDDDo...',
+          '....oMMMMMDDDo....',
+          '.....oMMMDDDo.....',
+          '......oMDDDo......',
+          '.......oDDo.......',
+          '........oo........',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#0e4c54', D: '#1a9a9e', M: '#33d8d4', L: '#75f6f0', H: '#b8fffb', W: '#ffffff' });
+      } else if (itemId === IT.EMERALD) {
+        plot([
+          '..................',
+          '.......oooo.......',
+          '......oHLLMo......',
+          '.....oHWWLMMo.....',
+          '....oHHLMMMMDo....',
+          '....oHLMMMMMDo....',
+          '....oLMMHHMMDo....',
+          '....oLMMHMMMDo....',
+          '....oLMMMMMMDo....',
+          '....oMMMMMMMDo....',
+          '....oMMMMMDDDo....',
+          '....oMMMMDDDo.....',
+          '.....oMMDDDo......',
+          '......oDDDo.......',
+          '.......ooo........',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#0a4720', D: '#158f3e', M: '#2bd461', L: '#6ef296', H: '#b4ffca', W: '#ffffff' });
+      } else if (itemId === IT.LAPIS) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......ooooo.......',
+          '....ooMMLLMo......',
+          '...oMLLHMMMMo.....',
+          '..oMMHMMMMMDMo....',
+          '..oMMMMMMDDDDo....',
+          '..oMMLLMMDDDDo....',
+          '..oMMMMMDDDDDo....',
+          '...oMMMDDDDDo.....',
+          '....oDDDDDDo......',
+          '.....oooooo.......',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#0e1d52', D: '#1c3b96', M: '#2c5ce0', L: '#5f8eff', H: '#a8c8ff' });
+      } else if (itemId === IT.COAL || itemId === IT.CHARCOAL) {
+        const isChar = itemId === IT.CHARCOAL;
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......ooooo.......',
+          '....ooLLMMLoo.....',
+          '...oLLMMMMMMMo....',
+          '..oLMMMMDDDDMo....',
+          '..oMMMDDMDDDDDo...',
+          '..oMMDDDDDDDDDo...',
+          '..oMDDDDDDDDDo....',
+          '...oDDDDDDDDo.....',
+          '....ooDDDDoo......',
+          '......oooo........',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], isChar
+          ? { o: '#1a1512', D: '#2e2621', M: '#473c35', L: '#695a50' }
+          : { o: '#101216', D: '#22252b', M: '#3a3f4a', L: '#5e6573' });
+      } else if (itemId === IT.AMETHYST_SHARD) {
+        plot([
+          '..................',
+          '...........oo.....',
+          '..........oWWo....',
+          '.........oHHLLo...',
+          '........oHHLLMo...',
+          '.......oHLLMMMo...',
+          '......oHLLMMMDo...',
+          '.....oHLLMMMDo....',
+          '....oHLLMMMDo.....',
+          '...oHLLMMMDo......',
+          '...oLLMMMDo.......',
+          '...oLMMMDo........',
+          '....oMMDo.........',
+          '.....ooo..........',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#44166e', D: '#782cb8', M: '#a855f0', L: '#cc8aff', H: '#eac4ff', W: '#ffffff' });
+      } else if (itemId === IT.FLINT) {
+        plot([
+          '..................',
+          '..................',
+          '........oo........',
+          '.......oLLo.......',
+          '......oLMMMo......',
+          '.....oLLMMMDo.....',
+          '....oLLMMMMDDo....',
+          '....oLMMMMDDDo....',
+          '...oLLMMMDDDDo....',
+          '...oLMMMDDDDDo....',
+          '...oMMMDDDDDo.....',
+          '....oMDDDDDo......',
+          '.....ooDDoo.......',
+          '.......oo.........',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#16181c', D: '#2d3138', M: '#4c525e', L: '#818996' });
+      } else if (itemId === IT.GUNPOWDER) {
+        drawDustPile({ o: '#25282e', D: '#464b54', M: '#69707a', B: '#8a929e', H: '#b8c0cc' });
+      } else if (itemId === IT.BONE_MEAL) {
+        drawDustPile({ o: '#7a756a', D: '#b5afa2', M: '#dcd8cc', B: '#efece4', H: '#ffffff' });
+      } else if (itemId === IT.STRING) {
+        plot([
+          '..................',
+          '..................',
+          '.....ooooo........',
+          '....oHLLMMo.......',
+          '...oHLoooMMo......',
+          '...oLo...oMo......',
+          '....oo..oMMo......',
+          '......ooLMo.......',
+          '.....oHLMo........',
+          '....oHLMo..oo.....',
+          '...oHLo...oMMo....',
+          '...oLo...oMMLo....',
+          '...oMMoooMMLo.....',
+          '....oMMMMLLo......',
+          '.....oooooo.......',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#68707a', M: '#c8d0d8', L: '#e4eaf0', H: '#ffffff' });
+      } else if (itemId === IT.WHEAT_SEEDS) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......oo..........',
+          '.....oHLo...oo....',
+          '.....oMDo..oHLo...',
+          '......oo...oMDo...',
+          '............oo....',
+          '...oo.............',
+          '..oHLo....oo......',
+          '..oMDo...oHLo.....',
+          '...oo....oMDo.....',
+          '..........oo..oo..',
+          '......oo.....oHLo.',
+          '.....oHLo....oMDo.',
+          '.....oMDo.....oo..',
+          '......oo..........',
+          '..................'
+        ], { o: '#365218', D: '#5c8529', M: '#84b53e', L: '#a9d65c', H: '#d4f08c' });
+      } else if (itemId === IT.RAW_IRON || itemId === IT.RAW_COPPER || itemId === IT.RAW_GOLD) {
+        const pal = itemId === IT.RAW_COPPER
+          ? { o: '#4f2412', D: '#9c4c28', M: '#cf7446', L: '#eb9e6c', H: '#54bfa0' }
+          : itemId === IT.RAW_GOLD
+          ? { o: '#63440a', D: '#b38218', M: '#e8b92e', L: '#ffe066', H: '#fff6b8' }
+          : { o: '#4a3528', D: '#8c6b54', M: '#c49d80', L: '#e6c5ab', H: '#fff0e0' };
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......oooo........',
+          '....ooHLLMo..oo...',
+          '...oHLLMMMo.oLLo..',
+          '..oHLMMMMMooMMMo..',
+          '..oLMMMHHMMMMMDo..',
+          '..oMMMMHMMMMDDDo..',
+          '...oMMMMDDDDDDo...',
+          '...oMMDDDDDDDDo...',
+          '....oDDDDDDDDo....',
+          '.....ooDDDDoo.....',
+          '.......oooo.......',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], pal);
+      } else if (itemId === IT.ANCIENT_SCRAP) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '.....ooooooo......',
+          '...ooLLMMMMMoo....',
+          '..oLLMMDDDDMMMo...',
+          '..oLMMDo..oDMDo...',
+          '..oMMDo....ooo....',
+          '..oMMDo...oooo....',
+          '..oMMMoo.oLLMMo...',
+          '...oMMMMoLMDDDo...',
+          '....oDDDDDDDDo....',
+          '.....oooooooo.....',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#291816', D: '#4d2e2b', M: '#754943', L: '#a66f62' });
+      } else if (itemId === IT.STICK) {
+        plot([
+          '..................',
+          '..................',
+          '.............oo...',
+          '............oLMo..',
+          '...........oLMDo..',
+          '..........oLMDo...',
+          '.........oLMDo....',
+          '........oLMDo.....',
+          '.......oLMDo......',
+          '......oLMDo.......',
+          '.....oLMDo........',
+          '....oLMDo.........',
+          '...oLMDo..........',
+          '..oLMDo...........',
+          '..oMDo............',
+          '...oo.............',
+          '..................',
+          '..................'
+        ], { o: wO, D: wD, M: wM, L: wL });
+      } else if (itemId === IT.BONE) {
+        plot([
+          '..................',
+          '............oo....',
+          '...........oHLo...',
+          '...........oHLoo..',
+          '..........oHLMMo..',
+          '.........oHLMoo...',
+          '........oHLMo.....',
+          '.......oHLMo......',
+          '......oHLMo.......',
+          '.....oHLMo........',
+          '....oHLMo.........',
+          '..ooHLMo..........',
+          '.oHLMMo...........',
+          '..ooMMo...........',
+          '...oMDo...........',
+          '....oo............',
+          '..................',
+          '..................'
+        ], { o: '#6b6456', D: '#b5ad9c', M: '#dbd4c3', L: '#f0eadb', H: '#ffffff' });
+      } else if (itemId === IT.FEATHER) {
+        plot([
+          '..................',
+          '...........oooo...',
+          '.........ooHHLLo..',
+          '........oHHHLLMo..',
+          '.......oHHLLMMo...',
+          '......oHHLLMMo....',
+          '.....oHHLQLMo.....',
+          '....oHHLQLMo......',
+          '....oHLQLMo.......',
+          '...oHLQLMo........',
+          '...oLQLMo.........',
+          '....oQo...........',
+          '...oQo............',
+          '..oQo.............',
+          '..oo..............',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#646c78', M: '#c6ced6', L: '#e4eaf0', H: '#ffffff', Q: '#8b95a3' });
+      } else if (itemId === IT.WHEAT_ITEM) {
+        plot([
+          '..................',
+          '..........oo.oo...',
+          '.........oHLoHLo..',
+          '........oHLoHLo...',
+          '.......oHLoHLo....',
+          '......oHLoHLo.....',
+          '.....oMDoMDo......',
+          '....oMDoMDo.......',
+          '....oRRoRRo.......',
+          '...oRRRoRRo.......',
+          '...oMDoMDo........',
+          '..oMDoMDo.........',
+          '..oMDoMDo.........',
+          '..oo..oo..........',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#664a16', D: '#b0862c', M: '#d6ab42', L: '#f0cd60', H: '#fff09c', R: '#b53226' });
+      } else if (itemId === IT.LEATHER) {
+        plot([
+          '..................',
+          '..................',
+          '....oo......oo....',
+          '...oLLoo..ooLLo...',
+          '...oLMMooooMMDo...',
+          '....oLMMMMMMDo....',
+          '....oLMMMMMMDo....',
+          '...oLLMMMMMMDDo...',
+          '...oLMMMMMMMDDo...',
+          '....oLMMMMMDDo....',
+          '....oMMMMMMDDo....',
+          '...oMMMo..oDDDo...',
+          '...oMDo....oDDo...',
+          '....oo......oo....',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#452410', D: '#78421e', M: '#a35d2f', L: '#c77c48' });
+      } else if (itemId === IT.PAPER) {
+        plot([
+          '..................',
+          '..................',
+          '......oooooooo....',
+          '.....oHHHHHHLLo...',
+          '....oHGGGGHHLLo...',
+          '....oHHHHHHHHLo...',
+          '....oHHGGGGHHLo...',
+          '...oHHHHHHHHLLo...',
+          '...oHHGGGGHHLLo...',
+          '...oHHHHHHHHLo....',
+          '..oHHHHHHHHLLo....',
+          '..oLLLLLLLLLLo....',
+          '..ooooooooooo.....',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#6f7882', L: '#d6dde6', H: '#f7f9fc', G: '#b8c2cc' });
+      } else if (itemId === IT.BOOK) {
+        plot([
+          '..................',
+          '..................',
+          '......ooooooo.....',
+          '.....oLLMMMMMo....',
+          '....oLMMGGMMMo....',
+          '....oLMMMMMMMo....',
+          '...oLLMMMMMMMo....',
+          '...oLMMMMMMMDo....',
+          '...oLMMMMMMMDDo...',
+          '...oLMMMMMMDPPo...',
+          '...oDDMMMMDPPPo...',
+          '....oDDDDPPPPPoo..',
+          '.....oDDPPPPPoo...',
+          '......ooooooo.....',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#361f0e', D: '#5e361a', M: '#875029', L: '#b06d3c', G: '#e0b84c', P: '#f0ead8' });
+      } else if (itemId === IT.SLIMEBALL || itemId === IT.CLAY_BALL || itemId === IT.MAGMA_CREAM) {
+        const pal = itemId === IT.SLIMEBALL
+          ? { o: '#255c18', D: '#4ba333', M: '#74d654', L: '#a3f57d', H: '#e4ffd4' }
+          : itemId === IT.CLAY_BALL
+          ? { o: '#454c57', D: '#788291', M: '#9da7b8', L: '#c2cbd9', H: '#e6ecf5' }
+          : { o: '#5c1408', D: '#b82d12', M: '#f0661a', L: '#ffb326', H: '#fff48f' };
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......oooooo......',
+          '....ooLLLLMMoo....',
+          '...oLLHHLLMMMMo...',
+          '..oLLHHLLMMMMMDo..',
+          '..oLLLLMMMMMMMDo..',
+          '..oLMMMMMMMMMDDo..',
+          '..oMMMMMMMMMDDDo..',
+          '..oMMMMMMMDDDDDo..',
+          '...oMMMMDDDDDDo...',
+          '....ooDDDDDDoo....',
+          '......oooooo......',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], pal);
+      } else if (itemId === IT.APPLE || itemId === IT.GOLDEN_APPLE) {
+        const g = itemId === IT.GOLDEN_APPLE;
+        plot([
+          '..................',
+          '.........oo.......',
+          '........oSSoo.....',
+          '........oSGGo.....',
+          '.....ooooSSoo.....',
+          '....oLLMMoMMMo....',
+          '...oLHHMMMMMMDo...',
+          '..oLHHMMMMMMMMDo..',
+          '..oLLMMMMMMMMDDo..',
+          '..oLMMMMMMMMDDDo..',
+          '..oMMMMMMMMDDDDo..',
+          '..oMMMMMMMDDDDDo..',
+          '...oMMMMDDDDDDo...',
+          '....oMMDDDDDDo....',
+          '.....oooDDooo.....',
+          '..................',
+          '..................',
+          '..................'
+        ], g
+          ? { o: '#6b4706', S: '#784e18', G: '#63b832', D: '#c98e12', M: '#f5c425', L: '#ffe663', H: '#ffffff' }
+          : { o: '#4f0c0c', S: '#6b421c', G: '#49a832', D: '#9e1919', M: '#db2c2c', L: '#f55d5d', H: '#ffd4d4' });
+      } else if (itemId === IT.CARROT) {
+        plot([
+          '..................',
+          '............oo....',
+          '...........oGGoo..',
+          '..........ooGGGo..',
+          '..........oLooo...',
+          '.........oLLMo....',
+          '........oLLMMo....',
+          '.......oLLMDo.....',
+          '......oLLMMo......',
+          '.....oLLMDo.......',
+          '....oLLMMo........',
+          '...oLLMDo.........',
+          '..oLMDo...........',
+          '..oMDo............',
+          '...oo.............',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#6b2c0a', G: '#3ca332', D: '#c45210', M: '#eb761e', L: '#ffa442' });
+      } else if (itemId === IT.POTATO || itemId === IT.BAKED_POTATO) {
+        const bkd = itemId === IT.BAKED_POTATO;
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......oooooo......',
+          '....ooLLLLMMoo....',
+          '...oLLHLLLMMMMo...',
+          '..oLLMMBMMMMMDDo..',
+          '..oLMMMBBMMMMDDo..',
+          '..oMMMMMMMMDDDDo..',
+          '..oMMEMMMMDDDDDo..',
+          '...oMMMMDDDDDDo...',
+          '....ooDDDDDDoo....',
+          '......oooooo......',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], bkd
+          ? { o: '#4d2b0c', D: '#8c5319', M: '#bd782b', L: '#d99945', H: '#f2c46d', B: '#ffe680', E: '#754114' }
+          : { o: '#57401e', D: '#9e7a44', M: '#cca462', L: '#e3c081', H: '#f2d8a2', B: '#cca462', E: '#785a2c' });
+      } else if (itemId === IT.MELON_SLICE) {
+        plot([
+          '..................',
+          '..................',
+          '............oo....',
+          '...........oRRo...',
+          '..........oRRRo...',
+          '.........oRSRRo...',
+          '........oRRRRRo...',
+          '.......oRRSRRRo...',
+          '......oRRRRRRRo...',
+          '.....oRRSRRRRPo...',
+          '....oRRRRRRRPPo...',
+          '...oRRRRRRPPGG....',
+          '...oPPPPPPGGGo....',
+          '....oGGGGGGGo.....',
+          '.....ooooooo......',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#264d18', G: '#3c8c2b', P: '#a6db7b', R: '#e33b49', S: '#241c1c' });
+      } else if (itemId === IT.PUMPKIN_PIE) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '.....oooooooo.....',
+          '...ooCCCCCCCCoo...',
+          '..oCCPPPPPPPPCCo..',
+          '.oCPPPPPWWPPPPPCo.',
+          '.oCPPPPWWWWPPPPCo.',
+          '.oCPPPPPPPPDCPPCo.',
+          '..oCCPPPPPPDDCCo..',
+          '...oDDDDDDDDDDo...',
+          '....ooDDDDDDoo....',
+          '......oooooo......',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#593312', C: '#e0ab63', D: '#a36426', P: '#d96e1c', W: '#fff7e6' });
+      } else if (itemId === IT.SWEET_BERRIES) {
+        plot([
+          '..................',
+          '.........oo.......',
+          '........oGGo......',
+          '.......oGoGGo.....',
+          '......oGooGo......',
+          '.....ooRRoGo......',
+          '....oRHRRooRRo....',
+          '....oRRRDoRHRo....',
+          '.....oDDoRRRDo....',
+          '....ooRRoDDo......',
+          '...oRHRRooRRo.....',
+          '...oRRRDoRHRo.....',
+          '....oDDoRRRDo.....',
+          '.....oo..oDo......',
+          '..........o.......',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#360a14', G: '#3b8c2a', D: '#8c112a', R: '#d91e46', H: '#ff7a96' });
+      } else if (itemId === IT.COOKIE) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '.....oooooooo.....',
+          '...ooLLLLMMMMoo...',
+          '..oLLCMMMMMCMMDo..',
+          '..oLMMMMMMMMMMDo..',
+          '..oMMMMMCMMMMMDo..',
+          '..oMMCMMMMMMCDDo..',
+          '..oMMMMMMMMMDDDo..',
+          '..oMMMMCMMDDDDDo..',
+          '...ooDDDDDDDDoo...',
+          '.....oooooooo.....',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#523012', D: '#9c6328', M: '#c98a42', L: '#e3aa62', C: '#3d2210' });
+      } else if (itemId === IT.MUSHROOM_STEW) {
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '...oooooooooooo...',
+          '..oWWSSSSSSSSWWo..',
+          '..oWSRRSSBBSSSWo..',
+          '..oWSSSSSSSSSSWo..',
+          '..oWWSSSSSSSSWWo..',
+          '...oWWWWWWWWWWo...',
+          '....oWDDDDDDWo....',
+          '.....oDDDDDDo.....',
+          '......oooooo......',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], { o: '#3d2410', W: '#9c6838', D: '#6b4320', S: '#c49668', R: '#d4352c', B: '#825736' });
+      } else if (itemId === IT.RAW_FISH || itemId === IT.COOKED_FISH) {
+        const ck = itemId === IT.COOKED_FISH;
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '..........ooo.....',
+          '........ooLLLo....',
+          '..oo...oLLMMLLo...',
+          '..oLo.oLMMMMEMLo..',
+          '..oMLoLMMMMMMMMLo.',
+          '..oMMLMMMMMMMMMDo.',
+          '..oMLoLMMMMMMMDo..',
+          '..oLo..oDDDDDDo...',
+          '..oo....oooooo....',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], ck
+          ? { o: '#4f3218', D: '#8c5d32', M: '#c48f56', L: '#e0b37b', E: '#1e1c1a' }
+          : { o: '#1f414d', D: '#447687', M: '#6ba5b8', L: '#a3d5e6', E: '#121a21' });
+      } else if (itemId === IT.RAW_CHICKEN || itemId === IT.COOKED_CHICKEN) {
+        const ck = itemId === IT.COOKED_CHICKEN;
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '.......ooooo......',
+          '.....ooLLMMMoo....',
+          '....oLLHMMMMMMo...',
+          '....oLMMMMMMMMDo..',
+          '....oMMMMMMMMDDo..',
+          '.....oMMMMMDDDo...',
+          '......oMMMDDDo....',
+          '.....oWWoDDoo.....',
+          '....oWWo.oo.......',
+          '...oWWo...........',
+          '...ooo............',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], ck
+          ? { o: '#522c0c', D: '#8c4c18', M: '#c4762d', L: '#e39e4b', H: '#f7c579', W: '#f2ece1' }
+          : { o: '#7a5244', D: '#c49382', M: '#ebbfb0', L: '#f7d8cc', H: '#fff0e8', W: '#ffffff' });
+      } else if (itemId === IT.RAW_BEEF || itemId === IT.STEAK || itemId === IT.RAW_PORK || itemId === IT.COOKED_PORK || itemId === IT.RAW_MUTTON || itemId === IT.COOKED_MUTTON) {
+        const isRaw = itemId === IT.RAW_BEEF || itemId === IT.RAW_PORK || itemId === IT.RAW_MUTTON;
+        const pal = {
+          o: shade(col, 0.38),
+          D: shade(col, 0.72),
+          M: col,
+          L: tint(col, 0.28),
+          F: isRaw ? '#fce8e6' : '#e0c4a8'
+        };
+        plot([
+          '..................',
+          '..................',
+          '..................',
+          '......ooooooo.....',
+          '....ooLLMMMMMoo...',
+          '...oLLMMFFMMMMMo..',
+          '..oLLMMFMMMMMMDo..',
+          '..oLMMMMMMFFMMDo..',
+          '..oLMMMMMFFMMDDo..',
+          '..oMMMMMMMMMDDDo..',
+          '...oMMMMMMDDDDo...',
+          '....oMMMMDDDDo....',
+          '.....ooDDDDoo.....',
+          '.......oooo.......',
+          '..................',
+          '..................',
+          '..................',
+          '..................'
+        ], pal);
+      } else if (itemId === IT.BREAD) {
+        const rows = [[5, 5, 12], [6, 3, 14], [7, 2, 15], [8, 2, 15], [9, 2, 15], [10, 2, 15], [11, 2, 15], [12, 3, 14], [13, 4, 13]];
+        for (const [y, a, b] of rows) {
+          for (let x = a; x <= b; x++) {
+            const rim = x === a || x === b || y === 5 || y === 13;
+            let c = '#c98a3c';
+            if (rim) c = '#6e4118';
+            else if (y <= 7) c = '#dda24c';
+            else if (y >= 11) c = '#a46a2a';
+            px(x, y, 1, 1, c);
           }
-          px(4, 6, 3, 1, '#f2c872'); px(3, 7, 2, 1, '#f2c872');
-          for (const g of [5, 8, 11]) { px(g, 7, 1, 1, '#f6e0a6'); px(g + 1, 8, 1, 1, '#f6e0a6'); px(g + 1, 7, 1, 1, '#9a6226'); }
-          break;
         }
-        case 'meat':
-          px(4, 6, 10, 7, col); px(6, 5, 7, 2, col); px(11, 8, 2, 2, '#f5efe6'); break;
-        case 'dust':
-          px(6, 8, 6, 4, col); px(5, 10, 8, 3, col); px(8, 6, 3, 3, col); break;
-        default:
-          px(4, 5, 10, 8, col); px(6, 4, 6, 10, col); break;
+        px(4, 6, 3, 1, '#f2c872'); px(3, 7, 2, 1, '#f2c872');
+        for (const g of [5, 8, 11]) { px(g, 7, 1, 1, '#f6e0a6'); px(g + 1, 8, 1, 1, '#f6e0a6'); px(g + 1, 7, 1, 1, '#9a6226'); }
+      } else {
+        // Shaded, outlined templates for tools, weapons, armor, ingots, buckets, bow, arrow, shield
+        const tp = { o: O, D, M, L, H, w: wO, a: wD, b: wM, c: wL };
+        switch (it.iconType) {
+          case 'pickaxe':
+            plot([
+              '..................',
+              '.....oooooo.......',
+              '....oHHLLMMoo.....',
+              '...oHLooooMMMo....',
+              '...oo....ocMMMo...',
+              '.........obMMMo...',
+              '........ocbMDMo...',
+              '.......ocbo.oMo...',
+              '......ocbo...oo...',
+              '.....ocbo.........',
+              '....ocbo..........',
+              '...ocbo...........',
+              '..ocbo............',
+              '..obo.............',
+              '...o..............',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'axe':
+            plot([
+              '..................',
+              '........ooooo.....',
+              '.......oHHLLMo....',
+              '......oHHLLMMo....',
+              '......oHLLMMDo....',
+              '......oLMMbMDo....',
+              '.......ooobDo.....',
+              '........ocbo......',
+              '.......ocbo.......',
+              '......ocbo........',
+              '.....ocbo.........',
+              '....ocbo..........',
+              '...ocbo...........',
+              '..ocbo............',
+              '..obo.............',
+              '...o..............',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'shovel':
+            plot([
+              '..................',
+              '...........ooo....',
+              '..........oHLLo...',
+              '.........oHLLMo...',
+              '.........oLMMDo...',
+              '.........oMMDo....',
+              '........ocbDo.....',
+              '.......ocboo......',
+              '......ocbo........',
+              '.....ocbo.........',
+              '....ocbo..........',
+              '...ocbo...........',
+              '..ocbo............',
+              '..obo.............',
+              '...o..............',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'hoe':
+            plot([
+              '..................',
+              '......ooooooo.....',
+              '.....oHHLLMMMo....',
+              '.....oHLooMMMo....',
+              '......oo.ocMDo....',
+              '.........oboo.....',
+              '........ocbo......',
+              '.......ocbo.......',
+              '......ocbo........',
+              '.....ocbo.........',
+              '....ocbo..........',
+              '...ocbo...........',
+              '..ocbo............',
+              '..obo.............',
+              '...o..............',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'sword':
+            plot([
+              '..................',
+              '.............oo...',
+              '............oHHo..',
+              '...........oHHLo..',
+              '..........oHLLMo..',
+              '.........oHLLMo...',
+              '........oHLLMo....',
+              '.......oHLLMo.....',
+              '....oooHLLMo......',
+              '...oDDHLLMo.......',
+              '....ooDDoo........',
+              '....ocbDo.........',
+              '...ocbDo..........',
+              '..oDDoo...........',
+              '..oDo.............',
+              '...o..............',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'helmet':
+            plot([
+              '..................',
+              '..................',
+              '..................',
+              '.....oooooooo.....',
+              '....oHHLLLLMMo....',
+              '...oHHLLLLMMMDo...',
+              '...oHLLMMMMMDDo...',
+              '...oLLMMMMMDDDo...',
+              '...oLMMooooMDDo...',
+              '...oLMo....oDDo...',
+              '...oLMo....oDDo...',
+              '...oMDo....oDDo...',
+              '....oo......oo....',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'chestplate':
+            plot([
+              '..................',
+              '..................',
+              '..oooo......oooo..',
+              '.oHHLLoo..ooLLMMo.',
+              '.oHLLMMooooMMMDDoo',
+              '.oLLMMMMMMMMMMDDDo',
+              '.oLMMLLLLMMMMDDDDo',
+              '..ooMMMMMMMMDDDoo.',
+              '....oLMMMMMMDDo...',
+              '....oLMMMMMDDDo...',
+              '....oLMMMMMDDDo...',
+              '....oMMMMMDDDDo...',
+              '....oDDDDDDDDDo...',
+              '.....ooooooooo....',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'leggings':
+            plot([
+              '..................',
+              '..................',
+              '....oooooooooo....',
+              '...oHHLLLLMMMDo...',
+              '...oLMMMMMMMMDo...',
+              '...oLMMDDDDMMDo...',
+              '...oLLMo..oMDDo...',
+              '...oLMDo..oMDDo...',
+              '...oLMDo..oMDDo...',
+              '...oLMDo..oMDDo...',
+              '...oLMDo..oMDDo...',
+              '...oMDDo..oDDDo...',
+              '...oDDDo..oDDDo...',
+              '....ooo....ooo....',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'boots':
+            plot([
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '...oooo....oooo...',
+              '..oHLLMo..oHLLMo..',
+              '..oLMMDo..oLMMDo..',
+              '..oLMMDo..oLMMDo..',
+              '.ooLMMDo..oLMMDoo.',
+              'oHHMMMDo..oLMMMDD.',
+              'oDDDDDDo..oDDDDDDo',
+              '.oooooo....oooooo.',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          case 'shield':
+            plot([
+              '..................',
+              '...oooooooooooo...',
+              '..oSSSSSSSSSSSSo..',
+              '..oSbbccbbccbbSo..',
+              '..oSbbccbbccbbSo..',
+              '..oSbbccSSccbbSo..',
+              '..oSbbccSSccbbSo..',
+              '..oSbbccbbccbbSo..',
+              '..oSbbccbbccbbSo..',
+              '..oSbbccbbccbbSo..',
+              '...oSbbccbbccSo...',
+              '...oSbbccbbccSo...',
+              '....oSbbccbbSo....',
+              '.....oSbbbbSo.....',
+              '......oSSSSo......',
+              '.......oooo.......',
+              '..................',
+              '..................'
+            ], { o: '#2d323b', S: '#cbd5e1', b: wM, c: wL });
+            break;
+          case 'bow':
+            plot([
+              '..................',
+              '.....ooo..........',
+              '....ocbSo.........',
+              '....oSoSbo........',
+              '....oS..obo.......',
+              '....oS...obo......',
+              '....oS....obo.....',
+              '....oS....oGo.....',
+              '....oS....oGo.....',
+              '....oS....obo.....',
+              '....oS...obo......',
+              '....oS..obo.......',
+              '....oSoSbo........',
+              '....ocbSo.........',
+              '.....ooo..........',
+              '..................',
+              '..................',
+              '..................'
+            ], { o: wO, b: wM, c: wL, S: '#e2e8f0', G: '#5c3818' });
+            break;
+          case 'arrow':
+            plot([
+              '..................',
+              '...........oooo...',
+              '..........oHLLo...',
+              '..........oLMDo...',
+              '.........ocbMo....',
+              '........ocbo......',
+              '.......ocbo.......',
+              '......ocbo........',
+              '.....ocbo.........',
+              '....ocbo..........',
+              '..oWcbWo..........',
+              '.oWWbWWo..........',
+              '.oWWoWWo..........',
+              '..oo.oo...........',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], { o: '#363b42', H: '#ffffff', L: '#d6dde6', M: '#9aa4b0', D: '#6d7580', b: wM, c: wL, W: '#f1f5f9' });
+            break;
+          case 'bucket': {
+            const isW = itemId === IT.WATER_BUCKET, isL = itemId === IT.LAVA_BUCKET;
+            const liq = isW ? '#3896e8' : isL ? '#f56816' : '#58606b';
+            const liqH = isW ? '#8cd1ff' : isL ? '#ffd43b' : '#737c8a';
+            plot([
+              '..................',
+              '..................',
+              '..................',
+              '....oooooooooo....',
+              '...oHHLLLLLLMDo...',
+              '..oHQQQQQQQQQMDo..',
+              '..oLQQBBBBQQQMDo..',
+              '..oLLMMMMMMMDDDo..',
+              '...oLMMMMMMMDDDo..',
+              '...oLMMMMMMDDDo...',
+              '...oLMMMMMMDDDo...',
+              '....oMMMMMDDDo....',
+              '....oDDDDDDDDo....',
+              '.....oooooooo.....',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], { o: '#39404a', D: '#788290', M: '#adb7c4', L: '#d5dde6', H: '#f2f6fa', Q: liq, B: liqH });
+            break;
+          }
+          case 'ingot':
+            plot([
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '.....oooooooo.....',
+              '....oHHLLLLMMoo...',
+              '...oHHLLLLMMMMMo..',
+              '..oHLLMMMMMMMDDDo.',
+              '..oLMMMMMMMMDDDDo.',
+              '..oMMMMMMMMDDDDDo.',
+              '...ooDDDDDDDDDoo..',
+              '.....ooooooooo....',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+          default:
+            plot([
+              '..................',
+              '..................',
+              '..................',
+              '.....oooooooo.....',
+              '....oHHLLLLMMo....',
+              '...oHLLMMMMMMDo...',
+              '...oLMMMMMMMDDo...',
+              '...oMMMMMMMDDDo...',
+              '...oMMMMMMDDDDo...',
+              '....oDDDDDDDDo....',
+              '.....oooooooo.....',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................',
+              '..................'
+            ], tp);
+            break;
+        }
       }
     }
     const url = c.toDataURL();
@@ -5501,11 +6789,90 @@ class VoxelMesher {
             boxUV(x+0.5313, y+0.5625, z+0.4844, x+0.5625, y+0.6875, z+0.5156, IRON, IRON, flags);
             boxUV(x+0.4375, y+0.6875, z+0.4844, x+0.5625, y+0.7188, z+0.5156, IRON, IRON, flags);
           } else if (blk.shape === 'torch') {
-            const w = id === B.LANTERN ? 0.22 : 0.09;
-            const h = id === B.LANTERN ? 0.65 : 0.72;
-            const litFlags = (id === B.LEVER && !(meta & 1)) ? flags : (flags | 2);
-            if (id === B.TORCH) chunk.emitters.push(ox + x + 0.5, oy + y + h + 0.06, oz + z + 0.5, 0);
-            this._emitBox(false, x+0.5-w, y, z+0.5-w, x+0.5+w, y+h, z+0.5+w, blk, col, sky, bl, litFlags);
+            const w = 0.0625, h = 0.625;
+            if (id === B.TORCH) chunk.emitters.push(ox + x + 0.5, oy + y + h + 0.05, oz + z + 0.5, 0);
+            const litFlags = flags | 2;
+            const su = [0.406, 0.99, 0.594, 0.99, 0.594, 0.125, 0.406, 0.125];
+            const tu = [0.438, 0.25, 0.562, 0.25, 0.562, 0.125, 0.438, 0.125];
+            const x0 = x + 0.5 - w, x1 = x + 0.5 + w, z0 = z + 0.5 - w, z1 = z + 0.5 + w, y1 = y + h;
+            this._emitQuad(false, [x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0], [0,1,0], tu, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [x0,y,z1],[x1,y,z1],[x1,y1,z1],[x0,y1,z1], [0,0,1], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [x1,y,z0],[x0,y,z0],[x0,y1,z0],[x1,y1,z0], [0,0,-1], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [x1,y,z1],[x1,y,z0],[x1,y1,z0],[x1,y1,z1], [1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
+            this._emitQuad(false, [x0,y,z0],[x0,y,z1],[x0,y1,z1],[x0,y1,z0], [-1,0,0], su, T.TORCH, col, sky, bl, ones, litFlags);
+          } else if (blk.shape === 'lever') {
+            // 3D Cobblestone base + angled wooden lever handle that visibly flips between OFF and ON!
+            const on = (meta & 1) !== 0;
+            const baseUV = [0.04, 0.96, 0.96, 0.96, 0.96, 0.54, 0.04, 0.54];
+            const handleUV = [0.04, 0.46, 0.96, 0.46, 0.96, 0.04, 0.04, 0.04];
+            const emitUVBox = (x0, y0, z0, x1, y1, z1, uvR, fl) => {
+              this._emitQuad(false, [x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0], [0,1,0], uvR, T.LEVER, col, sky, bl, ones, fl);
+              this._emitQuad(false, [x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1], [0,-1,0], uvR, T.LEVER, col, sky, bl, ones, fl);
+              this._emitQuad(false, [x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1], [0,0,1], uvR, T.LEVER, col, sky, bl, ones, fl);
+              this._emitQuad(false, [x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0], [0,0,-1], uvR, T.LEVER, col, sky, bl, ones, fl);
+              this._emitQuad(false, [x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1], [1,0,0], uvR, T.LEVER, col, sky, bl, ones, fl);
+              this._emitQuad(false, [x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0], [-1,0,0], uvR, T.LEVER, col, sky, bl, ones, fl);
+            };
+            // Cobble base plate
+            emitUVBox(x + 0.3125, y, z + 0.25, x + 0.6875, y + 0.1875, z + 0.75, baseUV, flags);
+            // Tilted lever handle (shear along Z based on ON/OFF state)
+            const tilt = on ? 0.24 : -0.24;
+            const hw = 0.055;
+            const by0 = y + 0.14, by1 = y + 0.62;
+            const bz0 = z + 0.5, bz1 = z + 0.5 + tilt;
+            const hx0 = x + 0.5 - hw, hx1 = x + 0.5 + hw;
+            const lFlags = on ? (flags | 2) : flags;
+            this._emitQuad(false, [hx0,by1,bz1+hw],[hx1,by1,bz1+hw],[hx1,by1,bz1-hw],[hx0,by1,bz1-hw], [0,1,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            this._emitQuad(false, [hx0,by0,bz0+hw],[hx1,by0,bz0+hw],[hx1,by1,bz1+hw],[hx0,by1,bz1+hw], [0,0,1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            this._emitQuad(false, [hx1,by0,bz0-hw],[hx0,by0,bz0-hw],[hx0,by1,bz1-hw],[hx1,by1,bz1-hw], [0,0,-1], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            this._emitQuad(false, [hx1,by0,bz0+hw],[hx1,by0,bz0-hw],[hx1,by1,bz1-hw],[hx1,by1,bz1+hw], [1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+            this._emitQuad(false, [hx0,by0,bz0-hw],[hx0,by0,bz0+hw],[hx0,by1,bz1+hw],[hx0,by1,bz1-hw], [-1,0,0], handleUV, T.LEVER, col, sky, bl, ones, lFlags);
+          } else if (blk.shape === 'redstone') {
+            // Proper auto-connecting Redstone Dust (4 cardinal directions + 1-block step-up & step-down + powered glow!)
+            const powered = (meta & 1) !== 0;
+            const rCol = powered ? [1.0, 0.14, 0.07] : [0.46, 0.03, 0.03];
+            const rFlags = powered ? (flags | 2) : flags;
+            const isConnBlk = (nid) => {
+              if (nid === B.REDSTONE_WIRE || nid === B.LEVER || nid === B.PRESSURE_PLATE || nid === B.STONE_BUTTON ||
+                  nid === B.REDSTONE_LAMP || nid === B.REDSTONE_LAMP_ON || nid === B.TNT) return true;
+              const nb = BLOCKS.blocks[nid];
+              return !!(nb && (nb.shape === 'door' || nb.shape === 'trapdoor' || nb.shape === 'fence_gate'));
+            };
+            const aboveSolid = isOpaqueSolid(x, y + 1, z);
+            const checkDir = (dx, dz) => {
+              const nid = getB(x + dx, y, z + dz);
+              if (isConnBlk(nid)) return 1; // flat connection
+              if (!aboveSolid && isOpaqueSolid(x + dx, y, z + dz) && getB(x + dx, y + 1, z + dz) === B.REDSTONE_WIRE) return 2; // step-up
+              if (!isOpaqueSolid(x + dx, y, z + dz) && getB(x + dx, y - 1, z + dz) === B.REDSTONE_WIRE) return 1; // step-down
+              return 0;
+            };
+            const cE = checkDir(1, 0), cW = checkDir(-1, 0), cS = checkDir(0, 1), cN = checkDir(0, -1);
+            const yTop = y + 0.018;
+            const emitDustFlat = (x0, z0, x1, z1) => {
+              const uv = [x0 - x, z1 - z, x1 - x, z1 - z, x1 - x, z0 - z, x0 - x, z0 - z];
+              this._emitQuad(false, [x0,yTop,z1],[x1,yTop,z1],[x1,yTop,z0],[x0,yTop,z0], [0,1,0], uv, T.REDSTONE_WIRE, rCol, sky, bl, ones, rFlags);
+            };
+            const anyConn = cE || cW || cS || cN;
+            if (!anyConn) {
+              // Isolated dust mound (chunky central cross + dot)
+              emitDustFlat(x + 0.34, z + 0.34, x + 0.66, z + 0.66);
+              emitDustFlat(x + 0.25, z + 0.41, x + 0.75, z + 0.59);
+              emitDustFlat(x + 0.41, z + 0.25, x + 0.59, z + 0.75);
+            } else {
+              // Center hub + seamless arms extending flush to 0.0 / 1.0
+              const w0 = 0.40, w1 = 0.60;
+              emitDustFlat(x + w0, z + w0, x + w1, z + w1);
+              if (cE) emitDustFlat(x + w1, z + w0, x + 1.0, z + w1);
+              if (cW) emitDustFlat(x + 0.0, z + w0, x + w0, z + w1);
+              if (cS) emitDustFlat(x + w0, z + w1, x + w1, z + 1.0);
+              if (cN) emitDustFlat(x + w0, z + 0.0, x + w1, z + w0);
+              // Vertical climbing dust trail when stepping up onto a higher block!
+              const climbUV = [0.4, 1, 0.6, 1, 0.6, 0, 0.4, 0];
+              if (cE === 2) this._emitQuad(false, [x+0.982,y,z+w0],[x+0.982,y,z+w1],[x+0.982,y+1.018,z+w1],[x+0.982,y+1.018,z+w0], [-1,0,0], climbUV, T.REDSTONE_WIRE, rCol, sky, bl, ones, rFlags);
+              if (cW === 2) this._emitQuad(false, [x+0.018,y,z+w1],[x+0.018,y,z+w0],[x+0.018,y+1.018,z+w0],[x+0.018,y+1.018,z+w1], [1,0,0], climbUV, T.REDSTONE_WIRE, rCol, sky, bl, ones, rFlags);
+              if (cS === 2) this._emitQuad(false, [x+w1,y,z+0.982],[x+w0,y,z+0.982],[x+w0,y+1.018,z+0.982],[x+w1,y+1.018,z+0.982], [0,0,-1], climbUV, T.REDSTONE_WIRE, rCol, sky, bl, ones, rFlags);
+              if (cN === 2) this._emitQuad(false, [x+w0,y,z+0.018],[x+w1,y,z+0.018],[x+w1,y+1.018,z+0.018],[x+w0,y+1.018,z+0.018], [0,0,1], climbUV, T.REDSTONE_WIRE, rCol, sky, bl, ones, rFlags);
+            }
           } else if (blk.shape === 'ladder') {
             // Directional wall-attached ladder (0=+Z, 1=+X, 2=-Z, 3=-X)
             const lf = meta & 3;
@@ -5537,8 +6904,7 @@ class VoxelMesher {
             const h = pressed ? 0.06 : 0.13;
             this._emitBox(false, x+0.30, y, z+0.36, x+0.70, y+h, z+0.64, blk, col, sky, bl, flags);
           } else if (blk.shape === 'carpet') {
-            const pFlags = (id === B.REDSTONE_WIRE && (meta & 1)) ? (flags | 2) : flags;
-            this._emitBox(false, x, y, z, x+1, y+0.08, z+1, blk, col, sky, bl, pFlags);
+            this._emitBox(false, x, y, z, x+1, y+0.0625, z+1, blk, col, sky, bl, flags);
           }
         }
       }
@@ -5696,13 +7062,15 @@ class RedstoneSystem {
   propagateFrom(sx, sy, sz, active, mining) {
     const world = this.world;
     const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    const stepDirs = [[1,1,0],[-1,1,0],[0,1,1],[0,1,-1],[1,-1,0],[-1,-1,0],[0,-1,1],[0,-1,-1]];
     const visited = new Set([`${sx},${sy},${sz}`]);
     const queue = [[sx, sy, sz, 14]];
     const touched = new Set();
 
-    // BFS across connected Redstone Wire up to 14 blocks
+    // BFS across connected Redstone Wire up to 14 blocks (including 1-block step-up & step-down)
     while (queue.length > 0) {
       const [x, y, z, pwr] = queue.shift();
+      const curId = world.getBlock(x, y, z);
       for (const [dx, dy, dz] of dirs) {
         const nx = x + dx, ny = y + dy, nz = z + dz;
         const k = `${nx},${ny},${nz}`;
@@ -5713,6 +7081,17 @@ class RedstoneSystem {
           queue.push([nx, ny, nz, pwr - 1]);
         } else if (nid !== B.AIR) {
           touched.add(k);
+        }
+      }
+      if ((curId === B.REDSTONE_WIRE || (x === sx && y === sy && z === sz)) && pwr > 1) {
+        for (const [dx, dy, dz] of stepDirs) {
+          const nx = x + dx, ny = y + dy, nz = z + dz;
+          const k = `${nx},${ny},${nz}`;
+          if (!visited.has(k) && world.getBlock(nx, ny, nz) === B.REDSTONE_WIRE) {
+            visited.add(k);
+            world.setBlock(nx, ny, nz, B.REDSTONE_WIRE, active ? 1 : 0, true);
+            queue.push([nx, ny, nz, pwr - 1]);
+          }
         }
       }
     }
@@ -5748,6 +7127,35 @@ class RedstoneSystem {
           world.setBlock(rx, ry, rz, id, (m & ~4) | targetBit, true);
         }
       }
+    }
+  }
+
+  refreshAround(wx, wy, wz, mining) {
+    const world = this.world;
+    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],[1,1,0],[-1,1,0],[0,1,1],[0,1,-1],[1,-1,0],[-1,-1,0],[0,-1,1],[0,-1,-1]];
+    // First clear connected wire from this spot, then re-propagate from any nearby active power sources
+    this.propagateFrom(wx, wy, wz, false, mining);
+    const seen = new Set();
+    const queue = [[wx, wy, wz, 14]];
+    const sources = [];
+    while (queue.length > 0) {
+      const [x, y, z, d] = queue.shift();
+      for (const [dx, dy, dz] of dirs) {
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        const k = `${nx},${ny},${nz}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const nid = world.getBlock(nx, ny, nz);
+        const nm = world.getMeta(nx, ny, nz);
+        if (this.isPowerSource(nid, nm)) {
+          sources.push([nx, ny, nz]);
+        } else if (nid === B.REDSTONE_WIRE && d > 1) {
+          queue.push([nx, ny, nz, d - 1]);
+        }
+      }
+    }
+    for (const [sx, sy, sz] of sources) {
+      this.propagateFrom(sx, sy, sz, true, mining);
     }
   }
 }
@@ -7527,7 +8935,7 @@ class Renderer {
     if (!it) return { kind: 'sprite' };
     if (it.blockId && BLOCKS.get(it.blockId) && it.blockId === id) {
       const b = BLOCKS.get(it.blockId);
-      if (b.cross || ['torch', 'ladder', 'bars', 'bamboo', 'campfire', 'door', 'carpet', 'button', 'pressure_plate'].includes(b.shape)) {
+      if (b.cross || ['torch', 'lever', 'redstone', 'ladder', 'bars', 'bamboo', 'campfire', 'door', 'carpet', 'button', 'pressure_plate'].includes(b.shape)) {
         return { kind: 'sprite', emissive: b.light > 0 };
       }
       if (b.shape === 'slab' || b.shape === 'trapdoor') return { kind: 'slab', blk: b, emissive: b.light > 0 };
@@ -9761,6 +11169,9 @@ class MiningSystem {
     if (this.net && this.net.connected) {
       this.net.sendBlockBreak(x, y, z, held ? held.id : 0, Math.round(elapsedMs), blk.id, meta);
     }
+    if (blk.id === B.REDSTONE_WIRE || blk.id === B.LEVER || blk.id === B.PRESSURE_PLATE || blk.id === B.STONE_BUTTON) {
+      this.world.redstone.refreshAround(x, y, z, this);
+    }
 
     // If breaking EITHER half of a 2-block Door, cleanly break the partner half too!
     if (blk.shape === 'door') {
@@ -10078,9 +11489,11 @@ class MiningSystem {
 
       let meta = facing;
       if (blk.shape === 'slab' && t.ny < 0) meta |= 8;
+      if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.LEVER || heldIt.blockId === B.PRESSURE_PLATE || heldIt.blockId === B.STONE_BUTTON) meta = 0;
 
       this.world.setBlock(px, py, pz, heldIt.blockId, meta, true);
       if (this.net && this.net.connected) this.net.sendBlockPlace(px, py, pz, heldIt.blockId, meta);
+      if (heldIt.blockId === B.REDSTONE_WIRE) this.world.redstone.refreshAround(px, py, pz, this);
 
       if (blk.shape === 'door') {
         this.world.setBlock(px, py + 1, pz, heldIt.blockId, meta | 8, true);
