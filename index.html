@@ -249,6 +249,7 @@ html, body {
 }
 #debugPanel {
   display: none; font-family: var(--mono); font-size: 11.5px; line-height: 1.48;
+  font-variant-numeric: tabular-nums;
   background: rgba(10,14,20,0.74); border: 1px solid rgba(255,255,255,0.12);
   padding: 9px 12px; border-radius: 8px; white-space: pre;
 }
@@ -13004,6 +13005,7 @@ class UIManager {
 
   toggleDebug() {
     this.debugOn = !this.debugOn;
+    this._lastDebugUpdate = 0;
     this._el('debugPanel').classList.toggle('active', this.debugOn);
   }
 
@@ -13471,13 +13473,17 @@ class UIManager {
     }
 
     if (this.debugOn) {
-      const lt = world.getLightAt(Math.floor(player.x), Math.floor(player.y + 1), Math.floor(player.z));
-      const cx = floorDiv(Math.floor(player.x), CHUNK_SIZE), cz = floorDiv(Math.floor(player.z), CHUNK_SIZE);
-      this._el('debugPanel').textContent =
-        `FPS: ${fps} | DrawCalls: ${renderer.drawCalls} | Chunks: ${renderer.chunksDrawn}/${world.loadedCount}\n` +
-        `XYZ: ${formatAbsCoord(world.ox, world.oxN, player.x)}, ${player.y.toFixed(2)}, ${formatAbsCoord(world.oz, world.ozN, player.z)} | Chunk: ${absIntStr(world.ocx, world.ocxN, cx)}, ${absIntStr(world.ocz, world.oczN, cz)}\n` +
-        `Seed: ${world.seedStr} | Biome: ${biome.name} (${biome.cat})\n` +
-        `Light: Sky ${lt.sky} / Block ${lt.block} | Mobs: ${this.engine.mobMgr.mobs.length} | Particles: ${this.engine.particles.list.length}`;
+      const nowMs = performance.now();
+      if (!this._lastDebugUpdate || nowMs - this._lastDebugUpdate >= 100) {
+        this._lastDebugUpdate = nowMs;
+        const lt = world.getLightAt(Math.floor(player.x), Math.floor(player.y + 1), Math.floor(player.z));
+        const cx = floorDiv(Math.floor(player.x), CHUNK_SIZE), cz = floorDiv(Math.floor(player.z), CHUNK_SIZE);
+        this._el('debugPanel').textContent =
+          `FPS: ${String(fps).padStart(3)} | DrawCalls: ${String(renderer.drawCalls).padStart(4)} | Chunks: ${renderer.chunksDrawn}/${world.loadedCount}\n` +
+          `XYZ: ${formatAbsCoord(world.ox, world.oxN, player.x)}, ${player.y.toFixed(2)}, ${formatAbsCoord(world.oz, world.ozN, player.z)} | Chunk: ${absIntStr(world.ocx, world.ocxN, cx)}, ${absIntStr(world.ocz, world.oczN, cz)}\n` +
+          `Seed: ${world.seedStr} | Biome: ${biome.name} (${biome.cat})\n` +
+          `Light: Sky ${String(lt.sky).padStart(2)} / Block ${String(lt.block).padStart(2)} | Mobs: ${String(this.engine.mobMgr.mobs.length).padStart(3)} | Particles: ${this.engine.particles.list.length}`;
+      }
     }
 
     if (this.engine.state === 'container' && this.containerType === 'furnace' && this.containerRef) {
