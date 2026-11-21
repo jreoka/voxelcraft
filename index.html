@@ -8110,42 +8110,38 @@ class Renderer {
 
     const id = vm.itemId;
     const skin = [0.87, 0.67, 0.53];
-    const skinDark = [0.76, 0.56, 0.43];
     const sleeve = [0.20, 0.49, 0.65];
-    const cuff = [0.14, 0.36, 0.50];
 
-    // Helper: push an articulated forearm extending from shoulder/elbow pivot along local -Z
-    const pushArm = (px, py, pz, R, len = 0.74) => {
-      const mid = this._xform(px, py, pz, R, 0, 0, -len * 0.56);
-      this._pushOrientedBox(mid[0], mid[1], mid[2], 0.175, 0.175, len * 0.72, R, skin[0], skin[1], skin[2], 1);
-      // Knuckle / fist cap at front end
-      const fist = this._xform(px, py, pz, R, 0, -0.005, -len * 0.92);
-      this._pushOrientedBox(fist[0], fist[1], fist[2], 0.182, 0.182, 0.11, R, skinDark[0], skinDark[1], skinDark[2], 1);
-      // Shirt sleeve + darker cuff near shoulder end
-      const slv = this._xform(px, py, pz, R, 0, 0, -len * 0.12);
-      this._pushOrientedBox(slv[0], slv[1], slv[2], 0.195, 0.195, len * 0.32, R, sleeve[0], sleeve[1], sleeve[2], 1);
-      const cf = this._xform(px, py, pz, R, 0, 0, -len * 0.28);
-      this._pushOrientedBox(cf[0], cf[1], cf[2], 0.202, 0.202, 0.055, R, cuff[0], cuff[1], cuff[2], 1);
+    // Helper: push a clean Minecraft-style blocky arm extending from bottom-right shoulder pivot along local -Z
+    const pushArm = (px, py, pz, R, len = 0.56) => {
+      const w = 0.165;
+      // Forearm + hand (single clean prism, no protruding knuckle cap)
+      const arm = this._xform(px, py, pz, R, 0, 0, -len * 0.66);
+      this._pushOrientedBox(arm[0], arm[1], arm[2], w, w, len * 0.68, R, skin[0], skin[1], skin[2], 1);
+      // Shirt sleeve near shoulder end (cleanly abutting the forearm)
+      const slv = this._xform(px, py, pz, R, 0, 0, -len * 0.16);
+      this._pushOrientedBox(slv[0], slv[1], slv[2], w + 0.012, w + 0.012, len * 0.32, R, sleeve[0], sleeve[1], sleeve[2], 1);
     };
 
     const offX = bobX + swayX;
     const offY = -bobY + breathY + swayY + airLagY - landDip - lower;
 
     if (!id) {
-      // Bare first-person arm pivoted from bottom-right shoulder/elbow: crisp punch arc
-      const px = 0.64 + offX - sw2 * 0.22;
-      const py = -0.62 + offY + sw * 0.06 - sw2 * 0.04;
-      const pz = -0.18 - sw2 * 0.24;
+      // Bare first-person arm tucked in the bottom-right corner with a crisp Minecraft punch arc
+      const swArcY = Math.sin(Math.sqrt(swing) * Math.PI * 2) * 0.03;
+      const px = 0.70 + offX - sw2 * 0.16;
+      const py = -0.46 + offY + swArcY + sw * 0.06;
+      const pz = -0.25 - sw * 0.10;
       const R = this._rot(
-        0.34 + sw2 * 0.56 + swayX * 0.9,
-        0.24 + sw * 0.36 + swayY * 0.7,
-        -0.22 + strafeRoll + breathR + sw * 0.30
+        0.66 + sw2 * 0.38 + swayX * 0.7,
+        0.42 + sw * 0.20 + swayY * 0.5,
+        -0.30 + strafeRoll + breathR + sw * 0.26
       );
-      pushArm(px, py, pz, R, 0.76);
+      pushArm(px, py, pz, R, 0.56);
     } else {
       const model = this._itemModel(id);
       if (model.kind !== 'sprite') {
-        // Held 3D block/slab with supporting hand tucked cleanly beneath bottom-right corner
+        // Held 3D block/slab in bottom-right corner (clean Minecraft presentation)
         const bx = 0.50 + offX - sw2 * 0.20;
         const by = -0.40 + offY - sw * 0.14;
         const bz = -0.84 + sw2 * 0.08 - sw * 0.10;
@@ -8160,11 +8156,8 @@ class Renderer {
         } else {
           this._pushBlockCube(model.blk, bx, by, bz, s, s, s, R, 1, model.emissive);
         }
-        // Forearm supporting the held block from bottom-right
-        const armR = this._rot(0.42 + sw2 * 0.32, 0.36 + sw * 0.28, -0.28 + strafeRoll);
-        pushArm(bx + 0.26, by - 0.34, bz + 0.58, armR, 0.66);
       } else {
-        // Held extruded item / tool / sword: pivoted around its HANDLE GRIP and held by the hand!
+        // Held extruded item / tool / sword: pivoted around its handle grip
         const isSword = !!vm.isSword;
         const isTool = !!vm.isTool;
         const isTorch = id === B.TORCH || id === B.LANTERN;
@@ -8218,14 +8211,6 @@ class Renderer {
         const cy = gy - (R[3] * gripX + R[4] * gripY);
         const cz = gz - (R[6] * gripX + R[7] * gripY);
         this._pushSprite(id, cx, cy, cz, s, R, 1, 1, 1, 1, model.emissive);
-
-        // First-person forearm gripping the item handle
-        const armR = this._rot(
-          0.36 + (isSword ? sw2 * 0.45 : sw2 * 0.25) - blk * 0.35,
-          0.32 - sw * 0.42 + blk * 0.22,
-          -0.24 + strafeRoll + (isSword ? sw * 0.28 : 0)
-        );
-        pushArm(gx + 0.20, gy - 0.26, gz + 0.56, armR, 0.64);
       }
     }
     // Use dedicated fixed-FOV viewmodel projection so FOV changes/sprinting never distort or clip the hand!
@@ -14182,8 +14167,9 @@ class GameEngine {
     let dyaw = p.yaw - ly; if (dyaw > Math.PI) dyaw -= Math.PI * 2; if (dyaw < -Math.PI) dyaw += Math.PI * 2;
     this._vmLastYaw = p.yaw; this._vmLastPitch = p.pitch;
     this._vmSway = this._vmSway || [0, 0];
-    this._vmSway[0] = lerp(this._vmSway[0], clamp(dyaw * 1.6, -0.08, 0.08), Math.min(1, dtv * 10));
-    this._vmSway[1] = lerp(this._vmSway[1], clamp(-(p.pitch - lp) * 1.6, -0.06, 0.06), Math.min(1, dtv * 10));
+    const safeDt = Math.max(0.004, dtv);
+    this._vmSway[0] = lerp(this._vmSway[0], clamp((dyaw / safeDt) * 0.022, -0.06, 0.06), Math.min(1, dtv * 10));
+    this._vmSway[1] = lerp(this._vmSway[1], clamp((-(p.pitch - lp) / safeDt) * 0.022, -0.05, 0.05), Math.min(1, dtv * 10));
     const isSword = !!(it && (it.iconType === 'sword' || it.category === 'weapon'));
     return {
       swing: p.swing,
