@@ -49,11 +49,12 @@ pub const MOB_DEFS: &[MobDef] = &[
     MobDef { name: "magma", hp: 22.0, spd: 2.6, hostile: true, dmg: 4.0, burns_day: false, ranged: false, climber: false, creeper: false, hopper: true, aquatic: false, trader: false, drops: &[(IT::MAGMA_CREAM, 2)], xp: 9, h: 1.0 },
     MobDef { name: "stalker", hp: 28.0, spd: 3.4, hostile: true, dmg: 5.0, burns_day: false, ranged: false, climber: false, creeper: false, hopper: false, aquatic: false, trader: false, drops: &[(IT::AMETHYST_SHARD, 2), (IT::DIAMOND, 1)], xp: 14, h: 1.9 },
     MobDef { name: "golem", hp: 55.0, spd: 2.2, hostile: true, dmg: 7.0, burns_day: false, ranged: false, climber: false, creeper: false, hopper: false, aquatic: false, trader: false, drops: &[(IT::IRON_INGOT, 4), (IT::EMERALD, 1)], xp: 22, h: 2.5 },
+    MobDef { name: "colossus", hp: 260.0, spd: 2.8, hostile: true, dmg: 8.0, burns_day: false, ranged: false, climber: false, creeper: false, hopper: false, aquatic: false, trader: false, drops: &[(IT::COLOSSUS_HEART, 1), (IT::DIAMOND, 4), (IT::ANCIENT_SCRAP, 2), (IT::GOLDEN_APPLE, 2)], xp: 120, h: 3.4 },
 ];
 
 pub const MOB_TYPES: &[&str] = &[
     "cow", "pig", "sheep", "chicken", "wolf", "rabbit", "deer", "fox", "panda", "trader",
-    "fish", "zombie", "skeleton", "spider", "creeper", "slime", "magma", "stalker", "golem",
+    "fish", "zombie", "skeleton", "spider", "creeper", "slime", "magma", "stalker", "golem", "colossus",
 ];
 
 pub fn mob_def_by_name(name: &str) -> Option<(usize, &'static MobDef)> {

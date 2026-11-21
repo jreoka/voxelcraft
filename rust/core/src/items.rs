@@ -131,6 +131,19 @@ pub mod IT {
     pub const COPPER_CHEST: i32 = 282;
     pub const COPPER_LEGS: i32 = 283;
     pub const COPPER_BOOTS: i32 = 284;
+    // Overhaul Adventure Items (285..296)
+    pub const POTION_HEAL: i32 = 285;
+    pub const POTION_SPEED: i32 = 286;
+    pub const POTION_STRENGTH: i32 = 287;
+    pub const POTION_FIRE: i32 = 288;
+    pub const POTION_NIGHT: i32 = 289;
+    pub const GRAPPLE_HOOK: i32 = 290;
+    pub const SPYGLASS: i32 = 291;
+    pub const GLIDER: i32 = 292;
+    pub const RECALL_CRYSTAL: i32 = 293;
+    pub const BOSS_SIGIL: i32 = 294;
+    pub const COLOSSUS_HEART: i32 = 295;
+    pub const HEART_CRYSTAL: i32 = 296;
 }
 
 #[derive(Clone, Debug)]
@@ -309,6 +322,19 @@ impl ItemRegistry {
         add(IT::SWEET_BERRIES, "Sweet Berries", Box::new(|i| { i.category = "food"; i.food = 2.0; i.sat = 1.4; }));
         add(IT::COOKIE, "Cookie", Box::new(|i| { i.category = "food"; i.food = 3.0; i.sat = 2.0; }));
 
+        add(IT::POTION_HEAL, "Crimson Elixir", Box::new(|i| { i.category = "potion"; i.stack = 16; i.heal = 8.0; }));
+        add(IT::POTION_SPEED, "Zephyr Elixir", Box::new(|i| { i.category = "potion"; i.stack = 16; }));
+        add(IT::POTION_STRENGTH, "Titan Elixir", Box::new(|i| { i.category = "potion"; i.stack = 16; }));
+        add(IT::POTION_FIRE, "Ember Ward Elixir", Box::new(|i| { i.category = "potion"; i.stack = 16; }));
+        add(IT::POTION_NIGHT, "Nighteye Elixir", Box::new(|i| { i.category = "potion"; i.stack = 16; }));
+        add(IT::GRAPPLE_HOOK, "Grappling Hook", Box::new(|i| { i.category = "tool"; i.tool_type = Some("grapple"); i.max_dur = 180; i.stack = 1; }));
+        add(IT::SPYGLASS, "Spyglass", Box::new(|i| { i.category = "tool"; i.tool_type = Some("spyglass"); i.stack = 1; }));
+        add(IT::GLIDER, "Sky Glider", Box::new(|i| { i.category = "tool"; i.tool_type = Some("glider"); i.stack = 1; }));
+        add(IT::RECALL_CRYSTAL, "Hearthstone", Box::new(|i| { i.category = "tool"; i.tool_type = Some("recall"); i.stack = 1; }));
+        add(IT::BOSS_SIGIL, "Obsidian Sigil", Box::new(|i| { i.category = "material"; i.stack = 4; }));
+        add(IT::COLOSSUS_HEART, "Colossus Heart", Box::new(|i| { i.category = "material"; i.stack = 16; }));
+        add(IT::HEART_CRYSTAL, "Heart Crystal", Box::new(|i| { i.category = "food"; i.stack = 8; }));
+
         Self { items }
     }
 
@@ -366,6 +392,10 @@ pub const TRADER_TRADES: &[TraderTrade] = &[
     TraderTrade { give: (IT::EMERALD, 2), get: (B::SEA_LANTERN as i32, 4) },
     TraderTrade { give: (IT::EMERALD, 2), get: (B::CHERRY_PLANKS as i32, 16) },
     TraderTrade { give: (IT::EMERALD, 1), get: (IT::ARROW, 16) },
+    TraderTrade { give: (IT::EMERALD, 2), get: (IT::POTION_HEAL, 2) },
+    TraderTrade { give: (IT::EMERALD, 3), get: (IT::SPYGLASS, 1) },
+    TraderTrade { give: (IT::EMERALD, 4), get: (IT::GRAPPLE_HOOK, 1) },
+    TraderTrade { give: (IT::EMERALD, 6), get: (IT::HEART_CRYSTAL, 1) },
 ];
 
 pub fn campfire_cook(id: i32) -> Option<i32> {

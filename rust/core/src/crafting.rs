@@ -162,6 +162,21 @@ impl CraftingSystem {
             self.add(base + 2, 1, vec![(mat, 7)], true);
             self.add(base + 3, 1, vec![(mat, 4)], true);
         }
+
+        // Overhaul Elixirs, Traversal Gear & Boss Summon Recipes (appended after legacy indices)
+        self.add(IT::POTION_HEAL, 2, vec![(I(IT::APPLE), 1), (I(IT::SWEET_BERRIES), 2), (I(B::MUSHROOM_RED as i32), 1)], false);
+        self.add(IT::POTION_SPEED, 2, vec![(I(B::REEDS as i32), 2), (I(IT::FEATHER), 1), (I(IT::AMETHYST_SHARD), 1)], true);
+        self.add(IT::POTION_STRENGTH, 2, vec![(I(IT::MAGMA_CREAM), 1), (I(IT::BONE), 2), (I(IT::AMETHYST_SHARD), 1)], true);
+        self.add(IT::POTION_FIRE, 2, vec![(I(IT::MAGMA_CREAM), 1), (I(IT::SLIMEBALL), 1), (I(IT::COAL), 1)], true);
+        self.add(IT::POTION_NIGHT, 2, vec![(I(B::TORCH as i32), 2), (I(IT::CARROT), 1), (I(IT::LAPIS), 1)], true);
+        self.add(IT::GRAPPLE_HOOK, 1, vec![(I(IT::IRON_INGOT), 2), (I(IT::STRING), 3), (I(IT::STICK), 1)], true);
+        self.add(IT::SPYGLASS, 1, vec![(I(IT::COPPER_INGOT), 2), (I(IT::AMETHYST_SHARD), 1)], false);
+        self.add(IT::RECALL_CRYSTAL, 1, vec![(I(IT::AMETHYST_SHARD), 2), (I(IT::GOLD_INGOT), 2), (I(IT::LAPIS), 2)], true);
+        self.add(IT::GLIDER, 1, vec![(I(IT::LEATHER), 4), (I(IT::FEATHER), 6), (I(IT::DIAMOND), 2)], true);
+        self.add(IT::GLIDER, 1, vec![(I(IT::COLOSSUS_HEART), 1), (I(IT::LEATHER), 2), (I(IT::FEATHER), 4)], true);
+        self.add(IT::BOSS_SIGIL, 1, vec![(I(B::OBSIDIAN as i32), 4), (I(IT::AMETHYST_SHARD), 2), (I(IT::GOLD_INGOT), 2), (I(IT::DIAMOND), 1)], true);
+        self.add(IT::HEART_CRYSTAL, 1, vec![(I(IT::COLOSSUS_HEART), 1), (I(IT::GOLDEN_APPLE), 1), (I(IT::DIAMOND), 2)], true);
+        self.add(IT::NETHERITE_INGOT, 1, vec![(I(IT::COLOSSUS_HEART), 1), (I(IT::GOLD_INGOT), 2), (I(IT::DIAMOND), 1)], true);
     }
 
     fn init_smelting(&mut self) {
