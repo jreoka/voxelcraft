@@ -10,6 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use voxelcraft_core::blocks::{B, BLOCKS};
 use voxelcraft_core::crafting::CRAFTING;
 use voxelcraft_core::day_night::DayNightSystem;
+use voxelcraft_core::growth;
 use voxelcraft_core::enchants::{
     ItemStack, compute_block_drops, compute_enchant_offers, compute_enchant_power, ench_kinds_of,
     ench_lvl, make_enchant,
@@ -1285,6 +1286,7 @@ impl ServerState {
 
         // 2. Redstone, furnaces, TNT, gravity, crops
         let mut change_log: Vec<(i32, i32, i32, u8, u8)> = Vec::new();
+        let decayed: Vec<(i32, i32, i32, u8)>;
         let tnt_triggers: Vec<(i32, i32, i32)>;
         {
             let sh = self.shards.get_mut(&shard_id).unwrap();
@@ -1308,39 +1310,31 @@ impl ServerState {
             }
             sh.core.process_gravity(&mut self.world.tables, Some(&mut change_log));
             if crop_now {
+                // Random ticks around each player: crops, saplings, cane/cactus, grass, farmland
                 let mut rng = rand::thread_rng();
+                let mut rnd = || rng.r#gen::<f64>();
                 for &(px, py, pz) in &positions {
                     let (ipx, ipy, ipz) = (px.floor() as i32, py.floor() as i32, pz.floor() as i32);
-                    for _ in 0..14 {
-                        let wx = ipx + ((rng.r#gen::<f64>() - 0.5) * 28.0).floor() as i32;
-                        let wz = ipz + ((rng.r#gen::<f64>() - 0.5) * 28.0).floor() as i32;
-                        let wy = ipy + ((rng.r#gen::<f64>() - 0.5) * 14.0).floor() as i32;
+                    for _ in 0..growth::RANDOM_TICK_SAMPLES {
+                        let wx = ipx + ((rnd() - 0.5) * 32.0).floor() as i32;
+                        let wz = ipz + ((rnd() - 0.5) * 32.0).floor() as i32;
+                        let wy = ipy + ((rnd() - 0.5) * 16.0).floor() as i32;
                         let id = sh.core.get_block_ensured(wx, wy, wz, &mut self.world.tables);
-                        if id == B::FARMLAND {
-                            let mut near_w = false;
-                            'wcheck: for dz in -4..=4 {
-                                for dx in -4..=4 {
-                                    if sh.core.get_block_ensured(wx + dx, wy, wz + dz, &mut self.world.tables) == B::WATER {
-                                        near_w = true;
-                                        break 'wcheck;
-                                    }
-                                }
-                            }
-                            if near_w && (sh.core.get_meta(wx, wy, wz) & 1) == 0 {
-                                sh.core.set_block(wx, wy, wz, B::FARMLAND, 1, true, &mut self.world.tables, Some(&mut change_log));
-                            }
-                        } else if id == B::WHEAT {
-                            let m = sh.core.get_meta(wx, wy, wz);
-                            if m < 3 && rng.r#gen::<f64>() < 0.28 {
-                                let wet = sh.core.get_block_ensured(wx, wy - 1, wz, &mut self.world.tables) == B::FARMLAND
-                                    && (sh.core.get_meta(wx, wy - 1, wz) & 1) != 0;
-                                if wet || rng.r#gen::<f64>() < 0.4 {
-                                    sh.core.set_block(wx, wy, wz, B::WHEAT, m + 1, true, &mut self.world.tables, Some(&mut change_log));
-                                }
-                            }
+                        if id == B::AIR {
+                            continue;
                         }
+                        growth::random_tick_block(&mut sh.core, &mut self.world.tables, wx, wy, wz, id, &mut rnd, &mut change_log);
                     }
                 }
+            }
+            let mut ld = std::mem::take(&mut sh.core.leaf_decay);
+            decayed = ld.update(&mut sh.core, &mut self.world.tables, dt, &mut change_log);
+            sh.core.leaf_decay = ld;
+        }
+        for &(lx, ly, lz, leaf) in &decayed {
+            let res = compute_block_drops(BLOCKS.get(leaf), 0, None, rand::random::<f64>);
+            for st in res.drops {
+                self.spawn_drop(shard_id, lx as f64 + 0.5, ly as f64 + 0.4, lz as f64 + 0.5, st, None, 0.3);
             }
         }
         if !change_log.is_empty() {
@@ -2396,7 +2390,9 @@ impl ServerState {
             }
             need_free = false;
         } else if cause == "bonemeal" {
-            if id != B::WHEAT || cur != B::WHEAT {
+            // Bone meal only ever advances the crop that is already there
+            let cur_stage = self.shards.get_mut(&shard_id).unwrap().core.get_meta(x, y, z) & 3;
+            if !growth::is_crop(id) || cur != id || (meta & 3) < cur_stage || meta > 3 {
                 self.revert_block(pid, shard_id, x, y, z, None);
                 return;
             }
@@ -2410,13 +2406,17 @@ impl ServerState {
             give = Some(IT::BUCKET);
         } else if id == B::REDSTONE_WIRE {
             take = Some(IT::REDSTONE);
-        } else if id == B::WHEAT {
+        } else if growth::is_crop(id) {
             let below = self.shards.get_mut(&shard_id).unwrap().core.get_block_ensured(x, y - 1, z, &mut self.world.tables);
-            if below != B::FARMLAND {
+            if below != B::FARMLAND || meta != 0 {
                 self.revert_block(pid, shard_id, x, y, z, None);
                 return;
             }
-            take = Some(IT::WHEAT_SEEDS);
+            take = Some(match id {
+                B::CARROTS => IT::CARROT,
+                B::POTATOES => IT::POTATO,
+                _ => IT::WHEAT_SEEDS,
+            });
         } else if blk.shape == "door" && (meta & 8) != 0 {
             let below = self.shards.get_mut(&shard_id).unwrap().core.get_block_ensured(x, y - 1, z, &mut self.world.tables);
             if below != id {
@@ -2472,7 +2472,29 @@ impl ServerState {
         let (x, y, z) = (block_coord(msg.get("x")), block_coord(msg.get("y")), block_coord(msg.get("z")));
         let Some((shard_id, px, py, pz, survival)) = self.players.get(pid).map(|p| (p.shard_id, p.x, p.y, p.z, p.is_survival())) else { return };
         let blk = self.shards.get_mut(&shard_id).unwrap().core.get_block_ensured(x, y, z, &mut self.world.tables);
-        if blk != B::GRASS || !AntiCheat::check_reach(&self.config.anticheat, px, py, pz, x, y, z).0 {
+        if !AntiCheat::check_reach(&self.config.anticheat, px, py, pz, x, y, z).0 {
+            return;
+        }
+        if let Some(kind) = growth::sapling_tree(blk) {
+            if survival && self.players.get_mut(pid).unwrap().ledger.remove(&format!("{}#", IT::BONE_MEAL), 1, None).is_none() {
+                self.players[pid].send_inventory();
+                return;
+            }
+            let mut log = Vec::new();
+            let mut rng = rand::thread_rng();
+            let mut rnd = || rng.r#gen::<f64>();
+            if rnd() < 0.45 {
+                let sh = self.shards.get_mut(&shard_id).unwrap();
+                growth::grow_tree_at(&mut sh.core, &mut self.world.tables, x, y, z, kind, &mut rnd, &mut log);
+            }
+            if !log.is_empty() {
+                let list: Vec<[i32; 5]> = log.iter().map(|&(bx, by, bz, id, m)| [bx, by, bz, id as i32, m as i32]).collect();
+                self.bcast_shard(shard_id, &json!({ "type": "blocks", "list": list }), None);
+                self.schedule_world_save(5000);
+            }
+            return;
+        }
+        if blk != B::GRASS {
             return;
         }
         if survival && self.players.get_mut(pid).unwrap().ledger.remove(&format!("{}#", IT::BONE_MEAL), 1, None).is_none() {

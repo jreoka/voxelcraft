@@ -185,7 +185,7 @@ impl ItemRegistry {
         let mut items = HashMap::new();
         for (id, slot) in BLOCKS.blocks.iter().enumerate().skip(1) {
             if let Some(b) = slot {
-                if b.liquid {
+                if b.liquid || b.crop {
                     continue;
                 }
                 let mut it = ItemDef::base(id as i32, b.name);

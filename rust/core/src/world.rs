@@ -10,6 +10,7 @@ use crate::blocks::{B, BLOCKS};
 use crate::chunk::Chunk;
 use crate::crafting::CRAFTING;
 use crate::enchants::ItemStack;
+use crate::growth::{LeafDecay, is_crop, is_log, is_sapling, is_sapling_soil};
 use crate::items::{IT, ITEMS};
 use crate::lighting::compute_local_light;
 use crate::math::{
@@ -100,6 +101,7 @@ pub struct CoreWorld {
     pub chunks: HashMap<(i32, i32, i32), Chunk>,
     pub redstone: RedstoneSystem,
     pub gravity_queue: VecDeque<(i32, i32, i32)>,
+    pub leaf_decay: LeafDecay,
 }
 
 pub struct RebaseResult {
@@ -126,6 +128,7 @@ impl CoreWorld {
             chunks: HashMap::new(),
             redstone: RedstoneSystem::new(),
             gravity_queue: VecDeque::new(),
+            leaf_decay: LeafDecay::default(),
         };
         w.apply_origin(ox, oz);
         w
@@ -160,6 +163,7 @@ impl CoreWorld {
             self.chunks.clear();
             self.redstone.timed_buttons.clear();
             self.gravity_queue.clear();
+            self.leaf_decay.clear();
             return RebaseResult { dx: 0, dz: 0, far: true };
         }
         let dx = dx_n.unwrap();
@@ -183,6 +187,7 @@ impl CoreWorld {
             g.0 -= dx;
             g.2 -= dz;
         }
+        self.leaf_decay.shift_local(dx, dz);
     }
 
     pub fn abs_chunk_key(&self, cx: i32, cy: i32, cz: i32) -> String {
@@ -402,8 +407,11 @@ impl CoreWorld {
                 is_floor(self.get_block_ensured(wx, wy - 1, wz, tables))
             };
         }
-        if id == B::WHEAT {
+        if is_crop(id) {
             return self.get_block_ensured(wx, wy - 1, wz, tables) == B::FARMLAND;
+        }
+        if is_sapling(id) {
+            return is_sapling_soil(self.get_block_ensured(wx, wy - 1, wz, tables));
         }
         if id == B::REEDS {
             let below = self.get_block_ensured(wx, wy - 1, wz, tables);
@@ -559,6 +567,11 @@ impl CoreWorld {
         }
 
         if record_delta {
+            if is_log(prev_id) && !is_log(id) {
+                let mut ld = std::mem::take(&mut self.leaf_decay);
+                ld.schedule_around(self, wx, wy, wz, 4, 1.2, 7.0);
+                self.leaf_decay = ld;
+            }
             if id == B::AIR || new_blk.liquid {
                 let above = self.get_block(wx, wy + 1, wz);
                 if BLOCKS.get(above).gravity {

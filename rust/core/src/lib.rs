@@ -3,6 +3,7 @@ pub mod chunk;
 pub mod crafting;
 pub mod day_night;
 pub mod enchants;
+pub mod growth;
 pub mod inventory;
 pub mod items;
 pub mod lighting;

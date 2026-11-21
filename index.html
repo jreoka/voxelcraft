@@ -650,6 +650,47 @@ html, body {
   background: linear-gradient(180deg, #52a0f7, #2e72c4);
   box-shadow: 0 8px 22px rgba(60, 140, 231, 0.35);
 }
+
+/* Advancements: slide-in toast + progress screen */
+#advToastLayer { position: fixed; top: 14px; right: 14px; z-index: 40; pointer-events: none; }
+.adv-toast {
+  display: flex; align-items: center; gap: 12px; min-width: 260px;
+  padding: 10px 16px 10px 10px; border-radius: 10px;
+  background: linear-gradient(180deg, rgba(36,30,14,0.95), rgba(22,18,8,0.95));
+  border: 1px solid rgba(245,197,66,0.65);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,236,160,0.18);
+  transform: translateX(120%); opacity: 0; transition: transform 0.38s cubic-bezier(.2,.9,.3,1.2), opacity 0.3s;
+}
+.adv-toast.in { transform: translateX(0); opacity: 1; }
+.adv-toast img { width: 36px; height: 36px; image-rendering: pixelated; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.6)); }
+.adv-kicker { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); }
+.adv-title { font-size: 15px; font-weight: 700; color: #fff8e4; }
+.adv-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.adv-bar { flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.adv-bar > div { height: 100%; background: linear-gradient(90deg, #d9a92c, var(--gold)); border-radius: 4px; transition: width 0.4s; }
+.adv-count { font-size: 13px; font-weight: 700; color: var(--gold); white-space: nowrap; }
+.adv-tier { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
+.adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.adv-card {
+  display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 9px;
+  background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.08);
+}
+.adv-card img { width: 30px; height: 30px; image-rendering: pixelated; flex: none; filter: grayscale(1) brightness(0.55); opacity: 0.7; }
+.adv-card.done { background: rgba(245,197,66,0.09); border-color: rgba(245,197,66,0.42); }
+.adv-card.done img { filter: none; opacity: 1; }
+.adv-card .n { font-size: 13px; font-weight: 700; }
+.adv-card:not(.done) .n { color: #c4ccd8; }
+.adv-card .d { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+.adv-card .pr { font-size: 11px; color: var(--gold); margin-top: 2px; }
+#sleepOverlay { position: fixed; inset: 0; background: #05070c; opacity: 0; pointer-events: none; z-index: 25; transition: opacity 1.1s ease; }
+#sleepOverlay.on { opacity: 1; }
+#titleSplash {
+  position: absolute; right: -54px; top: 54px; transform: rotate(-12deg);
+  color: #ffe45c; font-weight: 800; font-size: 15px; text-shadow: 2px 2px 0 #3f3500;
+  animation: splashPulse 0.9s ease-in-out infinite alternate; white-space: nowrap;
+}
+@keyframes splashPulse { from { transform: rotate(-12deg) scale(0.94); } to { transform: rotate(-12deg) scale(1.06); } }
+#loadingTip { display: block; margin-top: 6px; font-size: 12px; font-weight: 500; opacity: 0.75; }
 </style>
 </head>
 <body>
@@ -658,6 +699,8 @@ html, body {
 <div id="lavaOverlay"></div>
 <div id="damageFlash"></div>
 <div id="nametagLayer"></div>
+<div id="advToastLayer"></div>
+<div id="sleepOverlay"></div>
 
 <!-- HUD -->
 <div id="hud">
@@ -728,9 +771,10 @@ html, body {
 
 <!-- Title Screen -->
 <div id="titleScreen" class="screen active">
-  <div class="title-wrap">
+  <div class="title-wrap" style="position:relative">
     <div class="title-logo">VOXELCRAFT</div>
     <div class="title-sub">Infinite Procedural Voxel Survival Sandbox</div>
+    <div id="titleSplash"></div>
   </div>
   <div class="title-buttons">
     <button class="btn primary" id="btnQuickPlay">Singleplayer · New World</button>
@@ -778,7 +822,7 @@ html, body {
     <div class="section-label">Saved Servers</div>
     <div class="server-list" id="mpServerList"></div>
     <div style="margin-top:12px;font-size:12px;color:var(--muted);line-height:1.5">
-      Host your own server with <code style="color:#a7e8a0">node server.js</code> (zero npm dependencies, persistent server-side map &amp; account saves). Players can open <code style="color:#a7e8a0">http://your-server-address:25565</code> or connect via <code style="color:#a7e8a0">ws://your-server-address:25565</code>.
+      Host your own server with <code style="color:#a7e8a0">cargo run --release</code> in <code style="color:#a7e8a0">rust/app</code> (persistent server-side map &amp; account saves). Players can open <code style="color:#a7e8a0">http://your-server-address:25565</code> or connect via <code style="color:#a7e8a0">ws://your-server-address:25565</code>.
     </div>
     <div class="btn-row">
       <button class="btn" id="btnMpBack">Back</button>
@@ -859,9 +903,25 @@ html, body {
       <button class="btn primary" id="btnResume">Resume Game</button>
       <button class="btn" id="btnPauseFullscreen">Enter Fullscreen (F11)</button>
       <button class="btn" id="btnManualSave">Save World Now</button>
+      <button class="btn" id="btnPauseAdvancements">Advancements</button>
       <button class="btn" id="btnPauseSettings">Settings</button>
       <button class="btn" id="btnPauseControls">Controls</button>
       <button class="btn danger" id="btnSaveQuit">Save &amp; Quit to Title</button>
+    </div>
+  </div>
+</div>
+
+<!-- Advancements Screen -->
+<div id="advancementsScreen" class="screen backdrop-blur">
+  <div class="menu-card wide">
+    <div class="menu-title">Advancements</div>
+    <div class="adv-summary">
+      <div class="adv-bar"><div id="advBarFill" style="width:0%"></div></div>
+      <span class="adv-count" id="advCount">0 / 0</span>
+    </div>
+    <div id="advList"></div>
+    <div class="btn-row">
+      <button class="btn primary" id="btnAdvDone">Done</button>
     </div>
   </div>
 </div>
@@ -943,7 +1003,7 @@ html, body {
   <div class="menu-card">
     <div class="menu-title">Controls &amp; Keybindings</div>
     <p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">
-      Click any binding button and press a new key. Sprint with Ctrl or double-tap W (use F11 Fullscreen to prevent Ctrl+W closing the tab). Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Right-Click take half / place one, Left-Drag split evenly, Right-Drag place one per slot, Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Middle-Click (Creative) clone stack, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, Tab shows Players, F3 toggles Debug HUD.
+      Click any binding button and press a new key. Sprint with Ctrl or double-tap W (use F11 Fullscreen to prevent Ctrl+W closing the tab). Mouse: Left-Click Mine/Attack, Right-Click Place/Interact/Eat, Middle-Click Pick Block, Wheel Switch Slot. Inventory: Right-Click take half / place one, Left-Drag split evenly, Right-Drag place one per slot, Shift-Click quick-transfer/equip/bulk-craft, Double-Click gather stack, Middle-Click (Creative) clone stack, 1-9 hover swap, Q hover drop. T or / opens Chat &amp; Commands, L shows Advancements, Tab shows Players, F3 toggles Debug HUD. Farming: till with a Hoe, plant Seeds, Carrots or Potatoes on Farmland; plant Saplings on dirt or grass; Bone Meal speeds growth.
     </p>
     <div class="controls-grid" id="controlsList"></div>
     <div class="btn-row">
@@ -1669,6 +1729,7 @@ class SettingsManager {
         crouch: 'ShiftLeft',
         inventory: 'KeyE',
         drop: 'KeyQ',
+        advancements: 'KeyL',
         debug: 'F3'
       }
     };
@@ -1747,7 +1808,11 @@ const B = {
   SPRUCE_DOOR: 243, BIRCH_DOOR: 244, IRON_DOOR: 245,
   PRESSURE_PLATE: 246, STONE_BUTTON: 247, CAMPFIRE: 248, SLIME_BLOCK: 249,
   BARREL: 250, ENCHANT_TABLE: 251, FENCE_GATE: 252, CARPET_RED: 253,
-  JUKEBOX: 254, IRON_BARS: 255
+  JUKEBOX: 254, IRON_BARS: 255,
+  // Saplings & root crops live in the ids the item table never used (147..149, 164..169)
+  OAK_SAPLING: 147, BIRCH_SAPLING: 148, SPRUCE_SAPLING: 149, JUNGLE_SAPLING: 164,
+  ACACIA_SAPLING: 165, CHERRY_SAPLING: 166, MANGROVE_SAPLING: 167,
+  CARROTS: 168, POTATOES: 169
 };
 
 // Non-block items: legacy 120..225 + expanded 260+
@@ -1832,8 +1897,169 @@ const T = {
   PRESSURE_PLATE: 169, STONE_BUTTON: 170, CAMPFIRE_TOP: 171, CAMPFIRE_SIDE: 172,
   SLIME_BLOCK: 173, BARREL_TOP: 174, BARREL_SIDE: 175,
   ENCHANT_TOP: 176, ENCHANT_SIDE: 177,
-  JUKEBOX_TOP: 178, JUKEBOX_SIDE: 179, IRON_BARS: 180, WHEAT_YOUNG: 181
+  JUKEBOX_TOP: 178, JUKEBOX_SIDE: 179, IRON_BARS: 180, WHEAT_YOUNG: 181,
+  SAPLING_OAK: 182, SAPLING_BIRCH: 183, SAPLING_SPRUCE: 184, SAPLING_JUNGLE: 185,
+  SAPLING_ACACIA: 186, SAPLING_CHERRY: 187, SAPLING_MANGROVE: 188,
+  CARROTS_0: 189, // 189..192 carrot growth stages
+  POTATOES_0: 193, // 193..196 potato growth stages
+  WHEAT_1: 197, WHEAT_2: 198
 };
+
+// Growth-stage texture for crops (meta & 3 = stage 0..3); other blocks use their own tile
+function cropTile(id, meta, fallback) {
+  const st = meta & 3;
+  if (id === B.WHEAT) return st === 0 ? T.WHEAT_YOUNG : st === 1 ? T.WHEAT_1 : st === 2 ? T.WHEAT_2 : T.WHEAT;
+  if (id === B.CARROTS) return T.CARROTS_0 + st;
+  if (id === B.POTATOES) return T.POTATOES_0 + st;
+  return fallback;
+}
+const isCrop = (id) => id === B.WHEAT || id === B.CARROTS || id === B.POTATOES;
+
+// Leaves -> the sapling they drop; sapling -> tree it grows into
+const LEAF_SAPLING = {
+  [B.OAK_LEAVES]: B.OAK_SAPLING, [B.BIRCH_LEAVES]: B.BIRCH_SAPLING, [B.SPRUCE_LEAVES]: B.SPRUCE_SAPLING,
+  [B.JUNGLE_LEAVES]: B.JUNGLE_SAPLING, [B.ACACIA_LEAVES]: B.ACACIA_SAPLING,
+  [B.CHERRY_LEAVES]: B.CHERRY_SAPLING, [B.MANGROVE_LEAVES]: B.MANGROVE_SAPLING
+};
+const SAPLING_TREE = {
+  [B.OAK_SAPLING]: 'oak', [B.BIRCH_SAPLING]: 'birch', [B.SPRUCE_SAPLING]: 'spruce',
+  [B.JUNGLE_SAPLING]: 'jungle', [B.ACACIA_SAPLING]: 'acacia',
+  [B.CHERRY_SAPLING]: 'cherry', [B.MANGROVE_SAPLING]: 'mangrove'
+};
+const isSapling = (id) => SAPLING_TREE[id] !== undefined;
+const SAPLING_SOIL = new Set([B.GRASS, B.DIRT, B.PODZOL, B.COARSE_DIRT, B.MOSS, B.MUD, B.FARMLAND, B.MYCELIUM]);
+const NEIGHBORS6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+const LOG_IDS = new Set([B.OAK_LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.JUNGLE_LOG, B.ACACIA_LOG, B.DARK_OAK_LOG, B.CHERRY_LOG, B.MANGROVE_LOG]);
+const isLogBlock = (id) => LOG_IDS.has(id);
+const RANDOM_TICK_SAMPLES = 40; // per 0.35s over a 32x16x32 box around each player
+
+// One random tick for the block at (x,y,z). Singleplayer runs this on the client; the multiplayer
+// server runs its Rust twin (rust/core/src/growth.rs), so keep the two in step.
+function randomTickBlock(world, x, y, z, id, rnd) {
+  if (id === B.FARMLAND) {
+    if (world.getMeta(x, y, z) & 1) return;
+    for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+      if (world.getBlock(x + dx, y, z + dz) === B.WATER) { world.setBlock(x, y, z, B.FARMLAND, 1, true); return; }
+    }
+  } else if (isCrop(id)) {
+    const m = world.getMeta(x, y, z) & 3;
+    if (m >= 3 || rnd() >= 0.33) return;
+    const wet = world.getBlock(x, y - 1, z) === B.FARMLAND && (world.getMeta(x, y - 1, z) & 1);
+    if (wet || rnd() < 0.4) world.setBlock(x, y, z, id, m + 1, true);
+  } else if (isSapling(id)) {
+    if (rnd() >= 0.25) return;
+    const l = world.getLightAt(x, y, z);
+    if (Math.max(l.sky, l.block) < 9) return;
+    growTreeAt(world, x, y, z, SAPLING_TREE[id], rnd);
+  } else if (id === B.REEDS || id === B.CACTUS) {
+    if (rnd() >= 0.2 || world.getBlock(x, y + 1, z) !== B.AIR) return;
+    let base = y;
+    while (base > y - 3 && world.getBlock(x, base - 1, z) === id) base--;
+    if (y - base + 1 >= 3) return;
+    if (id === B.REEDS) {
+      let wet = false;
+      for (const [dx, , dz] of NEIGHBORS6) if (world.getBlock(x + dx, base - 1, z + dz) === B.WATER) wet = true;
+      if (!wet) return;
+    }
+    world.setBlock(x, y + 1, z, id, 0, true);
+  } else if (id === B.DIRT) {
+    const above = BLOCKS.get(world.getBlock(x, y + 1, z));
+    if ((above.solid && !above.transparent) || above.liquid) return;
+    if (world.getLightAt(x, y + 1, z).sky < 9) return;
+    for (let dy = -3; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (world.getBlock(x + dx, y + dy, z + dz) === B.GRASS && rnd() < 0.6) { world.setBlock(x, y, z, B.GRASS, 0, true); return; }
+    }
+  } else if (id === B.GRASS) {
+    const above = BLOCKS.get(world.getBlock(x, y + 1, z));
+    if ((above.solid && !above.transparent && above.shape === 'cube') || above.liquid) world.setBlock(x, y, z, B.DIRT, 0, true);
+  }
+}
+
+const TREE_WOOD = {
+  oak: [B.OAK_LOG, B.OAK_LEAVES], birch: [B.BIRCH_LOG, B.BIRCH_LEAVES], spruce: [B.SPRUCE_LOG, B.SPRUCE_LEAVES],
+  jungle: [B.JUNGLE_LOG, B.JUNGLE_LEAVES], acacia: [B.ACACIA_LOG, B.ACACIA_LEAVES],
+  cherry: [B.CHERRY_LOG, B.CHERRY_LEAVES], mangrove: [B.MANGROVE_LOG, B.MANGROVE_LEAVES]
+};
+
+// Grow a sapling at (x,y,z) into a full tree of `kind`. Places nothing and returns false if the
+// trunk would be blocked. Leaves are natural (meta 0) so the tree's canopy decays once it is felled.
+function growTreeAt(world, x, y, z, kind, rnd = Math.random) {
+  const wood = TREE_WOOD[kind];
+  if (!wood) return false;
+  const [LOG, LEAF] = wood;
+  const ri = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1));
+  const logs = [], leaves = [];
+  const disc = (cx, cy, cz, r, cutCorners = true) => {
+    const R = Math.ceil(r);
+    for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+      const d2 = dx * dx + dz * dz;
+      if (d2 > r * r + 0.6) continue;
+      if (cutCorners && Math.abs(dx) === R && Math.abs(dz) === R && rnd() < 0.6) continue;
+      leaves.push([cx + dx, cy, cz + dz]);
+    }
+  };
+  let h;
+  if (kind === 'oak' || kind === 'birch') {
+    h = kind === 'oak' ? ri(4, 6) : ri(5, 7);
+    for (let i = 0; i < h; i++) logs.push([x, y + i, z]);
+    disc(x, y + h - 3, z, 2); disc(x, y + h - 2, z, 2); disc(x, y + h - 1, z, 1, false);
+    leaves.push([x, y + h, z], [x + 1, y + h, z], [x - 1, y + h, z], [x, y + h, z + 1], [x, y + h, z - 1]);
+  } else if (kind === 'spruce') {
+    h = ri(6, 9);
+    for (let i = 0; i < h; i++) logs.push([x, y + i, z]);
+    leaves.push([x, y + h, z], [x, y + h + 1, z]);
+    for (let k = 1; k <= h - 2; k++) {
+      const r = (k % 2 === 1) ? Math.min(3, 1 + Math.floor(k / 3)) : Math.max(1, Math.floor(k / 3));
+      disc(x, y + h - k, z, r, false);
+    }
+  } else if (kind === 'jungle') {
+    h = ri(7, 11);
+    for (let i = 0; i < h; i++) logs.push([x, y + i, z]);
+    disc(x, y + h - 2, z, 3); disc(x, y + h - 1, z, 2.6); disc(x, y + h, z, 1.6, false);
+  } else if (kind === 'acacia') {
+    h = ri(5, 6);
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]], [bx, bz] = dirs[ri(0, 3)];
+    let tx = x, tz = z;
+    for (let i = 0; i < h; i++) {
+      if (i >= h - 3 && i < h - 1) { tx += bx; tz += bz; }
+      logs.push([tx, y + i, tz]);
+    }
+    const top = y + h - 1;
+    for (let dz = -3; dz <= 3; dz++) for (let dx = -3; dx <= 3; dx++) if (Math.abs(dx) + Math.abs(dz) <= 4) leaves.push([tx + dx, top, tz + dz]);
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) + Math.abs(dz) <= 2) leaves.push([tx + dx, top + 1, tz + dz]);
+  } else if (kind === 'cherry') {
+    h = ri(5, 7);
+    const lean = rnd() < 0.5 ? 1 : -1;
+    for (let i = 0; i < h; i++) logs.push([x + (i >= h - 2 ? lean : 0), y + i, z]);
+    const cx = x + lean, ty = y + h - 1;
+    disc(cx, ty - 1, z, 2); disc(cx, ty, z, 3); disc(cx, ty + 1, z, 3); disc(cx, ty + 2, z, 1, false);
+  } else if (kind === 'mangrove') {
+    h = ri(5, 7);
+    for (let i = 0; i < h; i++) logs.push([x, y + 1 + i, z]);
+    logs.push([x, y, z]);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (rnd() < 0.75) logs.push([x + dx, y, z + dz]);
+    const ty = y + h;
+    disc(x, ty - 1, z, 2.6); disc(x, ty, z, 2.6); disc(x, ty + 1, z, 1.6, false);
+  } else return false;
+
+  const passable = (id) => {
+    if (id === B.AIR || isSapling(id)) return true;
+    const b = BLOCKS.get(id);
+    return (b.cross && !b.liquid && !isCrop(id)) || b.isLeaf;
+  };
+  for (const [lx, ly, lz] of logs) if (!passable(world.getBlock(lx, ly, lz))) return false;
+  // Only grow where every trunk column also has headroom for the canopy's lowest layer
+  if (!passable(world.getBlock(x, y + h, z)) && kind !== 'acacia') return false;
+
+  const below = world.getBlock(x, y - 1, z);
+  if (below === B.GRASS || below === B.FARMLAND || below === B.MYCELIUM) world.setBlock(x, y - 1, z, B.DIRT, 0, true);
+  for (const [lx, ly, lz] of logs) world.setBlock(lx, ly, lz, LOG, 0, true);
+  for (const [lx, ly, lz] of leaves) {
+    const cur = world.getBlock(lx, ly, lz);
+    if (cur === B.AIR || (BLOCKS.get(cur).cross && !BLOCKS.get(cur).liquid && !isCrop(cur) && !isSapling(cur))) world.setBlock(lx, ly, lz, LEAF, 0, true);
+  }
+  return true;
+}
 
 class BlockRegistry {
   constructor() {
@@ -1868,7 +2094,8 @@ class BlockRegistry {
         bouncy: !!opts.bouncy,
         slows: !!opts.slows,
         hot: !!opts.hot,
-        prickly: !!opts.prickly
+        prickly: !!opts.prickly,
+        crop: !!opts.crop
       };
     };
 
@@ -2038,6 +2265,18 @@ class BlockRegistry {
     def(B.DEAD_BUSH, 'Dead Bush', { hardness: 0.05, solid: false, transparent: true, cross: true, shape: 'cross', sound: 'grass', tex: T.DEAD_BUSH, drop: IT.STICK });
     def(B.VINES, 'Vines', { hardness: 0.2, solid: false, transparent: true, cross: true, shape: 'cross', climbable: true, sound: 'grass', tex: T.VINES, biomeTint: 2, sway: true, drop: 0 });
     def(B.WHEAT, 'Wheat Crop', { hardness: 0.1, solid: false, transparent: true, cross: true, shape: 'cross', sound: 'grass', tex: [T.WHEAT, T.WHEAT, T.WHEAT, T.WHEAT_YOUNG], sway: true, drop: IT.WHEAT_ITEM });
+    def(B.CARROTS, 'Carrot Crop', { hardness: 0.1, solid: false, transparent: true, cross: true, shape: 'cross', sound: 'grass', tex: T.CARROTS_0 + 3, sway: true, drop: IT.CARROT, crop: true });
+    def(B.POTATOES, 'Potato Crop', { hardness: 0.1, solid: false, transparent: true, cross: true, shape: 'cross', sound: 'grass', tex: T.POTATOES_0 + 3, sway: true, drop: IT.POTATO, crop: true });
+
+    // Saplings (grow into their tree on random ticks or with Bone Meal)
+    const sap = (id, name, tile) => def(id, name, { hardness: 0.0, solid: false, transparent: true, cross: true, shape: 'cross', sound: 'grass', tex: tile, sway: true });
+    sap(B.OAK_SAPLING, 'Oak Sapling', T.SAPLING_OAK);
+    sap(B.BIRCH_SAPLING, 'Birch Sapling', T.SAPLING_BIRCH);
+    sap(B.SPRUCE_SAPLING, 'Spruce Sapling', T.SAPLING_SPRUCE);
+    sap(B.JUNGLE_SAPLING, 'Jungle Sapling', T.SAPLING_JUNGLE);
+    sap(B.ACACIA_SAPLING, 'Acacia Sapling', T.SAPLING_ACACIA);
+    sap(B.CHERRY_SAPLING, 'Cherry Sapling', T.SAPLING_CHERRY);
+    sap(B.MANGROVE_SAPLING, 'Mangrove Propagule', T.SAPLING_MANGROVE);
   }
   get(id) { return this.blocks[id] || this.blocks[0]; }
 }
@@ -2050,7 +2289,7 @@ class ItemRegistry {
     // Register all placeable blocks as items
     for (let id = 1; id < BLOCKS.blocks.length; id++) {
       const b = BLOCKS.blocks[id];
-      if (!b || b.liquid) continue;
+      if (!b || b.liquid || b.crop) continue;
       this.items.set(id, {
         id, name: b.name, blockId: id, stack: 64, category: 'block'
       });
@@ -2148,8 +2387,8 @@ class ItemRegistry {
 
     // Expanded Farming, Food, Materials & Extra Gear Tiers
     add(IT.WHEAT_SEEDS, 'Wheat Seeds', { category: 'seed', color: '#86b84c', iconType: 'dust', plantBlock: B.WHEAT });
-    add(IT.CARROT, 'Carrot', { category: 'food', food: 3, sat: 3.6, color: '#ee7b24', iconType: 'stick' });
-    add(IT.POTATO, 'Potato', { category: 'food', food: 2, sat: 1.2, color: '#d4ab6a', iconType: 'orb' });
+    add(IT.CARROT, 'Carrot', { category: 'food', food: 3, sat: 3.6, color: '#ee7b24', iconType: 'stick', plantBlock: B.CARROTS });
+    add(IT.POTATO, 'Potato', { category: 'food', food: 2, sat: 1.2, color: '#d4ab6a', iconType: 'orb', plantBlock: B.POTATOES });
     add(IT.BAKED_POTATO, 'Baked Potato', { category: 'food', food: 6, sat: 7.2, color: '#c48335', iconType: 'orb' });
     add(IT.MELON_SLICE, 'Melon Slice', { category: 'food', food: 2, sat: 1.6, color: '#e04850', iconType: 'meat' });
     add(IT.PUMPKIN_PIE, 'Pumpkin Pie', { category: 'food', food: 8, sat: 6.0, color: '#d68232', iconType: 'orb' });
@@ -2666,12 +2905,14 @@ class TextureAtlas {
   _generateAllTiles() {
     // Grass top (neutral bright grayscale-green so biome tint multiplies cleanly)
     this._drawTile(T.GRASS_TOP, (p, rng) => {
-      this._fillNoise(p, rng, [198, 212, 188], 22, 2);
-      for (let i = 0; i < 65; i++) {
-        const x = rng.int(0, 30), y = rng.int(0, 30);
-        const shade = rng.int(-24, 18);
-        p(x, y, 198+shade, 214+shade, 186+shade);
-        p(x+1, y, 192+shade, 208+shade, 180+shade);
+      this._fillNoise(p, rng, [198, 212, 188], 16, 2);
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        if (rng.next() < 0.35) { const v = (rng.next() - 0.5) * 22; p(x, y, 198 + v, 212 + v, 188 + v); }
+      }
+      for (let i = 0; i < 90; i++) {
+        const x = rng.int(0, 31), y = rng.int(0, 31), len = rng.int(2, 3);
+        const shade = rng.next() < 0.5 ? rng.int(-34, -16) : rng.int(10, 24);
+        for (let k = 0; k < len; k++) p((x + (k === len - 1 && rng.next() < 0.5 ? 1 : 0)) & 31, (y + k) & 31, 198 + shade, 214 + shade, 186 + shade);
       }
     });
     // Dirt
@@ -2901,8 +3142,15 @@ class TextureAtlas {
     });
 
     // Concrete, Metals, Wool, Bookshelf, Glowstone, Obsidian, Hay, Coral
-    this._drawTile(T.WHITE_CONCRETE, (p, rng) => this._fillNoise(p, rng, [224, 228, 232], 6, 2));
-    this._drawTile(T.GRAY_CONCRETE, (p, rng) => this._fillNoise(p, rng, [74, 80, 88], 8, 2));
+    const drawConcrete = (idx, c) => this._drawTile(idx, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 5 + Math.sin((x + y * 0.6) * 0.35) * 1.5;
+        p(x, y, c[0] + n, c[1] + n, c[2] + n);
+      }
+      for (let i = 0; i < 26; i++) { const x = rng.int(0, 31), y = rng.int(0, 31), v = rng.int(-18, 12); p(x, y, c[0] + v, c[1] + v, c[2] + v); }
+    });
+    drawConcrete(T.WHITE_CONCRETE, [222, 226, 230]);
+    drawConcrete(T.GRAY_CONCRETE, [74, 80, 88]);
     const drawMetal = (idx, c) => this._drawTile(idx, (p, rng) => {
       for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
         const outer = x < 2 || y < 2 || x > 29 || y > 29;
@@ -2930,10 +3178,20 @@ class TextureAtlas {
       }
     });
 
-    this._drawTile(T.WOOL_WHITE, (p, rng) => this._fillNoise(p, rng, [232, 232, 228], 12, 2));
-    this._drawTile(T.WOOL_RED, (p, rng) => this._fillNoise(p, rng, [182, 48, 48], 14, 2));
-    this._drawTile(T.WOOL_BLUE, (p, rng) => this._fillNoise(p, rng, [52, 86, 178], 14, 2));
-    this._drawTile(T.WOOL_YELLOW, (p, rng) => this._fillNoise(p, rng, [226, 192, 54], 14, 2));
+    const drawWool = (idx, c) => this._drawTile(idx, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const cx = x & 3, cy = (y + ((x >> 2) & 1) * 2) & 3;
+        const ridge = (cx === 0 || cx === 3) ? -10 : (cy === 0 ? -14 : cy === 1 ? 10 : 4);
+        const n = (rng.next() - 0.5) * 12 + ridge;
+        p(x, y, c[0] + n, c[1] + n, c[2] + n);
+      }
+      for (let i = 0; i < 14; i++) { const x = rng.int(0, 31), y = rng.int(0, 31); p(x, y, c[0] + 22, c[1] + 22, c[2] + 22); } // stray fibres
+    });
+    drawWool(T.WOOL_WHITE, [228, 228, 224]);
+    drawWool(T.WOOL_RED, [182, 48, 48]);
+    drawWool(T.WOOL_BLUE, [52, 86, 178]);
+    drawWool(T.WOOL_YELLOW, [226, 192, 54]);
+    this._drawWool = drawWool;
 
     this._drawTile(T.BOOKSHELF, (p, rng) => {
       this._fillNoise(p, rng, [168, 130, 80], 10, 2);
@@ -3146,7 +3404,17 @@ class TextureAtlas {
         }
       }
     });
-    this._drawTile(T.WORKSTATION_TOP, (p, rng) => this._fillNoise(p, rng, [72, 76, 86], 10, 2));
+    this._drawTile(T.WORKSTATION_TOP, (p, rng) => {
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const edge = x < 2 || y < 2 || x > 29 || y > 29;
+        const bevel = !edge && (x < 3 || y < 3) ? 16 : !edge && (x > 28 || y > 28) ? -16 : 0;
+        const n = (rng.next() - 0.5) * 10;
+        const v = edge ? 44 : 78 + bevel;
+        p(x, y, v + n, v + 4 + n, v + 12 + n);
+      }
+      for (let x = 6; x < 26; x++) { p(x, 15, 50, 52, 60); p(x, 16, 104, 108, 118); } // forging groove
+      for (const [rx, ry] of [[5, 5], [26, 5], [5, 26], [26, 26]]) { p(rx, ry, 150, 154, 164); p(rx + 1, ry, 120, 124, 134); p(rx, ry + 1, 120, 124, 134); p(rx + 1, ry + 1, 60, 62, 70); }
+    });
     const drawDoorPair = (botIdx, topIdx, base, trim, handle, isIron = false) => {
       // Bottom door half (paneled + doorknob near top edge)
       this._drawTile(botIdx, (p, rng) => {
@@ -3370,6 +3638,90 @@ class TextureAtlas {
       }
     });
 
+    // Intermediate wheat stages: taller green stalks, then yellowing heads
+    const drawWheatStage = (idx, top, green, ripe) => this._drawTile(idx, (p, rng) => {
+      for (let bx = 4; bx < 29; bx += 4) {
+        const h = top + rng.int(-2, 2);
+        for (let y = h; y < 32; y++) {
+          const head = y < h + 6 && ripe > 0;
+          const c = head ? [lerp(green[0], 218, ripe), lerp(green[1], 192, ripe), lerp(green[2], 72, ripe)] : green;
+          p(bx, y, c[0], c[1], c[2]); p(bx + 1, y, c[0] - 16, c[1] - 18, c[2] - 10);
+        }
+        p(bx - 1, h + 9, green[0] - 10, green[1] - 8, green[2] - 6); p(bx + 2, h + 13, green[0] - 10, green[1] - 8, green[2] - 6);
+      }
+    });
+    drawWheatStage(T.WHEAT_1, 13, [96, 170, 64], 0);
+    drawWheatStage(T.WHEAT_2, 9, [132, 172, 66], 0.55);
+
+    // Root crops: leafy tops that thicken through 4 stages; the ripe stage shows the crop at soil level
+    const drawRootCrop = (base, leaf, crop, flowers) => {
+      for (let st = 0; st < 4; st++) this._drawTile(base + st, (p, rng) => {
+        const h = [6, 11, 16, 19][st];
+        const plants = st === 0 ? [8, 16, 24] : [5, 11, 16, 21, 27];
+        for (const cx of plants) {
+          const ph = h + rng.int(-2, 2);
+          for (let y = 31; y > 31 - ph; y--) {
+            const t = (31 - y) / ph;
+            const spread = Math.round(Math.sin(t * Math.PI) * (st === 0 ? 1 : 2));
+            const shade = rng.next() * 18;
+            for (let xx = cx - spread; xx <= cx + spread; xx++) {
+              const side = xx > cx ? 14 : xx < cx ? -6 : 0; // light from the left
+              p(xx, y, leaf[0] - side - shade, leaf[1] - side - shade, leaf[2] - side * 0.6 - shade);
+            }
+            if (st >= 2 && (y & 1)) p(cx, y, leaf[0] + 18, leaf[1] + 16, leaf[2] + 8);
+          }
+          if (st === 3) {
+            for (let y = 28; y < 32; y++) for (let x = cx - 1; x <= cx + 1; x++) {
+              const n = rng.next() * 20;
+              p(x, y, crop[0] - n, crop[1] - n, crop[2] - n);
+            }
+            if (flowers) { p(cx, 31 - ph, 246, 246, 236); p(cx - 1, 32 - ph, 236, 236, 226); p(cx + 1, 32 - ph, 236, 236, 226); }
+          }
+        }
+      });
+    };
+    drawRootCrop(T.CARROTS_0, [86, 170, 58], [236, 124, 34], false);
+    drawRootCrop(T.POTATOES_0, [70, 150, 62], [206, 166, 96], true);
+
+    // Saplings: a thin stem with a small canopy in each tree's own colors and silhouette
+    const drawSapling = (idx, bark, leaf, form) => this._drawTile(idx, (p, rng) => {
+      const stemTop = form === 'tall' ? 10 : form === 'cone' ? 12 : 15;
+      for (let y = stemTop; y < 32; y++) {
+        const lean = form === 'acacia' ? Math.round((31 - y) * 0.18) : 0;
+        p(15 + lean, y, bark[0], bark[1], bark[2]); p(16 + lean, y, bark[0] - 22, bark[1] - 20, bark[2] - 16);
+      }
+      const dot = (x, y, k = 0) => {
+        const n = (rng.next() - 0.5) * 34 + k;
+        p(x, y, leaf[0] + n, leaf[1] + n, leaf[2] + n);
+      };
+      if (form === 'cone') {
+        for (let y = 4; y < 27; y++) {
+          const w = Math.floor(((y - 4) % 8) * 0.9 + (y - 4) * 0.22) + 1;
+          for (let x = 16 - w; x <= 15 + w; x++) if (rng.next() < 0.88) dot(x, y, x < 16 ? 10 : -12);
+        }
+      } else if (form === 'acacia') {
+        for (let y = 5; y < 12; y++) for (let x = 12; x < 31; x++) if (Math.abs(x - 21) + Math.abs(y - 8) * 2.2 < 10 && rng.next() < 0.85) dot(x, y, y < 8 ? 12 : -8);
+        for (let y = 13; y < 18; y++) for (let x = 3; x < 14; x++) if (Math.abs(x - 8) + Math.abs(y - 15) * 2 < 6 && rng.next() < 0.85) dot(x, y);
+      } else if (form === 'propagule') {
+        for (let y = 2; y < 12; y++) for (let x = 9; x < 23; x++) if (Math.hypot((x - 15.5) * 0.8, y - 6) < 5 && rng.next() < 0.9) dot(x, y, y < 6 ? 12 : -10);
+        for (let y = 12; y < 26; y++) { p(15, y, 132, 168, 70); p(16, y, 112, 148, 58); }
+      } else {
+        const cy = form === 'tall' ? 9 : 11, r = form === 'tall' ? 6.5 : 8.5;
+        for (let y = cy - 9; y < cy + 9; y++) for (let x = 4; x < 28; x++) {
+          const d = Math.hypot((x - 15.5) * (form === 'tall' ? 1.25 : 0.95), y - cy);
+          if (d < r && rng.next() < (d < r - 2 ? 0.92 : 0.6)) dot(x, y, (y < cy ? 14 : -10) + (x < 15 ? 6 : -6));
+        }
+        if (form === 'blossom') for (let i = 0; i < 9; i++) { const x = rng.int(8, 23), y = rng.int(cy - 6, cy + 5); p(x, y, 255, 236, 246); }
+      }
+    });
+    drawSapling(T.SAPLING_OAK, [118, 86, 50], [72, 142, 46], 'round');
+    drawSapling(T.SAPLING_BIRCH, [222, 218, 206], [118, 164, 72], 'tall');
+    drawSapling(T.SAPLING_SPRUCE, [86, 60, 36], [52, 98, 62], 'cone');
+    drawSapling(T.SAPLING_JUNGLE, [108, 84, 44], [54, 150, 40], 'round');
+    drawSapling(T.SAPLING_ACACIA, [128, 112, 98], [124, 150, 52], 'acacia');
+    drawSapling(T.SAPLING_CHERRY, [76, 44, 50], [236, 164, 196], 'blossom');
+    drawSapling(T.SAPLING_MANGROVE, [96, 66, 52], [84, 138, 58], 'propagule');
+
     // ---- NEW EXPANDED BLOCK TEXTURES ----
     // Cherry, Mangrove, Acacia, Dark Oak wood & Bamboo
     drawLogTop(T.CHERRY_LOG_TOP, [66, 42, 48], [224, 176, 184]);
@@ -3539,8 +3891,8 @@ class TextureAtlas {
     drawStainedGlass(T.GLASS_BLUE, [54, 128, 232]);
     drawStainedGlass(T.GLASS_RED, [224, 58, 66]);
     drawStainedGlass(T.GLASS_GOLD, [242, 188, 52]);
-    this._drawTile(T.WOOL_GREEN, (p, rng) => this._fillNoise(p, rng, [56, 162, 72], 14, 2));
-    this._drawTile(T.WOOL_PURPLE, (p, rng) => this._fillNoise(p, rng, [132, 64, 188], 14, 2));
+    this._drawWool(T.WOOL_GREEN, [56, 162, 72]);
+    this._drawWool(T.WOOL_PURPLE, [132, 64, 188]);
     this._drawTile(T.COBWEB, (p) => {
       for (let i = 0; i < 32; i++) {
         p(i, i, 236, 238, 242, 230); p(31 - i, i, 236, 238, 242, 230);
@@ -3607,18 +3959,30 @@ class TextureAtlas {
       }
     });
     this._drawTile(T.ENCHANT_TOP, (p, rng) => {
-      this._fillNoise(p, rng, [32, 24, 48], 10, 2);
-      for (let y = 5; y < 27; y++) for (let x = 5; x < 27; x++) p(x, y, 178, 34, 46);
-      for (let y = 9; y < 23; y++) for (let x = 9; x < 23; x++) {
-        const diag = (x === 9 || x === 22 || y === 9 || y === 22);
-        p(x, y, diag ? 76 : 210, diag ? 228 : 48, diag ? 224 : 62);
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 14;
+        const trim = x < 2 || y < 2 || x > 29 || y > 29;
+        const corner = (x < 6 || x > 25) && (y < 6 || y > 25);
+        if (corner) p(x, y, 70 + n, 228 + n, 220 + n);
+        else if (trim) p(x, y, 226 + n, 182 + n, 64 + n);
+        else p(x, y, 160 + n, 30 + n * 0.5, 44 + n * 0.5);
+      }
+      // open book: two cream pages, a spine and a few lines of script
+      for (let y = 10; y < 23; y++) for (let x = 7; x < 25; x++) {
+        if (x === 15 || x === 16) { p(x, y, 112, 64, 36); continue; }
+        const line = (y & 1) === 0 && y > 11 && y < 21 && ((x > 8 && x < 14) || (x > 17 && x < 23)) && rng.next() < 0.7;
+        p(x, y, line ? 120 : 238, line ? 96 : 226, line ? 168 : 196);
       }
     });
     this._drawTile(T.ENCHANT_SIDE, (p, rng) => {
-      this._fillNoise(p, rng, [32, 24, 48], 10, 2);
-      for (let y = 0; y < 8; y++) for (let x = 0; x < 32; x++) p(x, y, 172, 36, 46);
-      for (let y = 4; y < 12; y++) for (let x = 4; x < 10; x++) p(x, y, 74, 232, 224);
-      for (let y = 4; y < 12; y++) for (let x = 22; x < 28; x++) p(x, y, 74, 232, 224);
+      for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+        const n = (rng.next() - 0.5) * 10;
+        if (y < 6) p(x, y, 160 + n, 32, 44);
+        else if (y === 6) p(x, y, 226, 182, 64);
+        else p(x, y, 30 + n, 22 + n, 44 + n);
+      }
+      const glyph = (gx, gy) => { for (let k = 0; k < 5; k++) { p(gx + (k % 2), gy + k, 120, 236, 228); if (rng.next() < 0.5) p(gx + 2, gy + k, 90, 200, 210); } };
+      glyph(5, 14); glyph(14, 18); glyph(24, 13); glyph(9, 24); glyph(20, 25);
     });
     this._drawTile(T.JUKEBOX_TOP, (p, rng) => {
       this._fillNoise(p, rng, [128, 74, 48], 10, 2);
@@ -6752,7 +7116,7 @@ class VoxelMesher {
             emitSide(1, 0,  [x+1,y,z+1],[x+1,y,z],[x+1,y+topH,z],[x+1,y+topH,z+1], [1,0,0]);
             emitSide(-1, 0, [x,y,z],[x,y,z+1],[x,y+topH,z+1],[x,y+topH,z], [-1,0,0]);
           } else if (blk.shape === 'cross') {
-            const tile = (id === B.WHEAT && (meta & 3) < 2) ? T.WHEAT_YOUNG : blk.tex[0];
+            const tile = blk.crop || id === B.WHEAT ? cropTile(id, meta, blk.tex[0]) : blk.tex[0];
             const uv = [0, 1, 1, 1, 1, 0, 0, 0];
             const p = 0.14;
             this._emitQuad(false, [x+p,y,z+p],[x+1-p,y,z+1-p],[x+1-p,y+1,z+1-p],[x+p,y+1,z+p], [0,1,0], uv, tile, col, sky, bl, ones, flags);
@@ -7291,6 +7655,9 @@ class World {
     this._tickAccum = 0;
     this._gravityQueue = [];
     this.fallingBlocks = [];
+    // Leaves near a removed log are re-checked after a short random delay; orphans decay
+    this.leafDecay = [];
+    this._leafDecaySet = new Set();
     this._applyOrigin(0n, 0n);
   }
 
@@ -7409,6 +7776,8 @@ class World {
     for (const tb of this.redstone.timedButtons) { tb.x -= dx; tb.z -= dz; }
     for (const g of this._gravityQueue) { g[0] -= dx; g[2] -= dz; }
     for (const fb of this.fallingBlocks) { fb.x -= dx; fb.z -= dz; }
+    this._leafDecaySet.clear();
+    for (const l of this.leafDecay) { l.x -= dx; l.z -= dz; this._leafDecaySet.add(`${l.x},${l.y},${l.z}`); }
   }
 
   chunkKey(cx, cy, cz) { return `${cx},${cy},${cz}`; }
@@ -7524,7 +7893,8 @@ class World {
       if (meta & 8) return this.getBlock(wx, wy - 1, wz) === id;
       return isFloor(this.getBlock(wx, wy - 1, wz));
     }
-    if (id === B.WHEAT) return this.getBlock(wx, wy - 1, wz) === B.FARMLAND;
+    if (isCrop(id)) return this.getBlock(wx, wy - 1, wz) === B.FARMLAND;
+    if (isSapling(id)) return SAPLING_SOIL.has(this.getBlock(wx, wy - 1, wz));
     if (id === B.REEDS) {
       const below = this.getBlock(wx, wy - 1, wz);
       return below === B.REEDS || isFloor(below);
@@ -7601,6 +7971,7 @@ class World {
       this.blockEntities.delete(this.absBlockKey(wx, wy, wz));
     }
     if (recordDelta) {
+      if (isLogBlock(prevId) && !isLogBlock(id) && !this.serverTicks) this.scheduleLeafDecayAround(wx, wy, wz, 4);
       this.fluids.notifyNeighbors(wx, wy, wz);
       if (id === B.AIR || newBlk.liquid) {
         const above = this.getBlock(wx, wy + 1, wz);
@@ -7608,6 +7979,64 @@ class World {
       } else if (newBlk.gravity) {
         this._gravityQueue.push([wx, wy, wz]);
       }
+    }
+  }
+
+  // Queue every natural leaf within `r` of (x,y,z) for a delayed "still attached to a log?" check
+  scheduleLeafDecayAround(x, y, z, r, delayMin = 1.2, delaySpread = 7) {
+    if (this.leafDecay.length > 4000) return;
+    for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      const lx = x + dx, ly = y + dy, lz = z + dz;
+      const id = this.getBlock(lx, ly, lz);
+      if (!BLOCKS.get(id).isLeaf || this.getMeta(lx, ly, lz) !== 0) continue;
+      const k = `${lx},${ly},${lz}`;
+      if (this._leafDecaySet.has(k)) continue;
+      this._leafDecaySet.add(k);
+      this.leafDecay.push({ x: lx, y: ly, z: lz, t: delayMin + Math.random() * delaySpread });
+    }
+  }
+
+  // Breadth-first search through connected leaves for a log within `maxDist` steps
+  leafHasLog(x, y, z, maxDist = 6) {
+    const seen = new Set([`${x},${y},${z}`]);
+    let frontier = [[x, y, z]];
+    for (let d = 0; d < maxDist && frontier.length; d++) {
+      const next = [];
+      for (const [cx, cy, cz] of frontier) {
+        for (const [ox, oy, oz] of NEIGHBORS6) {
+          const nx = cx + ox, ny = cy + oy, nz = cz + oz;
+          const k = `${nx},${ny},${nz}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const id = this.getBlock(nx, ny, nz);
+          if (isLogBlock(id)) return true;
+          if (BLOCKS.get(id).isLeaf) next.push([nx, ny, nz]);
+        }
+      }
+      frontier = next;
+    }
+    return false;
+  }
+
+  _updateLeafDecay(dt, particles, mining) {
+    if (!this.leafDecay.length) return;
+    let budget = 24;
+    for (let i = this.leafDecay.length - 1; i >= 0 && budget > 0; i--) {
+      const l = this.leafDecay[i];
+      l.t -= dt;
+      if (l.t > 0) continue;
+      this.leafDecay.splice(i, 1);
+      this._leafDecaySet.delete(`${l.x},${l.y},${l.z}`);
+      budget--;
+      const id = this.getBlock(l.x, l.y, l.z);
+      const blk = BLOCKS.get(id);
+      if (!blk.isLeaf || this.getMeta(l.x, l.y, l.z) !== 0) continue;
+      if (this.leafHasLog(l.x, l.y, l.z)) continue;
+      this.setBlock(l.x, l.y, l.z, B.AIR, 0, true);
+      if (particles) particles.spawnBlockBurst(l.x + 0.5, l.y + 0.5, l.z + 0.5, id, 5, 1.6, 0.08, 0.7);
+      if (mining) for (const d of computeBlockDrops(blk, 0, null).drops) mining.spawnDrop(l.x + 0.5, l.y + 0.4, l.z + 0.5, d.id, d.count);
+      // Orphaned canopies fall apart from the inside out
+      this.scheduleLeafDecayAround(l.x, l.y, l.z, 1, 0.4, 2.5);
     }
   }
 
@@ -7680,6 +8109,7 @@ class World {
   // Random World Ticks: Crop Growth, Farmland Hydration, Falling Sand/Gravel, Biome & Campfire Particles
   updateBlockTicks(dt, player, particles, mining) {
     this.redstone.update(dt, mining);
+    if (!this.serverTicks) this._updateLeafDecay(dt, particles, mining);
 
     // Spawn smooth 3D falling-block physics entities for unsupported sand/gravel
     if (this._gravityQueue.length > 0) {
@@ -7752,34 +8182,22 @@ class World {
     if (this._tickAccum < 0.35 || !player) return;
     this._tickAccum = 0;
 
-    // Sample 14 random blocks near player for crop growth, farmland hydration & campfire smoke
+    // Sample random blocks near the player: crops & saplings grow, cane & cactus climb, grass spreads,
+    // farmland hydrates and campfires smoke
     const px = Math.floor(player.x), py = Math.floor(player.y), pz = Math.floor(player.z);
-    for (let k = 0; k < 14; k++) {
-      const wx = px + Math.floor((Math.random() - 0.5) * 28);
-      const wz = pz + Math.floor((Math.random() - 0.5) * 28);
-      const wy = py + Math.floor((Math.random() - 0.5) * 14);
+    for (let k = 0; k < RANDOM_TICK_SAMPLES; k++) {
+      const wx = px + Math.floor((Math.random() - 0.5) * 32);
+      const wz = pz + Math.floor((Math.random() - 0.5) * 32);
+      const wy = py + Math.floor((Math.random() - 0.5) * 16);
       const id = this.getBlock(wx, wy, wz);
+      if (id === B.AIR) continue;
       if (id === B.CAMPFIRE && particles) {
         particles.spawn(wx + 0.5, wy + 0.8, wz + 0.5, (Math.random()-0.5)*0.4, 1.8, (Math.random()-0.5)*0.4, [0.62, 0.64, 0.68], 0.22, 1.9, false);
         particles.spawn(wx + 0.5, wy + 0.5, wz + 0.5, (Math.random()-0.5)*0.8, 2.4, (Math.random()-0.5)*0.8, [1.0, 0.65, 0.2], 0.08, 0.9, false);
       } else if (this.serverTicks) {
-        // multiplayer: crop growth & farmland hydration are simulated by the server
-      } else if (id === B.FARMLAND) {
-        let nearW = false;
-        for (let dz = -4; dz <= 4 && !nearW; dz++) {
-          for (let dx = -4; dx <= 4 && !nearW; dx++) {
-            if (this.getBlock(wx + dx, wy, wz + dz) === B.WATER) nearW = true;
-          }
-        }
-        const m = this.getMeta(wx, wy, wz);
-        if (nearW && (m & 1) === 0) this.setBlock(wx, wy, wz, B.FARMLAND, 1, true);
-      } else if (id === B.WHEAT) {
-        const m = this.getMeta(wx, wy, wz);
-        if (m < 3 && Math.random() < 0.28) {
-          const under = this.getBlock(wx, wy - 1, wz);
-          const wet = under === B.FARMLAND && (this.getMeta(wx, wy - 1, wz) & 1);
-          if (wet || Math.random() < 0.4) this.setBlock(wx, wy, wz, B.WHEAT, m + 1, true);
-        }
+        // multiplayer: growth, spreading & hydration are simulated by the server
+      } else {
+        randomTickBlock(this, wx, wy, wz, id, Math.random);
       }
     }
   }
@@ -8180,8 +8598,8 @@ class ParticleSystem {
         } else {
           tile = T.DIRT;
         }
-      } else if (blockId === B.WHEAT) {
-        tile = (meta & 3) < 2 ? T.WHEAT_YOUNG : T.WHEAT;
+      } else if (isCrop(blockId)) {
+        tile = cropTile(blockId, meta, T.WHEAT);
       } else if (blockId === B.FARMLAND) {
         tile = Math.random() < 0.4 ? (meta > 0 ? T.FARMLAND_WET : T.FARMLAND_TOP) : T.DIRT;
       } else if (blk.shape === 'door') {
@@ -11560,14 +11978,36 @@ class MiningSystem {
       }
       if (t.id === B.BED) {
         p.spawnPoint = this.world.absPoint(t.x + 0.5, t.y + 1.1, t.z + 0.5);
-        if (dayNight.isNight && !(this.net && this.net.connected)) {
+        if (this._sleeping) return;
+        if (!dayNight.isNight) {
+          this.ui.toast('You can only sleep at night. Respawn point set.');
+          return;
+        }
+        if (this.net && this.net.connected) {
+          this.ui.toast('Respawn point set. (Time is shared on servers, so sleeping is disabled.)');
+          return;
+        }
+        const threat = this.mobMgr && this.mobMgr.mobs.some(m => m.hostile && !m.dying && Math.abs(m.y - p.y) < 5 && Math.hypot(m.x - p.x, m.z - p.z) < 8);
+        if (threat) {
+          this.ui.toast('You may not rest now; there are monsters nearby.');
+          return;
+        }
+        // Fade out, skip to sunrise, fade back in
+        this._sleeping = true;
+        const ov = document.getElementById('sleepOverlay');
+        if (ov) ov.classList.add('on');
+        setTimeout(() => {
           dayNight.time = 0.26;
           dayNight.day++;
           p.health = p.maxHealth;
-          this.ui.toast('Slept until sunrise! Spawn point set.');
-        } else {
-          this.ui.toast('Respawn point set at Bed.');
-        }
+          if (this.mobMgr) for (const m of this.mobMgr.mobs) if (m.hostile && Math.hypot(m.x - p.x, m.z - p.z) < 48) m.despawn = true;
+          ADVANCEMENTS.grant('sleep');
+          setTimeout(() => {
+            if (ov) ov.classList.remove('on');
+            this._sleeping = false;
+            this.ui.toast(`Good morning! Day ${dayNight.day} begins. Spawn point set.`);
+          }, 500);
+        }, 1300);
         return;
       }
       if (t.id === B.LEVER) {
@@ -11625,25 +12065,41 @@ class MiningSystem {
           return;
         }
       }
-      // Wheat Seeds plant onto Farmland
-      if (held.id === IT.WHEAT_SEEDS && t.id === B.FARMLAND && t.ny > 0) {
+      // Seeds, Carrots & Potatoes plant onto Farmland
+      if (heldIt.plantBlock && t.id === B.FARMLAND && t.ny > 0) {
         if (this.world.getBlock(t.x, t.y + 1, t.z) === B.AIR) {
-          this.world.setBlock(t.x, t.y + 1, t.z, B.WHEAT, 0, true);
-          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y + 1, t.z, B.WHEAT, 0);
+          this.world.setBlock(t.x, t.y + 1, t.z, heldIt.plantBlock, 0, true);
+          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y + 1, t.z, heldIt.plantBlock, 0);
           p.swingActive = true;
           this.audio.playMaterial('grass', 'place');
           if (p.mode === 'survival') { p.inventory.consumeSlot(p.inventory.selected, 1); this.ui.refreshHotbar(); }
+          ADVANCEMENTS.grant('farmer');
           return;
         }
       }
-      // Bone Meal fertilizes Wheat OR sprouts flowers/grass
+      // Bone Meal: advances crops, may instantly grow saplings, sprouts flowers/grass
       if (held.id === IT.BONE_MEAL) {
-        if (t.id === B.WHEAT && (this.world.getMeta(t.x, t.y, t.z) & 3) < 3) {
-          this.world.setBlock(t.x, t.y, t.z, B.WHEAT, 3, true);
-          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, B.WHEAT, 3, 'bonemeal');
-          this.particles.spawnBurst(t.x + 0.5, t.y + 0.6, t.z + 0.5, [0.35, 0.95, 0.42], 14, 3.2, 0.11);
+        const useMeal = () => {
           this.audio.playSound('pickup');
+          p.swingActive = true;
           if (p.mode === 'survival') { p.inventory.consumeSlot(p.inventory.selected, 1); this.ui.refreshHotbar(); }
+        };
+        if (isCrop(t.id) && (this.world.getMeta(t.x, t.y, t.z) & 3) < 3) {
+          const nm = Math.min(3, (this.world.getMeta(t.x, t.y, t.z) & 3) + 1 + Math.floor(Math.random() * 2));
+          this.world.setBlock(t.x, t.y, t.z, t.id, nm, true);
+          if (this.net && this.net.connected) this.net.sendBlockPlace(t.x, t.y, t.z, t.id, nm, 'bonemeal');
+          this.particles.spawnBurst(t.x + 0.5, t.y + 0.6, t.z + 0.5, [0.35, 0.95, 0.42], 14, 3.2, 0.11);
+          useMeal();
+          return;
+        } else if (isSapling(t.id)) {
+          if (this.net && this.net.connected) {
+            this.net.sendBonemeal(t.x, t.y, t.z, []); // the server rolls & grows the tree for everyone
+          } else if (Math.random() < 0.45 && growTreeAt(this.world, t.x, t.y, t.z, SAPLING_TREE[t.id])) {
+            this.audio.playMaterial('grass', 'place');
+            ADVANCEMENTS.grant('arborist');
+          }
+          this.particles.spawnBurst(t.x + 0.5, t.y + 0.6, t.z + 0.5, [0.35, 0.95, 0.42], 16, 3.2, 0.11);
+          useMeal();
           return;
         } else if (t.id === B.GRASS) {
           const plants = [B.TALL_GRASS, B.TALL_GRASS, B.POPPY, B.DANDELION, B.ORCHID];
@@ -11803,7 +12259,8 @@ class MiningSystem {
         meta = attach << 1;               // bit 0 = 0 (unpowered/unpressed)
       } else {
         if (blk.shape === 'slab' && t.ny < 0) meta |= 8;
-        if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.PRESSURE_PLATE) meta = 0;
+        if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.PRESSURE_PLATE || isSapling(heldIt.blockId)) meta = 0;
+        if (blk.isLeaf) meta = 4; // player-placed leaves never decay
       }
 
       // Never allow placing support-dependent blocks floating in mid-air!
@@ -11971,10 +12428,15 @@ function computeBlockDrops(blk, meta, held, rnd = Math.random) {
   if (silkOk) {
     add(blk.id, 1);
   } else if (blk.isLeaf) {
+    const sap = LEAF_SAPLING[blk.id];
+    if (sap && rnd() < 0.065 + fortuneLvl * 0.02) add(sap, 1);
     const r = rnd();
     if (r < 0.11) add(IT.APPLE, 1);
     else if (r < 0.17) add(IT.SWEET_BERRIES, 1);
     else if (r < 0.30) add(IT.STICK, 1);
+  } else if (blk.id === B.CARROTS || blk.id === B.POTATOES) {
+    const crop = blk.id === B.CARROTS ? IT.CARROT : IT.POTATO;
+    add(crop, (meta & 3) >= 3 ? 2 + Math.floor(rnd() * (3 + fortuneLvl)) : 1);
   } else if (blk.id === B.TALL_GRASS) {
     if (rnd() < 0.28) add(IT.WHEAT_SEEDS, 1);
   } else if (blk.id === B.WHEAT) {
@@ -12214,6 +12676,7 @@ class MobManager {
         for (const [id, cnt] of def.drops) player.miningRef.spawnDrop(m.x, m.y + 0.5, m.z, id, cnt + (loot ? Math.floor(Math.random() * (loot + 1)) : 0));
       }
       if (player.addXP(def.xp)) audio.playSound('levelup');
+      ADVANCEMENTS.onKill(m.type);
     }
     return true;
   }
@@ -12253,7 +12716,7 @@ class MobManager {
       if (m.hostile && target && tDist < 24) { player = target; dist = tDist; }
       const dx = player.x - m.x, dy = player.y - m.y, dz = player.z - m.z;
 
-      if (dist > 74 || (m.hostile && difficulty === 'peaceful')) {
+      if (dist > 74 || m.despawn || (m.hostile && difficulty === 'peaceful')) {
         this.mobs.splice(i, 1);
         continue;
       }
@@ -12747,6 +13210,166 @@ class AudioSystem {
 }
 
 // ============================================================================
+// ADVANCEMENTS (goals that guide a survival run; saved per world / per server account)
+// ============================================================================
+
+const ANY_LOG_ITEMS = [B.OAK_LOG, B.BIRCH_LOG, B.SPRUCE_LOG, B.JUNGLE_LOG, B.ACACIA_LOG, B.DARK_OAK_LOG, B.CHERRY_LOG, B.MANGROVE_LOG];
+const PICKAXES = [IT.WOOD_PICK, IT.STONE_PICK, IT.COPPER_PICK, IT.IRON_PICK, IT.GOLD_PICK, IT.DIAMOND_PICK, IT.EMERALD_PICK, IT.NETHERITE_PICK];
+const HOSTILE_KILL_GOAL = 25;
+const MARATHON_GOAL = 2500;
+
+// tier groups the list on the screen; `has` = owned item ids; `check(ctx)` = polled condition
+const ADVANCEMENT_DEFS = [
+  { id: 'wood',      tier: 'Getting Started', title: 'Getting Wood',        desc: 'Punch a tree until a log pops out', icon: B.OAK_LOG, has: ANY_LOG_ITEMS },
+  { id: 'bench',     tier: 'Getting Started', title: 'Benchmarking',        desc: 'Craft a Crafting Table', icon: B.CRAFTING_TABLE, has: [B.CRAFTING_TABLE] },
+  { id: 'pickaxe',   tier: 'Getting Started', title: 'Time to Mine!',       desc: 'Craft your first pickaxe', icon: IT.WOOD_PICK, has: PICKAXES },
+  { id: 'stone',     tier: 'Getting Started', title: 'Stone Age',           desc: 'Mine some Cobblestone', icon: B.COBBLE, has: [B.COBBLE] },
+  { id: 'upgrade',   tier: 'Getting Started', title: 'Getting an Upgrade',  desc: 'Craft a Stone Pickaxe', icon: IT.STONE_PICK, has: PICKAXES.slice(1) },
+  { id: 'torch',     tier: 'Getting Started', title: 'Light the Way',       desc: 'Craft Torches from coal and sticks', icon: B.TORCH, has: [B.TORCH] },
+  { id: 'night',     tier: 'Getting Started', title: 'Survive the Night',   desc: 'Live through your first night in Survival', icon: B.BED },
+  { id: 'furnace',   tier: 'Industry',        title: 'Hot Topic',           desc: 'Build a Furnace', icon: B.FURNACE, has: [B.FURNACE] },
+  { id: 'iron',      tier: 'Industry',        title: 'Acquire Hardware',    desc: 'Smelt an Iron Ingot', icon: IT.IRON_INGOT, has: [IT.IRON_INGOT] },
+  { id: 'armor',     tier: 'Industry',        title: 'Suit Up',             desc: 'Wear any piece of armor', icon: IT.IRON_CHEST },
+  { id: 'bucket',    tier: 'Industry',        title: 'Bucket Brigade',      desc: 'Fill a bucket with water or lava', icon: IT.WATER_BUCKET, has: [IT.WATER_BUCKET, IT.LAVA_BUCKET] },
+  { id: 'diamonds',  tier: 'Industry',        title: 'Diamonds!',           desc: 'Find a Diamond deep underground', icon: IT.DIAMOND, has: [IT.DIAMOND] },
+  { id: 'obsidian',  tier: 'Industry',        title: 'Ice Bucket Challenge', desc: 'Obtain a block of Obsidian', icon: B.OBSIDIAN, has: [B.OBSIDIAN] },
+  { id: 'farmer',    tier: 'Homestead',       title: 'A Seedy Place',       desc: 'Plant seeds, carrots or potatoes on farmland', icon: IT.WHEAT_SEEDS },
+  { id: 'bread',     tier: 'Homestead',       title: 'Bake Bread',          desc: 'Turn wheat into Bread', icon: IT.BREAD, has: [IT.BREAD] },
+  { id: 'arborist',  tier: 'Homestead',       title: 'Arborist',            desc: 'Grow a tree from a sapling', icon: B.OAK_SAPLING },
+  { id: 'sleep',     tier: 'Homestead',       title: 'Sweet Dreams',        desc: 'Sleep in a bed through the night', icon: B.BED },
+  { id: 'trade',     tier: 'Homestead',       title: 'What a Deal!',        desc: 'Trade with a Wandering Trader', icon: IT.EMERALD },
+  { id: 'hunter',    tier: 'Adventure',       title: 'Monster Hunter',      desc: 'Defeat a hostile monster', icon: IT.IRON_SWORD },
+  { id: 'slayer',    tier: 'Adventure',       title: 'Monsters Hunted',     desc: `Defeat ${HOSTILE_KILL_GOAL} hostile monsters`, icon: IT.DIAMOND_SWORD, goal: HOSTILE_KILL_GOAL, stat: 'kills' },
+  { id: 'depths',    tier: 'Adventure',       title: 'Into the Depths',     desc: 'Descend below Y = 0', icon: B.DEEPSLATE },
+  { id: 'sky',       tier: 'Adventure',       title: 'Touching the Clouds', desc: 'Climb above Y = 140', icon: B.SNOW },
+  { id: 'marathon',  tier: 'Adventure',       title: 'Marathon',            desc: `Travel ${MARATHON_GOAL} blocks on foot`, icon: IT.LEATHER_BOOTS, goal: MARATHON_GOAL, stat: 'walked' },
+  { id: 'experience',tier: 'Adventure',       title: 'Seasoned Survivor',   desc: 'Reach experience level 15', icon: IT.EMERALD },
+  { id: 'enchanter', tier: 'Mastery',         title: 'Enchanter',           desc: 'Enchant an item at an Enchanting Table', icon: B.ENCHANT_TABLE },
+  { id: 'diamond_kit', tier: 'Mastery',       title: 'Cover Me with Diamonds', desc: 'Wear a full set of Diamond armor', icon: IT.DIAMOND_CHEST },
+  { id: 'netherite', tier: 'Mastery',         title: 'Cover Me in Debris',  desc: 'Forge a Netherite Ingot', icon: IT.NETHERITE_INGOT, has: [IT.NETHERITE_INGOT] }
+];
+
+class AdvancementTracker {
+  constructor() {
+    this.defs = ADVANCEMENT_DEFS;
+    this.byId = new Map(this.defs.map(d => [d.id, d]));
+    this.done = {};
+    this.stats = { kills: 0, walked: 0 };
+    this.engine = null;
+    this.storageKey = null; // multiplayer: localStorage key; singleplayer: saved inside the world record
+    this._pollT = 0;
+    this._startDay = null;
+    this._lastPos = null;
+    this._queue = [];
+    this._showing = false;
+  }
+
+  attach(engine, data, storageKey = null) {
+    this.engine = engine;
+    this.storageKey = storageKey;
+    if (storageKey) {
+      try { data = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { data = null; }
+    }
+    this.done = (data && data.done) ? { ...data.done } : {};
+    this.stats = { kills: 0, walked: 0, ...((data && data.stats) || {}) };
+    this._startDay = null;
+    this._lastPos = null;
+    this._queue.length = 0;
+    this._walkAcc = 0;
+  }
+
+  serialize() { return { done: this.done, stats: this.stats }; }
+
+  _persist() {
+    if (!this.storageKey) return;
+    try { localStorage.setItem(this.storageKey, JSON.stringify(this.serialize())); } catch {}
+  }
+
+  count() { return Object.keys(this.done).length; }
+
+  grant(id) {
+    if (!this.engine || this.done[id]) return;
+    const def = this.byId.get(id);
+    if (!def) return;
+    const p = this.engine.player;
+    if (!p || p.mode === 'creative') return; // goals are a survival journey
+    this.done[id] = Date.now();
+    this._persist();
+    this._queue.push(def);
+    this._pump();
+    if (this.engine.ui) this.engine.ui.addChat(`Advancement made: [${def.title}]`, 'sys');
+  }
+
+  bump(stat, amt = 1) {
+    if (!this.engine || !this.engine.player || this.engine.player.mode === 'creative') return;
+    this.stats[stat] = (this.stats[stat] || 0) + amt;
+    for (const d of this.defs) if (d.stat === stat && this.stats[stat] >= d.goal) this.grant(d.id);
+  }
+
+  onKill(type) {
+    const def = MOB_DEFS[type];
+    if (!def || !def.hostile) return;
+    this.grant('hunter');
+    this.bump('kills');
+  }
+
+  // Polled conditions: inventory ownership, worn armor, depth/height, level, travel, nights survived
+  update(dt) {
+    const eng = this.engine;
+    if (!eng || !eng.player || eng.player.mode === 'creative' || eng.player.dead) return;
+    const p = eng.player;
+    if (this._lastPos && p.onGround && !p.flying) {
+      const d = Math.hypot(p.x - this._lastPos[0], p.z - this._lastPos[1]);
+      if (d < 2) { this._walkAcc = (this._walkAcc || 0) + d; }
+    }
+    this._lastPos = [p.x, p.z];
+    this._pollT -= dt;
+    if (this._pollT > 0) return;
+    this._pollT = 0.75;
+
+    if (this._walkAcc >= 1) { const w = Math.floor(this._walkAcc); this._walkAcc -= w; this.bump('walked', w); }
+    const inv = p.inventory;
+    const owned = new Set();
+    for (const s of inv.slots) if (s) owned.add(s.id);
+    for (const d of this.defs) {
+      if (this.done[d.id] || !d.has) continue;
+      if (d.has.some(id => owned.has(id))) this.grant(d.id);
+    }
+    const worn = inv.armor.slice(0, 4);
+    if (worn.some(Boolean)) this.grant('armor');
+    if (worn.every((a, i) => a && a.id === IT.DIAMOND_HELM + i)) this.grant('diamond_kit');
+    if (p.y < 0) this.grant('depths');
+    if (p.y > 140) this.grant('sky');
+    if ((p.level || 0) >= 15) this.grant('experience');
+    if (eng.dayNight) {
+      if (this._startDay === null) this._startDay = eng.dayNight.day;
+      else if (eng.dayNight.day > this._startDay && !eng.dayNight.isNight) this.grant('night');
+    }
+  }
+
+  _pump() {
+    if (this._showing || !this._queue.length) return;
+    const def = this._queue.shift();
+    const host = document.getElementById('advToastLayer');
+    if (!host) return;
+    this._showing = true;
+    const el = document.createElement('div');
+    el.className = 'adv-toast';
+    const icon = this.engine && this.engine.atlas ? this.engine.atlas.getItemIcon(def.icon) : '';
+    el.innerHTML = `<img alt="" src="${icon}"><div><div class="adv-kicker">Advancement Made!</div><div class="adv-title"></div></div>`;
+    el.querySelector('.adv-title').textContent = def.title;
+    host.appendChild(el);
+    if (this.engine && this.engine.audio) this.engine.audio.playSound('levelup');
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(() => {
+      el.classList.remove('in');
+      setTimeout(() => { el.remove(); this._showing = false; this._pump(); }, 420);
+    }, 3600);
+  }
+}
+const ADVANCEMENTS = new AdvancementTracker();
+
+// ============================================================================
 // INDEXEDDB SAVE & PERSISTENCE MANAGER
 // ============================================================================
 
@@ -12820,7 +13443,8 @@ class SaveManager {
         slots: player.inventory.slots, armor: player.inventory.armor, selected: player.inventory.selected
       },
       deltas,
-      entities
+      entities,
+      advancements: ADVANCEMENTS.serialize()
     };
 
     return new Promise((resolve) => {
@@ -13090,6 +13714,16 @@ class InputManager {
 
       if (this.engine.state !== 'playing') return;
 
+      if (e.code === k.advancements && !e.repeat) {
+        e.preventDefault();
+        this.keys.clear();
+        this.engine.state = 'paused';
+        this.engine._pausedAt = performance.now();
+        this.exitLock();
+        this.engine.ui.openAdvancements(true);
+        return;
+      }
+
       // Open Chat (T) or Command (/)
       if (e.code === 'KeyT' || e.key === '/') {
         e.preventDefault();
@@ -13248,6 +13882,51 @@ class UIManager {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     if (id) this._el(id).classList.add('active');
     this._el('hud').classList.toggle('active', !id || id === 'containerScreen');
+  }
+
+  openAdvancements(fromPlay = false) {
+    this.advFromPlay = fromPlay;
+    this.renderAdvancements();
+    this.showScreen('advancementsScreen');
+  }
+
+  renderAdvancements() {
+    const A = ADVANCEMENTS, list = this._el('advList');
+    const total = A.defs.length, n = A.defs.filter(d => A.done[d.id]).length;
+    this._el('advCount').textContent = `${n} / ${total}`;
+    this._el('advBarFill').style.width = `${(n / total * 100).toFixed(1)}%`;
+    list.innerHTML = '';
+    const creative = this.engine.player && this.engine.player.mode === 'creative';
+    if (creative) {
+      const note = document.createElement('div');
+      note.className = 'adv-card';
+      note.style.marginBottom = '8px';
+      note.innerHTML = '<div class="d">Advancements are earned in Survival mode. Your progress is kept for when you switch back.</div>';
+      list.appendChild(note);
+    }
+    let tier = null, grid = null;
+    for (const d of A.defs) {
+      if (d.tier !== tier) {
+        tier = d.tier;
+        const h = document.createElement('div'); h.className = 'adv-tier'; h.textContent = tier; list.appendChild(h);
+        grid = document.createElement('div'); grid.className = 'adv-grid'; list.appendChild(grid);
+      }
+      const done = !!A.done[d.id];
+      const card = document.createElement('div');
+      card.className = 'adv-card' + (done ? ' done' : '');
+      const img = document.createElement('img'); img.alt = ''; img.src = this.atlas.getItemIcon(d.icon);
+      const txt = document.createElement('div');
+      const nm = document.createElement('div'); nm.className = 'n'; nm.textContent = d.title;
+      const ds = document.createElement('div'); ds.className = 'd'; ds.textContent = d.desc;
+      txt.append(nm, ds);
+      if (d.goal && !done) {
+        const pr = document.createElement('div'); pr.className = 'pr';
+        pr.textContent = `${Math.min(d.goal, Math.floor(A.stats[d.stat] || 0))} / ${d.goal}`;
+        txt.appendChild(pr);
+      }
+      card.append(img, txt);
+      grid.appendChild(card);
+    }
   }
 
   toast(msg) {
@@ -14494,6 +15173,7 @@ class UIManager {
           const pp = this.engine.player;
           if (this.engine.particles) this.engine.particles.spawnBurst(pp.x, pp.y + 1.4, pp.z, [0.72, 0.45, 1.0], 18, 2.4, 0.1);
           this.toast(`Enchanted ${it.name}: ${enchSummary(st)}`);
+          ADVANCEMENTS.grant('enchanter');
           this.renderContainer();
           this.refreshHotbar();
         };
@@ -14537,6 +15217,7 @@ class UIManager {
             }
           }
           inv.addItem(tr.get[0], tr.get[1]);
+          ADVANCEMENTS.grant('trade');
           this.engine.audio.playSound('pickup');
           this.renderContainer();
           this.refreshHotbar();
@@ -14709,7 +15390,7 @@ class UIManager {
     const labels = {
       forward: 'Move Forward', backward: 'Move Backward', left: 'Strafe Left', right: 'Strafe Right',
       jump: 'Jump / Climb / Fly', sprint: 'Sprint', crouch: 'Crouch / Sneak',
-      inventory: 'Inventory / Crafting', drop: 'Drop Held Item', debug: 'Toggle Debug HUD'
+      inventory: 'Inventory / Crafting', drop: 'Drop Held Item', advancements: 'Advancements', debug: 'Toggle Debug HUD'
     };
     const keys = this.engine.settings.data.keys;
     for (const [act, lbl] of Object.entries(labels)) {
@@ -14811,6 +15492,11 @@ class UIManager {
       this.toast(ok ? 'World saved!' : 'Save failed.');
     };
     this._el('btnPauseSettings').onclick = () => { this.returnScreen = 'pauseScreen'; this.syncSettingsInputs(); this.showScreen('settingsScreen'); };
+    this._el('btnPauseAdvancements').onclick = () => this.openAdvancements();
+    this._el('btnAdvDone').onclick = () => { if (this.advFromPlay) { this.advFromPlay = false; this.engine.resume(); } else this.showScreen('pauseScreen'); };
+    const splashes = ['Now with saplings!', 'Infinite worlds!', 'Plant a forest!', 'Watch out at night!', 'Diamonds below!',
+      'Carrots & potatoes!', 'Craft, build, survive!', 'Mind the creepers!', 'Leaves fall now!', '100% procedural!', 'Try the trader!'];
+    this._el('titleSplash').textContent = splashes[Math.floor(Math.random() * splashes.length)];
     this._el('btnPauseControls').onclick = () => { this.returnScreen = 'pauseScreen'; this.renderControlsList(); this.showScreen('controlsScreen'); };
     this._el('btnSaveQuit').onclick = async () => {
       if (this.engine.isMultiplayer()) {
@@ -15120,6 +15806,7 @@ class MultiplayerClient {
   connect(url, name, password = '', authMode = 'login') {
     this.disconnect();
     this.playerName = name;
+    this.serverUrl = url;
     this.engine.ui.toast(`Connecting to ${url}...`);
     try {
       this.ws = new WebSocket(url);
@@ -15168,7 +15855,7 @@ class MultiplayerClient {
     this.ws.onerror = () => {
       clearTimeout(timeout);
       if (!this.connected) {
-        this.engine.ui.showMpError('Could not connect to server. Is node server.js running?');
+        this.engine.ui.showMpError('Could not connect to server. Is the VoxelCraft server running?');
       }
     };
 
@@ -15691,6 +16378,7 @@ class GameEngine {
 
     this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.world.serverTicks = true;
+    ADVANCEMENTS.attach(this, null, `voxelcraft_adv_${hashString(`${this.net.serverUrl || ''}|${(this.net.playerName || '').toLowerCase()}`)}`);
     this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
     this.player.miningRef = this.mining;
@@ -15736,11 +16424,13 @@ class GameEngine {
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
     this._attachRebase();
+    ADVANCEMENTS.attach(this, null);
 
     this.state = 'playing';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.toast(`Created "${meta.name}" (Seed: ${meta.seed})`);
+    if (meta.mode !== 'creative') this.ui.addChat('Tip: punch a tree for wood, then craft a Crafting Table. Press L to see your Advancements.', 'sys');
     this.ui.addChat('Welcome to VoxelCraft! Press T or / for commands, E for inventory & crafting.', 'sys');
     this.saveCurrentWorld();
     this.input.requestLock();
@@ -15814,6 +16504,7 @@ class GameEngine {
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
     this._attachRebase();
+    ADVANCEMENTS.attach(this, rec.advancements || null);
 
     this.state = 'playing';
     this.ui.showScreen(null);
@@ -16063,6 +16754,7 @@ class GameEngine {
         }
         this.mining._updateDrops(dt);
         this.mining.updateTNT(dt);
+        ADVANCEMENTS.update(dt);
         this._updateAmbientEmitters(dt);
 
         if (!this.isMultiplayer()) {

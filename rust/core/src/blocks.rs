@@ -154,6 +154,16 @@ pub mod B {
     pub const CARPET_RED: u8 = 253;
     pub const JUKEBOX: u8 = 254;
     pub const IRON_BARS: u8 = 255;
+    // Saplings & root crops use ids the item table never claimed (147..149, 164..169)
+    pub const OAK_SAPLING: u8 = 147;
+    pub const BIRCH_SAPLING: u8 = 148;
+    pub const SPRUCE_SAPLING: u8 = 149;
+    pub const JUNGLE_SAPLING: u8 = 164;
+    pub const ACACIA_SAPLING: u8 = 165;
+    pub const CHERRY_SAPLING: u8 = 166;
+    pub const MANGROVE_SAPLING: u8 = 167;
+    pub const CARROTS: u8 = 168;
+    pub const POTATOES: u8 = 169;
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +189,8 @@ pub struct BlockDef {
     pub slows: bool,
     pub hot: bool,
     pub prickly: bool,
+    /// Growing crop block: never an inventory item (the seed/produce item plants it)
+    pub crop: bool,
 }
 
 impl BlockDef {
@@ -205,6 +217,7 @@ impl BlockDef {
             slows: false,
             hot: false,
             prickly: false,
+            crop: false,
         }
     }
 }
@@ -388,6 +401,16 @@ impl BlockRegistry {
         reg(B::DEAD_BUSH, "Dead Bush", |b| { b.hardness = 0.05; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; b.drop = IT::STICK; });
         reg(B::VINES, "Vines", |b| { b.hardness = 0.2; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; b.climbable = true; b.drop = 0; });
         reg(B::WHEAT, "Wheat Crop", |b| { b.hardness = 0.1; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; b.drop = IT::WHEAT_ITEM; });
+        reg(B::CARROTS, "Carrot Crop", |b| { b.hardness = 0.1; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; b.drop = IT::CARROT; b.crop = true; });
+        reg(B::POTATOES, "Potato Crop", |b| { b.hardness = 0.1; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; b.drop = IT::POTATO; b.crop = true; });
+        fn sapling(b: &mut BlockDef) { b.hardness = 0.0; b.solid = false; b.transparent = true; b.cross = true; b.shape = "cross"; }
+        reg(B::OAK_SAPLING, "Oak Sapling", sapling);
+        reg(B::BIRCH_SAPLING, "Birch Sapling", sapling);
+        reg(B::SPRUCE_SAPLING, "Spruce Sapling", sapling);
+        reg(B::JUNGLE_SAPLING, "Jungle Sapling", sapling);
+        reg(B::ACACIA_SAPLING, "Acacia Sapling", sapling);
+        reg(B::CHERRY_SAPLING, "Cherry Sapling", sapling);
+        reg(B::MANGROVE_SAPLING, "Mangrove Propagule", sapling);
 
         Self { blocks }
     }

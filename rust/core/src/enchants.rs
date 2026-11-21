@@ -296,6 +296,11 @@ pub fn compute_block_drops<R: FnMut() -> f64>(
     if silk_ok {
         add(blk.id as i32, 1);
     } else if blk.is_leaf {
+        if let Some(sap) = crate::growth::leaf_sapling(blk.id)
+            && rnd() < 0.065 + fortune_lvl as f64 * 0.02
+        {
+            add(sap as i32, 1);
+        }
         let r = rnd();
         if r < 0.11 {
             add(IT::APPLE, 1);
@@ -316,6 +321,10 @@ pub fn compute_block_drops<R: FnMut() -> f64>(
         } else {
             add(IT::WHEAT_SEEDS, 1);
         }
+    } else if blk.id == B::CARROTS || blk.id == B::POTATOES {
+        let crop = if blk.id == B::CARROTS { IT::CARROT } else { IT::POTATO };
+        let n = if (meta & 3) >= 3 { 2 + (rnd() * (3 + fortune_lvl) as f64).floor() as i32 } else { 1 };
+        add(crop, n);
     } else if blk.id == B::GRAVEL && rnd() < 0.22 {
         add(IT::FLINT, 1);
     } else if blk.drop > 0 {
