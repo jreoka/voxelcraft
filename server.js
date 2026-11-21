@@ -644,10 +644,10 @@ class AntiCheat {
     const x = Number(msg.x), y = Number(msg.y), z = Number(msg.z);
     const yaw = Number(msg.yaw || 0), pitch = Number(msg.pitch || 0);
 
-    // 1. Coordinate sanity check (always active, even in creative)
+    // 1. Coordinate sanity check (always active, even in creative; coordinates are shard-local)
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) ||
         !Number.isFinite(yaw) || !Number.isFinite(pitch) ||
-        Math.abs(x) > 1e7 || Math.abs(z) > 1e7 || y < -64 || y > 320) {
+        Math.abs(x) > 2 ** 35 || Math.abs(z) > 2 ** 35 || y < -64 || y > 320) {
       this._rubberband(p, 'Invalid coordinates detected.');
       this.flag(p, 'BAD_COORDS', 6, `Invalid coordinates (${x}, ${y}, ${z})`);
       return false;
@@ -959,20 +959,10 @@ class VoxelCraftServer {
       if (!NO_CONSOLE) console.log('Type /help in this terminal for server console commands.');
     });
 
-    // 1. Player positions snapshot broadcast @ 15 Hz
+    // 1. Player positions snapshot broadcast @ 15 Hz (per shard)
     this._intervals.push(setInterval(() => {
       if (this.players.size === 0) return;
-      const list = [];
-      for (const p of this.players.values()) {
-        list.push({
-          id: p.id, name: p.name,
-          x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
-          yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3),
-          crouch: p.crouch, swing: p.swing, ping: p.ping,
-          mode: p.mode, op: this.isOp(p.name)
-        });
-      }
-      this.broadcast({ type: 'players', list });
+      this.game.sendPlayerSnapshots((name) => this.isOp(name));
     }, 66));
 
     // 2. Game simulation @ 20 Hz: world, redstone, furnaces, mobs, drops, player vitals
@@ -1068,7 +1058,7 @@ class VoxelCraftServer {
     if (!p.hasMoved) {
       // Never overwrite a saved position with the placeholder spawn of a player who hasn't moved yet
       const old = this.world.savedPlayers.get(p.name.toLowerCase());
-      if (old) { prof.x = old.x; prof.y = old.y; prof.z = old.z; } else { prof.x = null; }
+      if (old) { prof.ox = old.ox; prof.oz = old.oz; prof.x = old.x; prof.y = old.y; prof.z = old.z; } else { prof.x = null; }
     }
     this.world.savedPlayers.set(p.name.toLowerCase(), prof);
     this.world.dirty = true;
@@ -1077,6 +1067,8 @@ class VoxelCraftServer {
   _handleHttp(req, res) {
     const urlPath = (req.url || '/').split('?')[0];
     if (urlPath === '/status' || urlPath === '/api/status') {
+      let mobCount = 0, dropCount = 0;
+      for (const s of this.game.shards) { mobCount += s.mobs.mobs.length; dropCount += s.drops.size; }
       const body = JSON.stringify({
         ok: true,
         serverName: config.serverName,
@@ -1087,8 +1079,9 @@ class VoxelCraftServer {
         playersOnline: this.players.size,
         maxPlayers: config.maxPlayers,
         playerNames: Array.from(this.players.values()).map(p => p.name),
-        mobs: this.game.mobs.mobs.length,
-        drops: this.game.drops.size,
+        shards: this.game.shards.size,
+        mobs: mobCount,
+        drops: dropCount,
         day: this.world.day,
         weather: this.world.weather,
         uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
@@ -1186,6 +1179,7 @@ class VoxelCraftServer {
         if (session) session.online = false;
         if (session && this.players.get(session.id) === session) {
           this._savePlayerProfile(session);
+          this.game.removePlayer(session);
           this.players.delete(session.id);
           if (this.world.dirty) this.scheduleWorldSave(1000);
           console.log(`[Leave] ${session.name} (${ip}) disconnected. Online: ${this.players.size}`);
@@ -1234,6 +1228,7 @@ class VoxelCraftServer {
     const existing = this.findPlayerByName(name);
     if (existing) {
       this._savePlayerProfile(existing);
+      this.game.removePlayer(existing);
       this.players.delete(existing.id);
       this.broadcast({ type: 'player_leave', id: existing.id, name: existing.name });
       this.kickPlayer(existing, 'Logged in from another location.');
@@ -1258,13 +1253,26 @@ class VoxelCraftServer {
       online: true,
       joinedAt: Date.now()
     };
+    if (hasPos) {
+      let ox = 0n, oz = 0n;
+      try { ox = CORE.toBig(saved.ox || 0); oz = CORE.toBig(saved.oz || 0); } catch {}
+      const xi = ox + BigInt(Math.floor(saved.x)), xf = saved.x - Math.floor(saved.x);
+      const zi = oz + BigInt(Math.floor(saved.z)), zf = saved.z - Math.floor(saved.z);
+      this.game.placeAbs(player, xi, xf, saved.y, zi, zf, null, false);
+    } else {
+      const home = this.game.home;
+      player.shard = home;
+      home.players.add(player);
+      player.frameOx = home.ox;
+      player.frameOz = home.oz;
+    }
     this.game.initPlayer(player, saved);
 
     this.ac.initPlayer(player);
     this.players.set(id, player);
 
     const existingPlayers = [];
-    for (const o of this.players.values()) {
+    for (const o of player.shard.players) {
       if (o.id === id) continue;
       existingPlayers.push({
         id: o.id, name: o.name, x: o.x, y: o.y, z: o.z,
@@ -1283,6 +1291,8 @@ class VoxelCraftServer {
       maxPlayers: config.maxPlayers || 32,
       isOp: this.isOp(name),
       seed: this.world.seed,
+      ox: String(player.shard.ox),
+      oz: String(player.shard.oz),
       mode: player.mode,
       difficulty: config.difficulty,
       pvp: !!config.pvp,
@@ -1290,7 +1300,7 @@ class VoxelCraftServer {
       time: +this.world.time.toFixed(4),
       weather: this.world.weather,
       player: {
-        x: hasPos ? saved.x : null, y: hasPos ? saved.y : null, z: hasPos ? saved.z : null,
+        x: hasPos ? player.x : null, y: hasPos ? player.y : null, z: hasPos ? player.z : null,
         health: player.pl.health, hunger: player.pl.hunger, saturation: player.pl.saturation,
         xp: player.pl.xp, level: player.pl.level, dead: !!player.pl.dead,
         slots: player.inv.slots, armor: player.inv.armor
@@ -1307,6 +1317,12 @@ class VoxelCraftServer {
   }
 
   _handlePacket(p, msg) {
+    if (msg.type === 'rebase_ack') {
+      this.game.frameAck(p, msg);
+      return;
+    }
+    if (!this.game.translateIncoming(p, msg)) return;
+
     switch (msg.type) {
       case 'ping': {
         const t = Number(msg.t) || Date.now();
@@ -1318,6 +1334,7 @@ class VoxelCraftServer {
       }
 
       case 'move': {
+        this.game.use(p.shard);
         this.ac.checkMove(p, msg);
         this.game.handle(p, msg);
         break;
@@ -1389,7 +1406,10 @@ class VoxelCraftServer {
     }
 
     if (cmd === 'pos' && !isConsole) {
-      reply(`Position: X ${sender.x.toFixed(1)}, Y ${sender.y.toFixed(1)}, Z ${sender.z.toFixed(1)}`);
+      const ox = sender.shard.ox, oz = sender.shard.oz;
+      const sx = CORE.formatAbsCoord(ox, CORE.bigToNum(ox), sender.x, 2);
+      const sz = CORE.formatAbsCoord(oz, CORE.bigToNum(oz), sender.z, 2);
+      reply(`Position: X ${sx}, Y ${sender.y.toFixed(2)}, Z ${sz}`);
       return;
     }
 
@@ -1467,20 +1487,29 @@ class VoxelCraftServer {
         const a = this.findPlayerByName(args[0]);
         const b = this.findPlayerByName(args[1]);
         if (!a || !b) { reply('Player(s) not found.', 'warn'); return; }
-        a.x = b.x; a.y = b.y + 0.5; a.z = b.z; a.hasMoved = true;
-        this.ac.grantTeleportGrace(a, 2000);
-        a.ws.sendJSON({ type: 'rubberband', x: a.x, y: a.y, z: a.z, reason: `Teleported to ${b.name}.` });
+        const xi = b.shard.ox + BigInt(Math.floor(b.x)), xf = b.x - Math.floor(b.x);
+        const zi = b.shard.oz + BigInt(Math.floor(b.z)), zf = b.z - Math.floor(b.z);
+        this.game.placeAbs(a, xi, xf, b.y + 0.5, zi, zf, `Teleported to ${b.name}.`);
         reply(`Teleported ${a.name} to ${b.name}.`);
+      } else if (args.length === 3 && !isConsole) {
+        const X = CORE.parseAbsCoord(args[0]), ty = parseFloat(args[1]), Z = CORE.parseAbsCoord(args[2]);
+        if (!X || !Z || !Number.isFinite(ty)) { reply('Usage: /tp <x> <y> <z>', 'warn'); return; }
+        const y = Math.max(-64, Math.min(320, ty));
+        const sx = CORE.formatAbsCoord(X.i, CORE.bigToNum(X.i), X.f, 1);
+        const sz = CORE.formatAbsCoord(Z.i, CORE.bigToNum(Z.i), Z.f, 1);
+        this.game.placeAbs(sender, X.i, X.f, y, Z.i, Z.f, `Teleported to ${sx}, ${y.toFixed(1)}, ${sz}.`);
+        reply(`Teleported ${sender.name} to ${sx}, ${y.toFixed(1)}, ${sz}.`);
       } else if (args.length === 4) {
         const a = this.findPlayerByName(args[0]);
-        const tx = parseFloat(args[1]), ty = parseFloat(args[2]), tz = parseFloat(args[3]);
-        if (!a || !Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(tz)) { reply('Usage: /tp <player> <x> <y> <z>', 'warn'); return; }
-        a.x = tx; a.y = ty; a.z = tz; a.hasMoved = true;
-        this.ac.grantTeleportGrace(a, 2000);
-        a.ws.sendJSON({ type: 'rubberband', x: tx, y: ty, z: tz, reason: `Teleported to ${tx}, ${ty}, ${tz}.` });
-        reply(`Teleported ${a.name} to ${tx}, ${ty}, ${tz}.`);
+        const X = CORE.parseAbsCoord(args[1]), ty = parseFloat(args[2]), Z = CORE.parseAbsCoord(args[3]);
+        if (!a || !X || !Z || !Number.isFinite(ty)) { reply('Usage: /tp <player> <x> <y> <z>', 'warn'); return; }
+        const y = Math.max(-64, Math.min(320, ty));
+        const sx = CORE.formatAbsCoord(X.i, CORE.bigToNum(X.i), X.f, 1);
+        const sz = CORE.formatAbsCoord(Z.i, CORE.bigToNum(Z.i), Z.f, 1);
+        this.game.placeAbs(a, X.i, X.f, y, Z.i, Z.f, `Teleported to ${sx}, ${y.toFixed(1)}, ${sz}.`);
+        reply(`Teleported ${a.name} to ${sx}, ${y.toFixed(1)}, ${sz}.`);
       } else {
-        reply('Usage: /tp <p1> <p2> OR /tp <player> <x> <y> <z>', 'warn');
+        reply('Usage: /tp <p1> <p2> OR /tp [player] <x> <y> <z>', 'warn');
       }
     } else if (cmd === 'time') {
       const map = { day: 0.28, sunrise: 0.24, noon: 0.50, sunset: 0.75, night: 0.88 };

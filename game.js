@@ -17,6 +17,31 @@ const fs = require('fs');
 
 const CONTAINER_TYPES = { 80: 'chest', 250: 'barrel', 78: 'furnace', 79: 'furnace' };
 const MAX_DROPS = 1500;
+
+// Block coordinate from the network (always shard-local, so small). `v | 0` would wrap at +/-2^31,
+// so floor as a float64 instead; anything non-finite or absurd becomes 0.
+function blockCoord(v) {
+  const n = Math.floor(Number(v));
+  return Number.isSafeInteger(n) ? n : 0;
+}
+
+// ---- Shards: the world has no edge, so players can be arbitrarily far apart. Each shard simulates one
+// group of nearby players around its own exact BigInt origin (chunks, mobs, drops, TNT), so every
+// coordinate it handles stays small. All shards share the absolute-keyed edit and container tables.
+const MERGE_DIST = 1 << 20;      // players closer than this (blocks) always share a shard
+const JOIN_DIST = 2 ** 26;       // a placed player joins an existing shard whose origin is this close
+const SPLIT_LOCAL = 2 ** 28;     // a player this far from its shard origin (with others in it) gets its own shard
+const SHARD_CHECK_SEC = 1.0;
+// Client packets whose coordinates are in the sender's frame (translated while a rebase is unacknowledged)
+const COORD_PACKETS = new Set(['move', 'enchant', 'cook', 'container_open', 'container_commit', 'block_break',
+  'block_place', 'bonemeal', 'block_interact', 'shoot', 'drop_item']);
+// Absolute coordinate as persisted (integer Number or decimal string) -> canonical JSON value, or null
+function absCoordJson(v) {
+  if (typeof v === 'number') return Number.isSafeInteger(Math.floor(v)) ? Math.floor(v) : null;
+  const s = String(v).trim();
+  if (!/^-?\d+$/.test(s)) return null;
+  return s.length < 16 ? Number(s) : String(BigInt(s));
+}
 const DROP_LIFETIME_MS = 240000;
 const LOAD_RADIUS_H = 3;   // chunks loaded around each player (horizontal)
 const LOAD_RADIUS_V = 2;   // and vertical
@@ -141,12 +166,13 @@ class WorldState {
     this.time = 0.28;
     this.weather = 'clear';
     this.weatherTimer = 240;
-    this.deltas = new Map();        // "wx,wy,wz" -> [wx, wy, wz, id, meta]
-    this.blockEntities = new Map(); // "wx,wy,wz" -> entObj (shared with the core world)
+    this.deltas = new Map();        // absolute "wx,wy,wz" -> [wx, wy, wz, id, meta] (x/z: Number, or decimal string when huge)
+    this.blockEntities = new Map(); // absolute "wx,wy,wz" -> entObj (shared by every shard's core world)
+    this.modifications = new Map(); // absolute chunk key -> Map(idx -> [id, meta]) (shared by every shard's core world)
     this.savedPlayers = new Map();
     this.dirty = false;
     this.changeLog = null;          // when an array, block changes are collected for broadcasting
-    this.core = null;
+    this.core = null;               // core World of the shard currently being simulated (set by Game.use)
   }
 
   load() {
@@ -160,8 +186,10 @@ class WorldState {
         if (Array.isArray(data.deltas)) {
           for (const d of data.deltas) {
             if (Array.isArray(d) && d.length >= 4) {
-              const [wx, wy, wz, id, meta] = d;
-              this.deltas.set(`${wx},${wy},${wz}`, [wx | 0, wy | 0, wz | 0, id | 0, (meta | 0) & 255]);
+              const wx = absCoordJson(d[0]), wz = absCoordJson(d[2]);
+              if (wx === null || wz === null) continue;
+              const wy = d[1] | 0;
+              this.deltas.set(`${wx},${wy},${wz}`, [wx, wy, wz, d[3] | 0, (d[4] | 0) & 255]);
             }
           }
         }
@@ -177,41 +205,49 @@ class WorldState {
       } catch (err) {
         console.error('[World] Failed to load world-data.json:', err.message);
       }
-      this._initCore();
+      this._initModifications();
     } else {
-      this._initCore();
+      this._initModifications();
       this.save();
       console.log(`[World] Created new server world at ${this.worldPath} (Seed: ${this.seed}).`);
     }
   }
 
-  _initCore() {
+  // Persisted edits -> the chunk modification table every shard's core world generates from
+  _initModifications() {
+    for (const [wx, wy, wz, id, meta] of this.deltas.values()) {
+      const { key, idx } = this.C.absDeltaKey(wx, wy, wz);
+      let map = this.modifications.get(key);
+      if (!map) { map = new Map(); this.modifications.set(key, map); }
+      map.set(idx, [id, meta]);
+    }
+  }
+
+  // A live copy of the generated world around (ox, oz), sharing the persisted tables
+  makeCore(ox, oz) {
     const ws = this;
     const C = this.C;
     class ServerCoreWorld extends C.World {
       setBlock(wx, wy, wz, id, meta = 0, recordDelta = true) {
         super.setBlock(wx, wy, wz, id, meta, recordDelta);
-        if (recordDelta) ws._onCoreSet(wx | 0, wy | 0, wz | 0, id | 0, (meta | 0) & 255);
+        if (recordDelta) ws._onCoreSet(this, blockCoord(wx), wy | 0, blockCoord(wz), id | 0, (meta | 0) & 255);
       }
     }
-    this.core = new ServerCoreWorld(this.seed, null);
-    this.core.blockEntities = this.blockEntities;
-    // Mirror persisted edits into the core's chunk modification table so generation applies them
-    for (const [wx, wy, wz, id, meta] of this.deltas.values()) {
-      const cs = C.CHUNK_SIZE;
-      const key = `${C.floorDiv(wx, cs)},${C.floorDiv(wy, cs)},${C.floorDiv(wz, cs)}`;
-      let map = this.core.modifications.get(key);
-      if (!map) { map = new Map(); this.core.modifications.set(key, map); }
-      map.set(C.Chunk.idx(C.floorMod(wx, cs), C.floorMod(wy, cs), C.floorMod(wz, cs)), [id, meta]);
-    }
+    const core = new ServerCoreWorld(this.seed, null);
+    core.modifications = this.modifications;
+    core.blockEntities = this.blockEntities;
+    core.lockOrigin = true; // only Game moves shard origins
+    core.setOrigin(ox, oz);
+    return core;
   }
 
-  _onCoreSet(x, y, z, id, meta) {
-    const key = `${x},${y},${z}`;
-    this.deltas.set(key, [x, y, z, id, meta]);
+  _onCoreSet(core, x, y, z, id, meta) {
+    const ax = this.C.absJson(core.absX(x)), az = this.C.absJson(core.absZ(z));
+    const key = `${ax},${y},${az}`;
+    this.deltas.set(key, [ax, y, az, id, meta]);
     if (!CONTAINER_TYPES[id]) this.blockEntities.delete(key);
     this.dirty = true;
-    if (this.changeLog) this.changeLog.push([x, y, z, id, meta]);
+    if (this.changeLog) this.changeLog.push([x, y, z, id, meta]); // shard-local, broadcast to that shard
   }
 
   save() {
@@ -259,10 +295,11 @@ class WorldState {
   getBlock(x, y, z) { this.ensureChunkAt(x, y, z); return this.core.getBlock(x, y, z); }
   getMeta(x, y, z) { this.ensureChunkAt(x, y, z); return this.core.getMeta(x, y, z); }
   setBlock(x, y, z, id, meta = 0) { this.ensureChunkAt(x, y, z); this.core.setBlock(x, y, z, id, meta, true); }
-  getDelta(x, y, z) { return this.deltas.get(`${x},${y},${z}`) || null; }
+  getDelta(x, y, z) { return this.deltas.get(this.core.absBlockKey(x, y, z)) || null; }
+  getEnt(x, y, z) { return this.blockEntities.get(this.core.absBlockKey(x, y, z)) || null; }
 
   setBlockEntity(x, y, z, ent) {
-    const key = `${x},${y},${z}`;
+    const key = this.core.absBlockKey(x, y, z);
     if (!ent) this.blockEntities.delete(key);
     else this.blockEntities.set(key, ent);
     this.dirty = true;
@@ -336,9 +373,7 @@ class Game {
     this.config = opts.config;
     this.world = new WorldState(C, opts.config, opts.worldPath, opts.atomicWriteJson);
     this.world.load();
-    this.drops = new Map();
     this.nextDropId = 1;
-    this.tntQueue = [];
     this.dayNight = new C.DayNightSystem();
 
     const noop = () => {};
@@ -352,17 +387,203 @@ class Game {
     // Stand-in "player" for damage without an attacker (explosions, fire)
     this.envActor = { sprinting: false, miningRef: this.serverMining, addXP: () => false };
 
-    this.mobs = new C.MobManager(this.world.core);
-    const origSpawnArrow = this.mobs.spawnArrow.bind(this.mobs);
-    this.mobs.spawnArrow = (x, y, z, vx, vy, vz, owner, dmg, extra = null) => {
-      origSpawnArrow(x, y, z, vx, vy, vz, owner, dmg, extra);
-      const exclude = extra && extra.shooterId ? extra.shooterId : null;
-      this._broadcastNear(x, z, 96, { type: 'arrow', x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), vx: +vx.toFixed(2), vy: +vy.toFixed(2), vz: +vz.toFixed(2) }, exclude);
-    };
-
     this.ServerPlayer = this._makeServerPlayerClass();
+    this.shards = new Set();
+    this.nextShardId = 1;
+    this.home = this.makeShard(0n, 0n); // around spawn; never destroyed
+    this.use(this.home);
     this._snapAccum = 0;
     this._unloadAccum = 0;
+    this._shardAccum = 0;
+  }
+
+  // ---------------------------------------------------------------- shards
+
+  makeShard(ox, oz) {
+    const C = this.C;
+    const shard = { id: this.nextShardId++, ox, oz, players: new Set(), drops: new Map(), tntQueue: [] };
+    shard.core = this.world.makeCore(ox, oz);
+    shard.core.onRebase = (r) => this._onShardRebase(shard, r);
+    shard.mobs = new C.MobManager(shard.core);
+    const origSpawnArrow = shard.mobs.spawnArrow.bind(shard.mobs);
+    shard.mobs.spawnArrow = (x, y, z, vx, vy, vz, owner, dmg, extra = null) => {
+      origSpawnArrow(x, y, z, vx, vy, vz, owner, dmg, extra);
+      const exclude = extra && extra.shooterId ? extra.shooterId : null;
+      this.use(shard);
+      this._broadcastNear(x, z, 96, { type: 'arrow', x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), vx: +vx.toFixed(2), vy: +vy.toFixed(2), vz: +vz.toFixed(2) }, exclude);
+    };
+    this.shards.add(shard);
+    return shard;
+  }
+
+  // Everything below operates on the "current" shard: its core world, mobs, drops and players
+  use(shard) { this.cur = shard; this.world.core = shard.core; return shard; }
+  get mobs() { return this.cur.mobs; }
+  get drops() { return this.cur.drops; }
+  get tntQueue() { return this.cur.tntQueue; }
+
+  // Absolute distance (blocks, Chebyshev) between a local point of shard a and one of shard b; Infinity if astronomically far
+  _shardGap(a, ax, az, b, bx, bz) {
+    const dx = this.C.bigToNum(b.ox - a.ox), dz = this.C.bigToNum(b.oz - a.oz);
+    if (dx === null || dz === null) return Infinity;
+    return Math.max(Math.abs(dx + bx - ax), Math.abs(dz + bz - az));
+  }
+
+  _findShardNear(xi, zi, exclude = null) {
+    let best = null, bestD = JOIN_DIST;
+    for (const s of this.shards) {
+      if (s === exclude) continue;
+      const dx = this.C.bigToNum(xi - s.ox), dz = this.C.bigToNum(zi - s.oz);
+      if (dx === null || dz === null) continue;
+      const d = Math.max(Math.abs(dx), Math.abs(dz));
+      if (d < bestD && (s.players.size > 0 || s === this.home)) { best = s; bestD = d; }
+    }
+    return best;
+  }
+
+  // Put a player at an absolute position (BigInt integer parts + fractions), picking or creating a shard
+  placeAbs(p, xi, xf, y, zi, zf, reason = null, announce = true) {
+    const C = this.C;
+    const dst = this._findShardNear(xi, zi, null) || this.makeShard(C.snapOrigin(xi), C.snapOrigin(zi));
+    const lx = Number(xi - dst.ox) + xf, lz = Number(zi - dst.oz) + zf;
+    this._movePlayer(p, dst, lx, y, lz, reason, announce);
+  }
+
+  // Move a player into shard `dst` at local (x, y, z); tells the client about its new frame + position
+  _movePlayer(p, dst, x, y, z, reason = null, announce = true) {
+    const src = p.shard;
+    if (src && src !== dst) src.players.delete(p);
+    dst.players.add(p);
+    p.shard = dst;
+    p.x = x; p.y = y; p.z = z; p.hasMoved = true;
+    if (p.pl) { p.pl.x = x; p.pl.y = y; p.pl.z = z; }
+    if (!announce) { p.frameOx = dst.ox; p.frameOz = dst.oz; return; }
+    this._sendFrame(p);
+    this.ac.grantTeleportGrace(p, 2500);
+    p.ws.sendJSON({ type: 'rubberband', x, y, z, reason });
+    if (src !== dst) this._sendShardState(p);
+  }
+
+  // Bring a client's coordinate frame to its shard's origin. Packets it sends before acknowledging are
+  // still in the old frame, so remember the shift until the ack arrives.
+  _sendFrame(p) {
+    const s = p.shard;
+    if (p.frameOx === s.ox && p.frameOz === s.oz) return;
+    const C = this.C;
+    const dx = C.bigToNum(s.ox - p.frameOx), dz = C.bigToNum(s.oz - p.frameOz);
+    const far = dx === null || dz === null || Math.abs(dx) > 2 ** 40 || Math.abs(dz) > 2 ** 40;
+    p.frameSeq = (p.frameSeq || 0) + 1;
+    (p.pendingFrames || (p.pendingFrames = [])).push({ seq: p.frameSeq, dx: far ? 0 : dx, dz: far ? 0 : dz, far });
+    p.frameOx = s.ox; p.frameOz = s.oz;
+    p.ws.sendJSON({ type: 'rebase', ox: String(s.ox), oz: String(s.oz), seq: p.frameSeq });
+  }
+
+  frameAck(p, msg) {
+    const seq = Number(msg.seq) || 0;
+    if (p.pendingFrames) p.pendingFrames = p.pendingFrames.filter(f => f.seq > seq);
+  }
+
+  // Packet from p in its (possibly outdated) frame -> current shard-local coordinates. false = drop it.
+  translateIncoming(p, msg) {
+    const pf = p.pendingFrames;
+    if (!pf || !pf.length || !COORD_PACKETS.has(msg.type)) return true;
+    let dx = 0, dz = 0;
+    for (const f of pf) { if (f.far) return false; dx += f.dx; dz += f.dz; }
+    if (typeof msg.x === 'number') msg.x -= dx;
+    if (typeof msg.z === 'number') msg.z -= dz;
+    if (Array.isArray(msg.plants)) for (const pl of msg.plants) if (Array.isArray(pl)) { pl[0] -= dx; pl[2] -= dz; }
+    if (Array.isArray(msg.o) && msg.o.length >= 3) { msg.o[0] -= dx; msg.o[2] -= dz; }
+    if (msg.src && typeof msg.src.x === 'number') { msg.src.x -= dx; msg.src.z -= dz; }
+    return true;
+  }
+
+  _sendShardState(p) {
+    const drops = [];
+    for (const d of p.shard.drops.values()) drops.push([d.id, d.x, d.y, d.z, d.s]);
+    p.ws.sendJSON({ type: 'shard_state', drops });
+  }
+
+  // A shard's core world moved its origin by (dx, dz): shift everything else it owns
+  _onShardRebase(shard, r) {
+    const { dx, dz } = r;
+    shard.ox = shard.core.ox; shard.oz = shard.core.oz;
+    shard.mobs.shiftLocal(dx, dz);
+    for (const d of shard.drops.values()) { d.x -= dx; d.z -= dz; }
+    for (const q of shard.tntQueue) { q.x -= dx; q.z -= dz; }
+    for (const p of shard.players) {
+      p.x -= dx; p.z -= dz;
+      if (p.pl) { p.pl.x -= dx; p.pl.z -= dz; }
+      if (p.ac) { p.ac.lastSafeX -= dx; p.ac.lastSafeZ -= dz; }
+      this._sendFrame(p);
+    }
+  }
+
+  // Merge shards whose players meet, keep each shard centred on its players, split off stragglers
+  maintainShards() {
+    const C = this.C;
+    // 1. merge
+    for (const a of this.shards) {
+      for (const b of this.shards) {
+        if (a === b || !a.players.size || !b.players.size || !this.shards.has(a) || !this.shards.has(b)) continue;
+        let near = false;
+        for (const pa of a.players) { for (const pb of b.players) if (this._shardGap(a, pa.x, pa.z, b, pb.x, pb.z) < MERGE_DIST) { near = true; break; } if (near) break; }
+        if (!near) continue;
+        const [dst, src] = a === this.home ? [a, b] : (b === this.home ? [b, a] : (a.players.size >= b.players.size ? [a, b] : [b, a]));
+        this._mergeShard(src, dst);
+      }
+    }
+    // 2. recentre + 3. split
+    for (const s of Array.from(this.shards)) {
+      if (!s.players.size) { if (s !== this.home) this.shards.delete(s); continue; }
+      let cx = 0, cz = 0;
+      for (const p of s.players) { cx += p.x; cz += p.z; }
+      cx /= s.players.size; cz /= s.players.size;
+      if (Math.abs(cx) > C.REBASE_DIST || Math.abs(cz) > C.REBASE_DIST) {
+        this.use(s);
+        s.core.setOrigin(C.snapOrigin(s.ox + BigInt(Math.floor(cx))), C.snapOrigin(s.oz + BigInt(Math.floor(cz))));
+      }
+      if (s.players.size < 2) continue;
+      for (const p of Array.from(s.players)) {
+        if (Math.abs(p.x) <= SPLIT_LOCAL && Math.abs(p.z) <= SPLIT_LOCAL) continue;
+        const xi = s.ox + BigInt(Math.floor(p.x)), zi = s.oz + BigInt(Math.floor(p.z));
+        const dst = this._findShardNear(xi, zi, s) || this.makeShard(C.snapOrigin(xi), C.snapOrigin(zi));
+        const lx = Number(xi - dst.ox) + (p.x - Math.floor(p.x)), lz = Number(zi - dst.oz) + (p.z - Math.floor(p.z));
+        this._movePlayer(p, dst, lx, p.y, lz, null);
+        if (s.players.size < 2) break;
+      }
+    }
+  }
+
+  _mergeShard(src, dst) {
+    const D = (b, a) => Number(b - a);
+    const dx = D(src.ox, dst.ox), dz = D(src.oz, dst.oz); // local_dst = local_src + d
+    for (const m of src.mobs.mobs) { m.x += dx; m.z += dz; dst.mobs.mobs.push(m); }
+    for (const pr of src.mobs.projectiles) { pr.x += dx; pr.z += dz; dst.mobs.projectiles.push(pr); }
+    src.mobs.clearAll();
+    for (const [id, d] of src.drops) { d.x += dx; d.z += dz; dst.drops.set(id, d); }
+    src.drops.clear();
+    for (const q of src.tntQueue) { q.x += dx; q.z += dz; dst.tntQueue.push(q); }
+    src.tntQueue.length = 0;
+    for (const p of Array.from(src.players)) {
+      src.players.delete(p);
+      dst.players.add(p);
+      p.shard = dst;
+      p.x += dx; p.z += dz;
+      if (p.pl) { p.pl.x += dx; p.pl.z += dz; }
+      if (p.ac) { p.ac.lastSafeX += dx; p.ac.lastSafeZ += dz; }
+      this._sendFrame(p);
+    }
+    for (const p of dst.players) this._sendShardState(p);
+    if (src !== this.home) this.shards.delete(src);
+  }
+
+  removePlayer(p) {
+    if (p.shard) p.shard.players.delete(p);
+  }
+
+  // Player position as an absolute record { ox, oz, x, y, z } (decimal-string origin + local offset)
+  absPosOf(p) {
+    return { ox: String(p.shard.ox), oz: String(p.shard.oz), x: p.x, y: p.y, z: p.z };
   }
 
   _makeServerPlayerClass() {
@@ -402,11 +623,18 @@ class Game {
   get ac() { return this.server.ac; }
   get B() { return this.C.B; }
 
-  onlinePlayers() { return Array.from(this.server.players.values()); }
+  // Players of the current shard (the only ones whose coordinates mean anything here)
+  onlinePlayers() { return Array.from(this.cur.players); }
+
+  // World events go to the current shard only
+  _bcast(obj, excludeId = null) {
+    const raw = JSON.stringify(obj);
+    for (const p of this.cur.players) if (p.id !== excludeId) p.ws.sendText(raw);
+  }
 
   _broadcastNear(x, z, radius, obj, excludeId = null) {
     const raw = JSON.stringify(obj);
-    for (const p of this.server.players.values()) {
+    for (const p of this.cur.players) {
       if (p.id === excludeId) continue;
       if (Math.abs(p.x - x) > radius || Math.abs(p.z - z) > radius) continue;
       p.ws.sendText(raw);
@@ -531,6 +759,7 @@ class Game {
     const pl = p.pl;
     return {
       name: p.name,
+      ox: String(p.shard.ox), oz: String(p.shard.oz), // exact shard origin; x/z are relative to it
       x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
       health: pl.health, hunger: pl.hunger, saturation: pl.saturation, xp: pl.xp, level: pl.level, dead: !!pl.dead,
       slots: p.inv.slots, armor: p.inv.armor, limbo: p.inv.limbo.filter(Boolean), mode: p.mode,
@@ -550,6 +779,7 @@ class Game {
   }
 
   welcomeExtras(p) {
+    this.use(p.shard);
     const drops = [];
     for (const d of this.drops.values()) drops.push([d.id, d.x, d.y, d.z, d.s]);
     return { stats: this.statsOf(p), drops, mobTypes: this.C.MOB_TYPES };
@@ -598,9 +828,9 @@ class Game {
     if (this.drops.size > MAX_DROPS) {
       const oldest = this.drops.keys().next().value;
       this.drops.delete(oldest);
-      this.server.broadcast({ type: 'drop_remove', id: oldest });
+      this._bcast({ type: 'drop_remove', id: oldest });
     }
-    this.server.broadcast({ type: 'drop_spawn', id, x: d.x, y: d.y, z: d.z, vx: +vx.toFixed(2), vy: +vy.toFixed(2), vz: +vz.toFixed(2), s, delay: d.delay });
+    this._bcast({ type: 'drop_spawn', id, x: d.x, y: d.y, z: d.z, vx: +vx.toFixed(2), vy: +vy.toFixed(2), vz: +vz.toFixed(2), s, delay: d.delay });
     return d;
   }
 
@@ -616,7 +846,7 @@ class Game {
     this.drops.delete(d.id);
     if (this.isSurvival(p)) p.ledger.add(d.s);
     p.ws.sendJSON({ type: 'pickup_ok', id: d.id, s: d.s });
-    this.server.broadcast({ type: 'drop_remove', id: d.id, by: p.id }, p.id);
+    this._bcast({ type: 'drop_remove', id: d.id, by: p.id }, p.id);
   }
 
   handleDropItem(p, msg) {
@@ -625,7 +855,7 @@ class Game {
     const src = msg.src;
     if (src && Number.isInteger(src.x)) {
       // Dropped straight out of an open container slot
-      const ent = this.world.blockEntities.get(`${src.x},${src.y},${src.z}`);
+      const ent = this.world.getEnt(src.x, src.y, src.z);
       if (!ent || !this.ac.checkReach(p, src.x, src.y, src.z).ok) return;
       const k = stackKey(s);
       let left = s.count;
@@ -663,14 +893,14 @@ class Game {
           const id = this.world.getBlock(bx, by, bz);
           if (id === B.AIR || id === B.BEDROCK || id === B.OBSIDIAN || id === B.OBSIDIAN_CRYING) continue;
           if (id === B.TNT) { this.queueTnt(bx, by, bz); continue; }
-          const ent = this.world.blockEntities.get(`${bx},${by},${bz}`);
+          const ent = this.world.getEnt(bx, by, bz);
           for (const s of this._entStacks(ent)) if (s) this.spawnDrop(bx + 0.5, by + 0.4, bz + 0.5, s);
           cells.push([dx, dy, dz]);
           this.world.setBlock(bx, by, bz, B.AIR, 0);
         }
       }
     }
-    this.server.broadcast({ type: 'explosion', x, y, z, radius: Math.round(radius * 10), cells });
+    this._bcast({ type: 'explosion', x, y, z, radius: Math.round(radius * 10), cells });
     this.server.scheduleWorldSave();
 
     const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
@@ -709,7 +939,7 @@ class Game {
       const changes = this.world.changeLog;
       this.world.changeLog = outer;
       if (outer) outer.push(...changes);
-      else if (changes.length) this.server.broadcast({ type: 'blocks', list: changes }, exceptId);
+      else if (changes.length) this._bcast({ type: 'blocks', list: changes }, exceptId);
       if (changes.length) this.server.scheduleWorldSave();
     }
   }
@@ -717,6 +947,29 @@ class Game {
   // ---------------------------------------------------------------- tick
 
   tick(dt) {
+    this._shardAccum += dt;
+    if (this._shardAccum >= SHARD_CHECK_SEC) { this._shardAccum = 0; this.maintainShards(); }
+    this._unloadAccum += dt;
+    const unloadNow = this._unloadAccum > 10;
+    if (unloadNow) this._unloadAccum = 0;
+    this._snapAccum += dt;
+    const snapNow = this._snapAccum >= 0.1;
+    if (snapNow) this._snapAccum = 0;
+    this._cropAccum = (this._cropAccum || 0) + dt;
+    const cropNow = this._cropAccum >= 0.35;
+    if (cropNow) this._cropAccum = 0;
+    const furnacesDone = new Set();
+    for (const shard of Array.from(this.shards)) {
+      if (!shard.players.size && shard !== this.home) continue;
+      this.use(shard);
+      this._tickShard(dt, { unloadNow, snapNow, cropNow, furnacesDone });
+    }
+    // Furnaces nobody has loaded still smelt (once), as they always did
+    this.use(this.home);
+    this.world.core.updateFurnaces(dt, false, furnacesDone);
+  }
+
+  _tickShard(dt, phase) {
     const players = this.onlinePlayers();
     const C = this.C;
     const cs = C.CHUNK_SIZE;
@@ -737,10 +990,8 @@ class Game {
         }
       }
     }
-    this._unloadAccum += dt;
-    if (this._unloadAccum > 10) {
-      this._unloadAccum = 0;
-      if (players.length) this.world.unloadFar(players);
+    if (phase.unloadNow) {
+      this.world.unloadFar(players);
       this.world.relightDirty();
     }
 
@@ -749,7 +1000,7 @@ class Game {
       this.world.core.redstone.update(dt, this.serverMining);
       let burning = false;
       for (const ent of this.world.blockEntities.values()) if (ent.type === 'furnace' && ent.burnTime > 0) { burning = true; break; }
-      this.world.core.updateFurnaces(dt);
+      this.world.core.updateFurnaces(dt, true, phase.furnacesDone);
       if (burning) this.world.dirty = true;
     });
     for (let i = this.tntQueue.length - 1; i >= 0; i--) {
@@ -758,9 +1009,7 @@ class Game {
       if (q.t <= 0) { this.tntQueue.splice(i, 1); this.explode(q.x, q.y, q.z, 3.2, { tnt: true }); }
     }
     this.world.processGravity();
-    this._cropAccum = (this._cropAccum || 0) + dt;
-    if (this._cropAccum >= 0.35) {
-      this._cropAccum = 0;
+    if (phase.cropNow) {
       this.withChanges(() => { for (const p of players) this._randomTicks(p); });
     }
 
@@ -797,13 +1046,11 @@ class Game {
 
     // 5. Dropped items expire
     for (const [id, d] of this.drops) {
-      if (now - d.born > DROP_LIFETIME_MS) { this.drops.delete(id); this.server.broadcast({ type: 'drop_remove', id }); }
+      if (now - d.born > DROP_LIFETIME_MS) { this.drops.delete(id); this._bcast({ type: 'drop_remove', id }); }
     }
 
     // 6. Mob snapshots @ 10 Hz, only mobs near each player
-    this._snapAccum += dt;
-    if (this._snapAccum >= 0.1) {
-      this._snapAccum = 0;
+    if (phase.snapNow) {
       const typeIdx = new Map(C.MOB_TYPES.map((t, i) => [t, i]));
       for (const p of players) {
         const list = [];
@@ -814,6 +1061,25 @@ class Game {
         }
         p.ws.sendJSON({ type: 'mobs', list });
       }
+    }
+  }
+
+  // Positions of the other players in the same shard, per shard @ 15 Hz
+  sendPlayerSnapshots(isOp) {
+    for (const shard of this.shards) {
+      if (!shard.players.size) continue;
+      const list = [];
+      for (const p of shard.players) {
+        list.push({
+          id: p.id, name: p.name,
+          x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
+          yaw: +p.yaw.toFixed(3), pitch: +p.pitch.toFixed(3),
+          crouch: p.crouch, swing: p.swing, ping: p.ping,
+          mode: p.mode, op: isOp(p.name)
+        });
+      }
+      const raw = JSON.stringify({ type: 'players', list });
+      for (const p of shard.players) p.ws.sendText(raw);
     }
   }
 
@@ -849,6 +1115,7 @@ class Game {
     if (typeof msg.type !== 'string' || msg.type.startsWith('_') || !Object.prototype.hasOwnProperty.call(HANDLERS, msg.type)) return false;
     const fn = this.handlers[msg.type];
     if (!fn) return false;
+    this.use(p.shard);
     fn.call(this, p, msg);
     return true;
   }
@@ -910,7 +1177,7 @@ const HANDLERS = {
     p.pl.hurt(Math.min(40, amt), reason);
   },
 
-  respawn(p) {
+  respawn(p, msg) {
     const now = Date.now();
     const pl = p.pl;
     if (pl.dead) {
@@ -919,6 +1186,15 @@ const HANDLERS = {
       pl.statsDirty = true;
       this.ac.grantTeleportGrace(p, 2500);
       this.sendStats(p);
+      // Spawn point outside this shard's frame: the client cannot move there itself, so move it
+      const to = msg && msg.to;
+      if (to && typeof to === 'object' && [to.x, to.y, to.z].every(Number.isFinite)) {
+        try {
+          const C = this.C;
+          const xi = C.toBig(to.ox || 0) + BigInt(Math.floor(to.x)), zi = C.toBig(to.oz || 0) + BigInt(Math.floor(to.z));
+          this.placeAbs(p, xi, to.x - Math.floor(to.x), Math.max(-64, Math.min(320, to.y)), zi, to.z - Math.floor(to.z), null);
+        } catch (e) { /* malformed spawn point: stay put */ }
+      }
       return;
     }
     // Not dead: still allow the occasional teleport grace (client/server death mismatch), rate-limited
@@ -986,7 +1262,7 @@ const HANDLERS = {
 
   enchant(p, msg) {
     const C = this.C;
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     if (this.world.getBlock(x, y, z) !== this.B.ENCHANT_TABLE || !this.ac.checkReach(p, x, y, z).ok) { this.sendInventory(p); return; }
     const itemId = msg.itemId | 0;
     const pl = p.pl;
@@ -1008,7 +1284,7 @@ const HANDLERS = {
   },
 
   cook(p, msg) {
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     const out = this.C.CAMPFIRE_COOK[msg.id | 0];
     if (!out || this.world.getBlock(x, y, z) !== this.B.CAMPFIRE || !this.ac.checkReach(p, x, y, z).ok) { this.sendInventory(p); return; }
     if (!this.isSurvival(p)) return;
@@ -1017,20 +1293,18 @@ const HANDLERS = {
   },
 
   container_open(p, msg) {
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     const id = this.world.getBlock(x, y, z);
     if (!CONTAINER_TYPES[id] || !this.ac.checkReach(p, x, y, z).ok) return;
-    const key = `${x},${y},${z}`;
-    let ent = this.world.blockEntities.get(key);
+    let ent = this.world.getEnt(x, y, z);
     if (!ent) { ent = this.defaultEntity(id); this.world.setBlockEntity(x, y, z, ent); }
     p.ws.sendJSON({ type: 'block_entity', x, y, z, ent, open: true });
   },
 
   container_commit(p, msg) {
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     const id = this.world.getBlock(x, y, z);
-    const key = `${x},${y},${z}`;
-    const oldEnt = this.world.blockEntities.get(key) || (CONTAINER_TYPES[id] ? this.defaultEntity(id) : null);
+    const oldEnt = this.world.getEnt(x, y, z) || (CONTAINER_TYPES[id] ? this.defaultEntity(id) : null);
     const reach = this.ac.checkReach(p, x, y, z);
     const newEnt = this.cleanBlockEntity(msg.ent, id);
     if (!oldEnt || !newEnt || reach.dist > reach.maxR + 2) {
@@ -1060,7 +1334,7 @@ const HANDLERS = {
     }
     this.world.setBlockEntity(x, y, z, newEnt);
     this._setInventory(p, slots, armor, limbo);
-    this.server.broadcast({ type: 'block_entity', x, y, z, ent: newEnt }, p.id);
+    this._bcast({ type: 'block_entity', x, y, z, ent: newEnt }, p.id);
     if (changed) {
       this.ac.flag(p, 'INV_MISMATCH', 1.5, `Container transfer at (${x},${y},${z}) created items (corrected)`);
       this.sendInventory(p);
@@ -1072,7 +1346,7 @@ const HANDLERS = {
 
   block_break(p, msg) {
     const B = this.B, C = this.C;
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     if (p.pl.dead) { this._revert(p, x, y, z); return; }
     const id = this.world.getBlock(x, y, z);
     const meta = this.world.getMeta(x, y, z);
@@ -1121,14 +1395,14 @@ const HANDLERS = {
       }
     }
 
-    const ent = this.world.blockEntities.get(`${x},${y},${z}`);
+    const ent = this.world.getEnt(x, y, z);
     this.world.setBlock(x, y, z, B.AIR, 0);
-    this.server.broadcast({ type: 'block_set', x, y, z, id: B.AIR, meta: 0 }, p.id);
+    this._bcast({ type: 'block_set', x, y, z, id: B.AIR, meta: 0 }, p.id);
     if (blk.shape === 'door') {
       const py = (meta & 8) ? y - 1 : y + 1;
       if (this.world.getBlock(x, py, z) === id) {
         this.world.setBlock(x, py, z, B.AIR, 0);
-        this.server.broadcast({ type: 'block_set', x, y: py, z, id: B.AIR, meta: 0 }, p.id);
+        this._bcast({ type: 'block_set', x, y: py, z, id: B.AIR, meta: 0 }, p.id);
       }
     }
     for (const s of this._entStacks(ent)) if (s) this.spawnDrop(x + 0.5, y + 0.4, z + 0.5, s);
@@ -1153,13 +1427,13 @@ const HANDLERS = {
       p.ledger.add({ id: id === B.WATER ? IT.WATER_BUCKET : IT.LAVA_BUCKET, count: 1 });
     }
     this.world.setBlock(x, y, z, B.AIR, 0);
-    this.server.broadcast({ type: 'block_set', x, y, z, id: B.AIR, meta: 0 }, p.id);
+    this._bcast({ type: 'block_set', x, y, z, id: B.AIR, meta: 0 }, p.id);
     this.server.scheduleWorldSave();
   },
 
   block_place(p, msg) {
     const B = this.B, C = this.C, IT = C.IT;
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     const id = msg.id | 0;
     const meta = (msg.meta | 0) & 255;
     const cause = String(msg.cause || '');
@@ -1211,13 +1485,13 @@ const HANDLERS = {
       if (give) p.ledger.add({ id: give, count: 1 });
     }
     this.world.setBlock(x, y, z, id, meta);
-    this.server.broadcast({ type: 'block_set', x, y, z, id, meta }, p.id);
+    this._bcast({ type: 'block_set', x, y, z, id, meta }, p.id);
     this.server.scheduleWorldSave();
   },
 
   bonemeal(p, msg) {
     const B = this.B, IT = this.C.IT;
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     if (this.world.getBlock(x, y, z) !== B.GRASS || !this.ac.checkReach(p, x, y, z).ok) return;
     if (this.isSurvival(p) && !p.ledger.remove(`${IT.BONE_MEAL}#`, 1)) { this.sendInventory(p); return; }
     const allowed = [B.TALL_GRASS, B.POPPY, B.DANDELION, B.ORCHID];
@@ -1230,12 +1504,12 @@ const HANDLERS = {
       this.world.setBlock(px, y + 1, pz, pid, 0);
       list.push([px, y + 1, pz, pid, 0]);
     }
-    if (list.length) this.server.broadcast({ type: 'blocks', list }, p.id);
+    if (list.length) this._bcast({ type: 'blocks', list }, p.id);
   },
 
   block_interact(p, msg) {
     const B = this.B;
-    const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0;
+    const x = blockCoord(msg.x), y = msg.y | 0, z = blockCoord(msg.z);
     const action = String(msg.action || '');
     const val = (msg.val | 0) & 255;
     if (p.pl.dead) return;
@@ -1260,7 +1534,7 @@ const HANDLERS = {
       // Only the open bit may change, and iron doors only open through redstone
       if (shape !== action || id === B.IRON_DOOR || (val ^ meta) !== 4) { this._revert(p, x, y, z); return; }
       this.world.setBlock(x, y, z, id, val);
-      this.server.broadcast({ type: 'block_set', x, y, z, id, meta: val }, p.id);
+      this._bcast({ type: 'block_set', x, y, z, id, meta: val }, p.id);
       this.server.scheduleWorldSave();
       return;
     }
@@ -1342,7 +1616,7 @@ const HANDLERS = {
   pvp_hit(p, msg) {
     if (!this.config.pvp || p.pl.dead) return;
     const target = this.server.players.get(String(msg.targetId || ''));
-    if (!target || target.id === p.id || target.mode === 'creative' || target.pl.dead) return;
+    if (!target || target.id === p.id || target.shard !== p.shard || target.mode === 'creative' || target.pl.dead) return;
     const held = this.heldStack(p, msg.weaponId | 0);
     const chk = this.ac.checkPvpHit(p, target);
     if (!chk.ok) return;

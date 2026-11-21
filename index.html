@@ -1031,15 +1031,18 @@ function hashString(str) {
 
 function hash2i(x, z, seed) {
   // 64-bit-safe coordinate mixing using 32-bit folded high/low parts
-  const xLo = x | 0;
-  const xHi = Math.floor(x / 4294967296) | 0;
-  const zLo = z | 0;
-  const zHi = Math.floor(z / 4294967296) | 0;
+  return hash2w(x | 0, Math.floor(x / 4294967296) | 0, z | 0, Math.floor(z / 4294967296) | 0, seed, 0);
+}
+
+// Core of hash2i on explicit 32-bit words (low/high word of the coordinate mod 2^64). `ext` folds in
+// any bits above 2^63 for astronomically far coordinates; it is 0 everywhere a float64 could reach.
+function hash2w(xLo, xHi, zLo, zHi, seed, ext) {
   let h = (seed ^ 0x9e3779b9) >>> 0;
   h = Math.imul(h ^ xLo, 0x85ebca6b) >>> 0;
   h = Math.imul(h ^ (xHi * 0x27d4eb2d), 0xc2b2ae35) >>> 0;
   h = Math.imul(h ^ zLo, 0x165667b1) >>> 0;
   h = Math.imul(h ^ (zHi * 0x9e3779b1), 0x85ebca6b) >>> 0;
+  if (ext) { h = Math.imul(h ^ ext, 0x2c1b3c6d) >>> 0; h ^= h >>> 13; }
   h ^= h >>> 16;
   h = Math.imul(h, 0x7feb352d) >>> 0;
   h ^= h >>> 15;
@@ -1047,11 +1050,216 @@ function hash2i(x, z, seed) {
 }
 
 function hash3i(x, y, z, seed) {
-  let h = hash2i(x, z, seed);
+  return hashMixY(hash2i(x, z, seed), y);
+}
+
+function hashMixY(h, y) {
   h = Math.imul(h ^ (y | 0), 0x27d4eb2d) >>> 0;
   h ^= h >>> 15;
   return h >>> 0;
 }
+
+// ============================================================================
+// UNLIMITED COORDINATES
+// ============================================================================
+// The world has no edge. Every World keeps an exact BigInt origin (in blocks) and all simulation state
+// (player, mobs, chunk indices, physics, rendering) is a small float64 *relative* to it, so precision is
+// identical at spawn and 10^100 blocks out. Whatever must depend on the *absolute* position (terrain
+// noise, hashes, saved keys) is computed exactly from origin + local, never from a rounded float.
+const ORIGIN_STEP = 15 * 1048576;   // origins are multiples of this: divisible by 2^20 (noise regions), 3 (tree grid), 160 (structure cells)
+const ORIGIN_STEP_BIG = BigInt(ORIGIN_STEP);
+const REBASE_DIST = ORIGIN_STEP;     // re-centre the origin once the player is this far (in blocks) from it
+const NOISE_REGION = 1048576;        // fixed 2^20-block grid used to evaluate far-terrain noise exactly
+const PLAIN_LIMIT = 2 ** 36;         // inside +/-2^36 blocks noise uses the original float64 path, so existing terrain is unchanged
+const NUM_SAFE = 2 ** 50;            // BigInts smaller than this are mirrored as plain Numbers for speed
+const NUM_SAFE_BIG = BigInt(NUM_SAFE);
+const BIG_2_32 = 4294967296n, BIG_2_64 = 1n << 64n, BIG_2_63 = 1n << 63n, BIG_2_41 = 1n << 41n;
+
+const bigFloorDiv = (a, b) => { const q = a / b; return (a % b !== 0n && ((a < 0n) !== (b < 0n))) ? q - 1n : q; };
+const bigMod = (a, m) => { const r = a % m; return r < 0n ? r + m : r; };
+const bigToNum = (b) => (b > -NUM_SAFE_BIG && b < NUM_SAFE_BIG) ? Number(b) : null;
+// Accepts BigInt, integer Number or decimal integer string
+const toBig = (v) => typeof v === 'bigint' ? v : typeof v === 'number' ? BigInt(Math.floor(v)) : BigInt(String(v).trim());
+// Nearest multiple of ORIGIN_STEP to an absolute BigInt block coordinate
+const snapOrigin = (b) => bigFloorDiv(b + ORIGIN_STEP_BIG / 2n, ORIGIN_STEP_BIG) * ORIGIN_STEP_BIG;
+
+// Absolute integer coordinate (origin BigInt + local integer) as a canonical decimal string
+function absIntStr(o, oNum, l) {
+  if (oNum !== null) { const v = oNum + l; if (v > -9007199254740992 && v < 9007199254740992) return String(v); }
+  return String(o + BigInt(l));
+}
+
+// Absolute block coordinate (Number or decimal string) of a persisted edit -> its absolute chunk key + index
+function absDeltaKey(xs, y, zs) {
+  const split = (v) => {
+    if (typeof v === 'number' || String(v).length < 16) { const n = Number(v); return [String(floorDiv(n, CHUNK_SIZE)), floorMod(n, CHUNK_SIZE)]; }
+    const b = BigInt(v), cs = BigInt(CHUNK_SIZE);
+    return [String(bigFloorDiv(b, cs)), Number(bigMod(b, cs))];
+  };
+  const [cx, lx] = split(xs), [cz, lz] = split(zs);
+  return { key: `${cx},${floorDiv(y, CHUNK_SIZE)},${cz}`, idx: (floorMod(y, CHUNK_SIZE) << 8) | (lz << 4) | lx };
+}
+
+// Canonical form of an absolute integer coordinate for JSON: a Number while exactly representable, else a string
+function absJson(str) {
+  const s = String(str);
+  if (s.length < 16) return Number(s);
+  return s;
+}
+
+// Parse a decimal coordinate of any size ("-123456789012345678901234.75") into integer + fraction
+function parseAbsCoord(str) {
+  const m = /^\s*([+-]?)(\d+)(?:\.(\d*))?\s*$/.exec(String(str));
+  if (!m) {
+    const n = Number(str);
+    if (!Number.isFinite(n)) return null;
+    const i = Math.floor(n);
+    return { i: BigInt(i), f: n - i };
+  }
+  const neg = m[1] === '-';
+  let i = BigInt(m[2]);
+  let f = m[3] ? Number('0.' + m[3]) : 0;
+  if (neg) { i = -i; if (f > 0) { i -= 1n; f = 1 - f; } }
+  return { i, f };
+}
+
+// Format origin + local float as a full-precision absolute coordinate string
+function formatAbsCoord(o, oNum, l, digits = 2) {
+  if (oNum !== null && Math.abs(oNum) < 2 ** 44) return (oNum + l).toFixed(digits);
+  const fl = Math.floor(l);
+  let ip = o + BigInt(fl), fr = l - fl;
+  let fs = fr.toFixed(digits);
+  if (fs.startsWith('1')) { ip += 1n; fs = (0).toFixed(digits); }
+  if (ip < 0n && fr > 0) { // render as -(|ip| - 1).(1 - fr) so the string reads like a normal negative number
+    const nf = (1 - fr).toFixed(digits);
+    return '-' + String(-(ip + 1n)) + nf.slice(1);
+  }
+  return String(ip) + fs.slice(1);
+}
+
+function _extWord(b) { // non-zero only for |b| >= 2^63: folds the bits a float64 world could never reach
+  if (b < BIG_2_63 && b >= -BIG_2_63) return 0;
+  return (hashString(String(bigFloorDiv(b, BIG_2_63))) | 1) >>> 0;
+}
+
+// One axis of an absolute origin, in some unit (blocks, quarter-blocks, structure cells...). Turns a
+// small local integer into the exact 32-bit words hash2w expects for origin + local.
+class AbsAxis {
+  constructor(o) {
+    this.o = o;
+    this.num = bigToNum(o);
+    const m = bigMod(o, BIG_2_64);
+    this.lo = Number(m & 0xffffffffn);
+    this.hi = Number(m >> 32n);
+    const e0 = _extWord(o - BIG_2_41), e1 = _extWord(o + BIG_2_41);
+    this.ext = e0 === e1 ? e0 : -1; // -1: crosses a 2^63 boundary nearby, resolve per value
+    this.wLo = 0; this.wHi = 0; this.wExt = 0;
+  }
+  words(l) {
+    const s = this.lo + l;
+    const carry = Math.floor(s / 4294967296);
+    this.wLo = (s - carry * 4294967296) | 0;
+    this.wHi = floorMod(this.hi + carry, 4294967296) | 0;
+    this.wExt = this.ext >= 0 ? this.ext : _extWord(this.o + BigInt(l));
+  }
+}
+
+// (R * c) mod 256 for a BigInt R and a float64 c, computed exactly (c is an exact dyadic rational)
+function exactMulMod256(R, c) {
+  if (c === 0 || R === 0n) return 0;
+  let exp = Math.floor(Math.log2(Math.abs(c))) - 52;
+  let mant = c / 2 ** exp;
+  while (!Number.isInteger(mant)) { exp--; mant = c / 2 ** exp; }
+  const P = R * BigInt(mant);
+  if (exp >= 0) return Number(bigMod(P << BigInt(exp), 256n));
+  const d = BigInt(-exp);
+  const r = bigMod(P, 256n << d);
+  const ip = r >> d;
+  return Number(ip) + Number(r - (ip << d)) / 2 ** (-exp);
+}
+
+// Per-region cache of exact noise lattice offsets: R -> (coefficient -> (R*c) mod 256)
+const _K_CACHE = new Map();
+function kCacheFor(R) {
+  let m = _K_CACHE.get(R);
+  if (!m) {
+    if (_K_CACHE.size > 96) _K_CACHE.clear();
+    m = new Map();
+    _K_CACHE.set(R, m);
+  }
+  return m;
+}
+function kTerm(cache, R, c) {
+  let v = cache.get(c);
+  if (v === undefined) { v = exactMulMod256(R, c); cache.set(c, v); }
+  return v;
+}
+
+// Float64 noise frequencies are dyadic rationals, so (R * c) mod 256 alone would make far terrain repeat
+// every ~2^63..2^70 blocks. Each 2^56-block "super-region" therefore gets its own pseudo-random lattice
+// shift, cross-faded over SUPER_BLEND blocks at the borders so there is no seam and no period at all.
+// The super-region around spawn (|x| < 2^55) has shift 0, so nothing nearer than that changes.
+const SUPER_BITS = 56n, SUPER = 1n << 56n, SUPER_HALF = 1n << 55n;
+const SUPER_BLEND = 4096, SUPER_BLEND_BIG = 4096n;
+const _SHIFT_CACHE = new Map();
+function superShift(S) {
+  if (S === 0n) return 0n;
+  let v = _SHIFT_CACHE.get(S);
+  if (v === undefined) {
+    const s = String(S);
+    v = (BigInt(hashString('vxs-a' + s)) << 48n) ^ (BigInt(hashString('vxs-b' + s)) << 24n) ^ BigInt(hashString('vxs-c' + s));
+    if (_SHIFT_CACHE.size > 64) _SHIFT_CACHE.clear();
+    _SHIFT_CACHE.set(S, v);
+  }
+  return v;
+}
+
+// Where noise is evaluated for one terrain column. Inside +/-PLAIN_LIMIT an axis is "plain": xq is the
+// absolute coordinate as a float64, exactly what the original generator used. Beyond it, the absolute
+// coordinate is split into a BigInt region base (multiple of 2^20, a pure function of the absolute
+// position) plus a small xq, and the noise lattice offset of the base is computed exactly. Each axis
+// then has one or (in a super-region blend band) two weighted variants.
+class NoiseFrame {
+  constructor() {
+    this.ax = new AbsAxis(0n); this.az = new AbsAxis(0n);
+    this.xq = 0; this.zq = 0; this.xV = null; this.zV = null; this.plain = true;
+    this._lx = NaN; this._lz = NaN;
+  }
+  setOrigin(ax, az) { this.ax = ax; this.az = az; this._lx = NaN; this._lz = NaN; }
+  // -> [q, variants]; variants null for a plain axis, else [{ R, k (lattice cache), w }]
+  _axis(a, l) {
+    if (a.num !== null) {
+      const A = a.num + l;
+      if (A > -PLAIN_LIMIT && A < PLAIN_LIMIT) return [A, null];
+    }
+    const k = Math.floor(l / NOISE_REGION) * NOISE_REGION;
+    const R = a.o + BigInt(k), q = l - k;
+    const A = R + BigInt(Math.floor(q));
+    const S = bigFloorDiv(A + SUPER_HALF, SUPER);
+    const t = A + SUPER_HALF - S * SUPER; // position inside the super-region, [0, 2^56)
+    const v = (s, w) => { const Rs = R + superShift(s); return { R: Rs, k: kCacheFor(Rs), w }; };
+    const H = SUPER_BLEND / 2;
+    if (t < SUPER_BLEND_BIG / 2n) {
+      const w = smoothstep(0.5 + Number(t) / SUPER_BLEND);
+      return [q, [v(S, w), v(S - 1n, 1 - w)]];
+    }
+    const d = SUPER - t;
+    if (d <= BigInt(H)) {
+      const w = smoothstep(0.5 + Number(d) / SUPER_BLEND);
+      return [q, [v(S, w), v(S + 1n, 1 - w)]];
+    }
+    return [q, [v(S, 1)]];
+  }
+  set(lx, lz) {
+    if (lx === this._lx && lz === this._lz) return;
+    this._lx = lx; this._lz = lz;
+    const X = this._axis(this.ax, lx), Z = this._axis(this.az, lz);
+    this.xq = X[0]; this.xV = X[1];
+    this.zq = Z[0]; this.zV = Z[1];
+    this.plain = this.xV === null && this.zV === null;
+  }
+}
+const _PLAIN_VARIANT = [null];
 
 function hashFloat2(x, z, seed) {
   return hash2i(x, z, seed) / 4294967296;
@@ -1301,6 +1509,138 @@ class NoiseEngine {
       }
     }
     return { d1: minD1, edge: minD2 - minD1, cellId };
+  }
+
+  // ---- Frame-aware noise: same fields as above, evaluated at the absolute position of a NoiseFrame.
+  // x/z are frame-local (NoiseFrame.xq/zq plus any warp). Plain frames call the original float64 code
+  // with the exact same expressions, so terrain inside PLAIN_LIMIT is bit-identical to before.
+
+  s2(F, x, z, s, ox = 0, oz = 0) {
+    if (F.plain) return this.simplex2(x * s + ox, z * s + oz);
+    return this._simplex2X(F, x, z, s, ox, oz);
+  }
+
+  s3(F, x, y, z, s, sy, ox = 0, oy = 0, oz = 0) {
+    if (F.plain) return this.simplex3(x * s + ox, y * sy + oy, z * s + oz);
+    return this._simplex3X(F, x, y, z, s, sy, ox, oy, oz);
+  }
+
+  fbm2F(F, x, z, s, octaves = 4, lacunarity = 2.0, gain = 0.5) {
+    if (F.plain) return this.fbm2(x * s, z * s, octaves, lacunarity, gain);
+    let sum = 0, amp = 1, freq = 1, norm = 0;
+    for (let i = 0; i < octaves; i++) {
+      sum += amp * this._simplex2X(F, x, z, s * freq, 0, 0);
+      norm += amp;
+      amp *= gain;
+      freq *= lacunarity;
+    }
+    return sum / norm;
+  }
+
+  ridged2F(F, x, z, s, octaves = 4, lacunarity = 2.05, gain = 0.5) {
+    if (F.plain) return this.ridged2(x * s, z * s, octaves, lacunarity, gain);
+    let sum = 0, amp = 1, freq = 1, norm = 0;
+    for (let i = 0; i < octaves; i++) {
+      let n = 1.0 - Math.abs(this._simplex2X(F, x, z, s * freq, 0, 0));
+      n = n * n;
+      sum += amp * n;
+      norm += amp;
+      amp *= gain;
+      freq *= lacunarity;
+    }
+    return sum / norm;
+  }
+
+  // Exact 2D simplex at absolute (R_x + x, R_z + z) * s + o. Simplex only depends on the skewed
+  // lattice coordinates mod 256 (the permutation period), so the huge region base contributes an
+  // exactly computed offset in [0, 256) and everything else stays small.
+  _simplex2X(F, x, z, s, ox, oz) {
+    const XV = F.xV || _PLAIN_VARIANT, ZV = F.zV || _PLAIN_VARIANT;
+    if (XV.length === 1 && ZV.length === 1) return this._simplex2V(x, z, s, ox, oz, XV[0], ZV[0]);
+    let sum = 0;
+    for (const vx of XV) for (const vz of ZV) sum += (vx ? vx.w : 1) * (vz ? vz.w : 1) * this._simplex2V(x, z, s, ox, oz, vx, vz);
+    return sum;
+  }
+
+  _simplex2V(x, z, s, ox, oz, vx, vz) {
+    const F2 = this.F2, G2 = this.G2;
+    const xin = x * s + ox, yin = z * s + oz;
+    const sk = (xin + yin) * F2;
+    let xs = xin + sk, ys = yin + sk;
+    if (vx) { xs += kTerm(vx.k, vx.R, s * (1 + F2)); ys += kTerm(vx.k, vx.R, s * F2); }
+    if (vz) { xs += kTerm(vz.k, vz.R, s * F2); ys += kTerm(vz.k, vz.R, s * (1 + F2)); }
+    const i = Math.floor(xs), j = Math.floor(ys);
+    const fx = xs - i, fy = ys - j;
+    const u = (fx + fy) * G2;
+    return this._simplex2Tail(((i % 256) + 256) & 255, ((j % 256) + 256) & 255, fx - u, fy - u);
+  }
+
+  _simplex2Tail(ii, jj, x0, y0) {
+    const G2 = this.G2;
+    const perm = this.perm, perm12 = this.perm12, grad3 = this.grad3;
+    const i1 = x0 > y0 ? 1 : 0;
+    const j1 = x0 > y0 ? 0 : 1;
+    const x1 = x0 - i1 + G2;
+    const y1 = y0 - j1 + G2;
+    const x2 = x0 - 1 + 2 * G2;
+    const y2 = y0 - 1 + 2 * G2;
+    let n0 = 0, n1 = 0, n2 = 0;
+    let t0 = 0.5 - x0*x0 - y0*y0;
+    if (t0 >= 0) { t0 *= t0; const g = grad3[perm12[ii + perm[jj]]]; n0 = t0 * t0 * (g[0]*x0 + g[1]*y0); }
+    let t1 = 0.5 - x1*x1 - y1*y1;
+    if (t1 >= 0) { t1 *= t1; const g = grad3[perm12[ii + i1 + perm[jj + j1]]]; n1 = t1 * t1 * (g[0]*x1 + g[1]*y1); }
+    let t2 = 0.5 - x2*x2 - y2*y2;
+    if (t2 >= 0) { t2 *= t2; const g = grad3[perm12[ii + 1 + perm[jj + 1]]]; n2 = t2 * t2 * (g[0]*x2 + g[1]*y2); }
+    return 70 * (n0 + n1 + n2);
+  }
+
+  // Exact 3D simplex; y is never far from 0 so only x/z carry region bases
+  _simplex3X(F, x, y, z, s, sy, ox, oy, oz) {
+    const XV = F.xV || _PLAIN_VARIANT, ZV = F.zV || _PLAIN_VARIANT;
+    if (XV.length === 1 && ZV.length === 1) return this._simplex3V(x, y, z, s, sy, ox, oy, oz, XV[0], ZV[0]);
+    let sum = 0;
+    for (const vx of XV) for (const vz of ZV) sum += (vx ? vx.w : 1) * (vz ? vz.w : 1) * this._simplex3V(x, y, z, s, sy, ox, oy, oz, vx, vz);
+    return sum;
+  }
+
+  _simplex3V(x, y, z, s, sy, ox, oy, oz, vx, vz) {
+    const F3 = this.F3, G3 = this.G3;
+    const perm = this.perm, perm12 = this.perm12, grad3 = this.grad3;
+    const xin = x * s + ox, yin = y * sy + oy, zin = z * s + oz;
+    const sk = (xin + yin + zin) * F3;
+    let xs = xin + sk, ys = yin + sk, zs = zin + sk;
+    if (vx) { const a = kTerm(vx.k, vx.R, s * (1 + F3)), b = kTerm(vx.k, vx.R, s * F3); xs += a; ys += b; zs += b; }
+    if (vz) { const a = kTerm(vz.k, vz.R, s * (1 + F3)), b = kTerm(vz.k, vz.R, s * F3); xs += b; ys += b; zs += a; }
+    const i = Math.floor(xs), j = Math.floor(ys), k = Math.floor(zs);
+    const fx = xs - i, fy = ys - j, fz = zs - k;
+    const u = (fx + fy + fz) * G3;
+    const x0 = fx - u, y0 = fy - u, z0 = fz - u;
+    let i1, j1, k1, i2, j2, k2;
+    if (x0 >= y0) {
+      if (y0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=1; k2=0; }
+      else if (x0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=0; k2=1; }
+      else { i1=0; j1=0; k1=1; i2=1; j2=0; k2=1; }
+    } else {
+      if (y0 < z0) { i1=0; j1=0; k1=1; i2=0; j2=1; k2=1; }
+      else if (x0 < z0) { i1=0; j1=1; k1=0; i2=0; j2=1; k2=1; }
+      else { i1=0; j1=1; k1=0; i2=1; j2=1; k2=0; }
+    }
+    const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
+    const x2 = x0 - i2 + 2*G3, y2 = y0 - j2 + 2*G3, z2 = z0 - k2 + 2*G3;
+    const x3 = x0 - 1 + 3*G3, y3 = y0 - 1 + 3*G3, z3 = z0 - 1 + 3*G3;
+    const ii = ((i % 256) + 256) & 255;
+    const jj = ((j % 256) + 256) & 255;
+    const kk = ((k % 256) + 256) & 255;
+    let n0 = 0, n1 = 0, n2 = 0, n3 = 0;
+    let t0 = 0.6 - x0*x0 - y0*y0 - z0*z0;
+    if (t0 >= 0) { t0 *= t0; const g = grad3[perm12[ii + perm[jj + perm[kk]]]]; n0 = t0*t0*(g[0]*x0+g[1]*y0+g[2]*z0); }
+    let t1 = 0.6 - x1*x1 - y1*y1 - z1*z1;
+    if (t1 >= 0) { t1 *= t1; const g = grad3[perm12[ii+i1 + perm[jj+j1 + perm[kk+k1]]]]; n1 = t1*t1*(g[0]*x1+g[1]*y1+g[2]*z1); }
+    let t2 = 0.6 - x2*x2 - y2*y2 - z2*z2;
+    if (t2 >= 0) { t2 *= t2; const g = grad3[perm12[ii+i2 + perm[jj+j2 + perm[kk+k2]]]]; n2 = t2*t2*(g[0]*x2+g[1]*y2+g[2]*z2); }
+    let t3 = 0.6 - x3*x3 - y3*y3 - z3*z3;
+    if (t3 >= 0) { t3 *= t3; const g = grad3[perm12[ii+1 + perm[jj+1 + perm[kk+1]]]]; n3 = t3*t3*(g[0]*x3+g[1]*y3+g[2]*z3); }
+    return 32 * (n0 + n1 + n2 + n3);
   }
 }
 
@@ -3257,18 +3597,22 @@ class BiomeGenerator {
     this.nWeird = new NoiseEngine(seed ^ 0xc7e391);
   }
 
-  sampleClimate(wx, wz) {
+  // lx/lz are World-local block coordinates; F maps them to the absolute position (see NoiseFrame)
+  sampleClimate(lx, lz) {
+    const F = this.F;
+    F.set(lx, lz);
+    const wx = F.xq, wz = F.zq;
     // Domain-warped macro climate fields for organic biome borders
-    const warpX = this.nEros.simplex2(wx * 0.0018, wz * 0.0018) * 38;
-    const warpZ = this.nEros.simplex2(wx * 0.0018 + 73, wz * 0.0018 - 41) * 38;
+    const warpX = this.nEros.s2(F, wx, wz, 0.0018) * 38;
+    const warpZ = this.nEros.s2(F, wx, wz, 0.0018, 73, -41) * 38;
     const x = wx + warpX, z = wz + warpZ;
-    const cont = this.nCont.fbm2(x * 0.0014, z * 0.0014, 4); // [-1..1] ocean < -0.18
-    const temp = this.nTemp.fbm2(x * 0.0012, z * 0.0012, 3); // [-1..1] cold < -0.25, warm > 0.25
-    const moist = this.nMoist.fbm2(x * 0.0013, z * 0.0013, 3); // [-1..1] dry < -0.2, wet > 0.2
-    const eros = this.nEros.fbm2(x * 0.0022, z * 0.0022, 3); // [-1..1] low = mountainous, high = flat/plateaus
-    const ridge = this.nRidge.ridged2(wx * 0.0032, wz * 0.0032, 4); // [0..1]
-    const riverVal = Math.abs(this.nRiver.fbm2(wx * 0.0019, wz * 0.0019, 3));
-    const weird = this.nWeird.fbm2(x * 0.0017, z * 0.0017, 3); // [-1..1] exotic / variant selector
+    const cont = this.nCont.fbm2F(F, x, z, 0.0014, 4); // [-1..1] ocean < -0.18
+    const temp = this.nTemp.fbm2F(F, x, z, 0.0012, 3); // [-1..1] cold < -0.25, warm > 0.25
+    const moist = this.nMoist.fbm2F(F, x, z, 0.0013, 3); // [-1..1] dry < -0.2, wet > 0.2
+    const eros = this.nEros.fbm2F(F, x, z, 0.0022, 3); // [-1..1] low = mountainous, high = flat/plateaus
+    const ridge = this.nRidge.ridged2F(F, wx, wz, 0.0032, 4); // [0..1]
+    const riverVal = Math.abs(this.nRiver.fbm2F(F, wx, wz, 0.0019, 3));
+    const weird = this.nWeird.fbm2F(F, x, z, 0.0017, 3); // [-1..1] exotic / variant selector
     return { cont, temp, moist, eros, ridge, riverVal, weird };
   }
 
@@ -3336,8 +3680,9 @@ class TerrainGenerator {
     this.n3D = new NoiseEngine(seed ^ 0xdeadbe);
   }
 
-  sampleColumn(wx, wz) {
-    const c = this.biomeGen.sampleClimate(wx, wz);
+  sampleColumn(lx, lz) {
+    const c = this.biomeGen.sampleClimate(lx, lz); // also positions this.F on the column
+    const F = this.F, wx = F.xq, wz = F.zq;
     const { cont, temp, moist, eros, ridge, riverVal, weird } = c;
 
     // Base elevation from continentalness (smooth transition from deep ocean -> beach -> inland -> highlands)
@@ -3366,18 +3711,18 @@ class TerrainGenerator {
 
     // Fine rolling hill detail
     const hillAmp = lerp(12, 3.5, clamp((eros + 0.6) / 1.2, 0, 1)) * clamp((cont + 0.25) * 2, 0.15, 1);
-    const hills = this.nDetail.fbm2(wx * 0.009, wz * 0.009, 4) * hillAmp;
+    const hills = this.nDetail.fbm2F(F, wx, wz, 0.009, 4) * hillAmp;
 
     // Badlands / Plateau terracing when warm + dry + low erosion
     let h = baseH + peaks + hills;
     if (temp > 0.32 && moist < -0.08 && eros < -0.05 && cont > 0.02) {
-      const mesa = clamp((this.nCliff.simplex2(wx * 0.006, wz * 0.006) + 0.2) * 2.5, 0, 1);
+      const mesa = clamp((this.nCliff.s2(F, wx, wz, 0.006) + 0.2) * 2.5, 0, 1);
       h += Math.floor(mesa * 4) * 4.5;
     }
 
     // Shattered Cliffs jagged uplift
     if (weird > 0.22 && eros < -0.12 && cont > 0.18) {
-      const spike = Math.max(0, this.nCliff.ridged2(wx * 0.012, wz * 0.012, 3) - 0.45);
+      const spike = Math.max(0, this.nCliff.ridged2F(F, wx, wz, 0.012, 3) - 0.45);
       h += spike * 26;
     }
 
@@ -3395,7 +3740,7 @@ class TerrainGenerator {
     }
 
     // Deep canyon carving occasionally
-    const canyon = Math.abs(this.nCliff.simplex2(wx * 0.0028 + 140, wz * 0.0028 - 90));
+    const canyon = Math.abs(this.nCliff.s2(F, wx, wz, 0.0028, 140, -90));
     if (cont > 0.12 && canyon < 0.032) {
       const ct = 1.0 - smoothstep(canyon / 0.032);
       h -= ct * 18;
@@ -3418,30 +3763,33 @@ class CaveGenerator {
   }
 
   // Returns cave carve type: 0=solid, 1=carved air/lava, 2=amethyst geode wall, 3=amethyst crystal
-  sampleCave(wx, wy, wz, surfH) {
+  sampleCave(lx, wy, lz, surfH) {
     if (wy >= surfH - 2) return 0;
+    const F = this.F;
+    F.set(lx, lz);
+    const wx = F.xq, wz = F.zq;
     // Winding spaghetti tunnels (extend infinitely deep)
-    const s1 = this.nSpag1.simplex3(wx * 0.028, wy * 0.042, wz * 0.028);
-    const s2 = this.nSpag2.simplex3(wx * 0.028 + 41, wy * 0.042 - 19, wz * 0.028 + 73);
+    const s1 = this.nSpag1.s3(F, wx, wy, wz, 0.028, 0.042);
+    const s2 = this.nSpag2.s3(F, wx, wy, wz, 0.028, 0.042, 41, -19, 73);
     const tube = s1 * s1 + s2 * s2;
     if (tube < 0.022) return 1;
 
     // Large cheese caverns deeper underground (continue infinitely deep)
     if (wy < Math.min(surfH - 8, 42)) {
-      const ch = this.nCheese.simplex3(wx * 0.020, wy * 0.028, wz * 0.020);
+      const ch = this.nCheese.s3(F, wx, wy, wz, 0.020, 0.028);
       if (ch > 0.56) return 1;
     }
 
     // Occasional deep vertical entrance shafts / ravines
     if (wy < surfH - 3 && wy > -128) {
-      const r1 = this.nSpag1.simplex2(wx * 0.011 + 200, wz * 0.011 - 150);
-      const r2 = this.nSpag2.simplex2(wx * 0.008 - 80, wz * 0.008 + 110);
+      const r1 = this.nSpag1.s2(F, wx, wz, 0.011, 200, -150);
+      const r2 = this.nSpag2.s2(F, wx, wz, 0.008, -80, 110);
       if (Math.abs(r1) < 0.026 && r2 > 0.42) return 1;
     }
 
     // Rare Amethyst Geodes at any underground depth below y=30
     if (wy < 30) {
-      const g = this.nRegion.simplex3(wx * 0.045 + 12, wy * 0.045, wz * 0.045 - 12);
+      const g = this.nRegion.s3(F, wx, wy, wz, 0.045, 0.045, 12, 0, -12);
       if (g > 0.80) return 1;
       if (g > 0.75) return 3;
       if (g > 0.71) return 2;
@@ -3449,19 +3797,23 @@ class CaveGenerator {
     return 0;
   }
 
-  getUndergroundBiome(wx, wz) {
+  getUndergroundBiome(lx, lz) {
     // 0=normal stone cave, 1=dripstone, 2=mushroom cave, 3=lush cave
-    const v = this.nRegion.simplex2(wx * 0.006, wz * 0.006);
+    const F = this.F;
+    F.set(lx, lz);
+    const v = this.nRegion.s2(F, F.xq, F.zq, 0.006);
     if (v > 0.48) return 1;
     if (v < -0.52) return 2;
     if (v > 0.15 && v < 0.28) return 3;
     return 0;
   }
 
-  pickOre(wx, wy, wz, biomeId) {
-    const n = this.nOre.simplex3(wx * 0.14, wy * 0.14, wz * 0.14);
+  pickOre(lx, wy, lz, biomeId) {
+    const F = this.F;
+    F.set(lx, lz);
+    const n = this.nOre.s3(F, F.xq, wy, F.zq, 0.14, 0.14);
     if (n < 0.58) return 0;
-    const h = hash3i(wx, wy, wz, this.seed ^ 0x777);
+    const h = this.abs.h3(lx, wy, lz, this.seed ^ 0x777);
     const r = (h & 1023) / 1024;
     if (wy <= 12 && n > 0.75 && r < 0.08) return B.ANCIENT_DEBRIS;
     if (wy <= 18 && n > 0.70 && r < 0.24) return B.DIAMOND_ORE;
@@ -3485,7 +3837,7 @@ class StructureGenerator {
   }
 
   getCellStructure(cellX, cellZ) {
-    const h = hash2i(cellX, cellZ, this.seed ^ 0x51a7c3);
+    const h = this.abs.hCell(cellX, cellZ, this.seed ^ 0x51a7c3);
     if ((h % 100) > 68) return null; // ~68% of 10x10 chunk cells host a landmark structure
     const rng = new SeededRNG(h);
     const localCx = 2 + Math.floor(rng.next() * (this.CELL - 4));
@@ -3520,7 +3872,7 @@ class StructureGenerator {
 
   // Also deterministic underground structures (mineshafts / dungeons)
   getUndergroundStructure(cellX, cellZ) {
-    const h = hash2i(cellX, cellZ, this.seed ^ 0x993311);
+    const h = this.abs.hCell(cellX, cellZ, this.seed ^ 0x993311);
     if ((h % 100) > 55) return null;
     const rng = new SeededRNG(h);
     const wx = (cellX * this.CELL + 2 + Math.floor(rng.next() * 6)) * CHUNK_SIZE + 8;
@@ -3779,6 +4131,30 @@ class StructureGenerator {
   }
 }
 
+// Position hashes of origin + local coordinates. Identical to hash2i/hash3i on the absolute value
+// wherever a float64 could represent it, and still exact (no wrap, no repeat) beyond that.
+class OriginHashes {
+  constructor() { this.set(0n, 0n); }
+  set(ox, oz) {
+    this.x1 = new AbsAxis(ox); this.z1 = new AbsAxis(oz);
+    this.x4 = new AbsAxis(ox / 4n); this.z4 = new AbsAxis(oz / 4n);        // origin is a multiple of 4
+    this.xc = new AbsAxis(ox / 160n); this.zc = new AbsAxis(oz / 160n);    // ...and of a structure cell (10 chunks)
+  }
+  _h(ax, az, lx, lz, seed) {
+    if (ax.num !== null && az.num !== null) return hash2i(ax.num + lx, az.num + lz, seed);
+    ax.words(lx); az.words(lz);
+    const ext = (ax.wExt || az.wExt) ? ((Math.imul(ax.wExt ^ 0x5bd1e995, 31) ^ az.wExt) | 1) : 0;
+    return hash2w(ax.wLo, ax.wHi, az.wLo, az.wHi, seed, ext);
+  }
+  h2(lx, lz, seed) { return this._h(this.x1, this.z1, lx, lz, seed); }
+  h3(lx, y, lz, seed) { return hashMixY(this._h(this.x1, this.z1, lx, lz, seed), y); }
+  // Quarter-resolution variants (absolute floor(x / 4))
+  h2q(lx, lz, seed) { return this._h(this.x4, this.z4, floorDiv(lx, 4), floorDiv(lz, 4), seed); }
+  h3q(lx, y, lz, seed) { return hashMixY(this._h(this.x4, this.z4, floorDiv(lx, 4), floorDiv(lz, 4), seed), y >> 2); }
+  // Structure cell (10x10 chunks) indices
+  hCell(cx, cz, seed) { return this._h(this.xc, this.zc, cx, cz, seed); }
+}
+
 class WorldGenerator {
   constructor(seed) {
     this.seed = (typeof seed === 'number' ? seed : hashString(seed)) >>> 0;
@@ -3787,6 +4163,22 @@ class WorldGenerator {
     this.caveGen = new CaveGenerator(this.seed);
     this.structGen = new StructureGenerator(this.seed, this.terrainGen);
     this._colCache = new Map();
+    // Shared absolute-position helpers for every sub-generator
+    this.F = new NoiseFrame();
+    this.abs = new OriginHashes();
+    this.biomeGen.F = this.terrainGen.F = this.caveGen.F = this.F;
+    this.caveGen.abs = this.structGen.abs = this.abs;
+    this.setOrigin(0n, 0n);
+  }
+
+  // Absolute block coordinate of local (0, 0); must be a multiple of ORIGIN_STEP
+  setOrigin(ox, oz) {
+    ox = toBig(ox); oz = toBig(oz);
+    if (ox % ORIGIN_STEP_BIG !== 0n || oz % ORIGIN_STEP_BIG !== 0n) throw new Error('World origin must be a multiple of ORIGIN_STEP');
+    this.ox = ox; this.oz = oz;
+    this.abs.set(ox, oz);
+    this.F.setOrigin(this.abs.x1, this.abs.z1);
+    this._colCache.clear();
   }
 
   getColumn(wx, wz) {
@@ -3829,6 +4221,7 @@ class WorldGenerator {
     const cx = chunk.cx, cy = chunk.cy, cz = chunk.cz;
     const ox = cx * CHUNK_SIZE, oy = cy * CHUNK_SIZE, oz = cz * CHUNK_SIZE;
     const minY = oy, maxY = oy + CHUNK_SIZE - 1;
+    const A = this.abs;
     const colData = this.getColumnChunk(cx, cz);
     const heights = colData.heights;
     const biomeIds = colData.biomeIds;
@@ -3862,7 +4255,7 @@ class WorldGenerator {
             const cave = this.caveGen.sampleCave(wx, y, wz, surfH);
             if (cave === 1) {
               // Periodic deep lava pools instead of solid lava below y=9, so infinite underground is explorable
-              const lavaBand = y <= 9 && floorMod(y, 64) <= 3 && (y >= -4 || (hash2i(wx >> 2, wz >> 2, this.seed ^ 0x1a7a) & 3) === 0);
+              const lavaBand = y <= 9 && floorMod(y, 64) <= 3 && (y >= -4 || (A.h2q(wx, wz, this.seed ^ 0x1a7a) & 3) === 0);
               if (lavaBand) chunk.setBlock(lx, ly, lz, B.LAVA);
               else if (y <= 18 && y >= -32 && ugBiome === 3) chunk.setBlock(lx, ly, lz, B.WATER);
               else chunk.setBlock(lx, ly, lz, B.AIR);
@@ -3877,13 +4270,13 @@ class WorldGenerator {
                 const band = floorMod(y >> 1, 3);
                 chunk.setBlock(lx, ly, lz, band === 0 ? B.RED_SAND : band === 1 ? B.RED_TERRACOTTA : B.YEL_TERRACOTTA);
               } else if (biome.id === 28) {
-                const vh = hash2i(wx, wz, this.seed ^ 0x5511) % 20;
+                const vh = A.h2(wx, wz, this.seed ^ 0x5511) % 20;
                 chunk.setBlock(lx, ly, lz, vh === 0 ? B.LAVA : vh <= 3 ? B.MAGMA_BLOCK : vh <= 9 ? B.ASH_BLOCK : B.BASALT);
               } else if (biome.id === 34) {
-                const ch = hash2i(wx, wz, this.seed ^ 0x9123) % 16;
+                const ch = A.h2(wx, wz, this.seed ^ 0x9123) % 16;
                 chunk.setBlock(lx, ly, lz, ch === 0 ? B.AMETHYST : ch <= 8 ? B.CALCITE : B.STONE);
               } else if (biome.id === 29) {
-                const mh = hash2i(wx, wz, this.seed ^ 0x3377) % 10;
+                const mh = A.h2(wx, wz, this.seed ^ 0x3377) % 10;
                 chunk.setBlock(lx, ly, lz, mh < 3 ? B.MOSS : mh < 6 ? B.MUD : B.GRASS);
               } else if (nearWater && biome.top === B.GRASS && biome.id !== 35) {
                 chunk.setBlock(lx, ly, lz, B.SAND);
@@ -3905,7 +4298,7 @@ class WorldGenerator {
               // Deep rock & ores (continues infinitely down through stone -> deepslate -> deep basalt/deepslate)
               const ore = this.caveGen.pickOre(wx, y, wz, biome.id);
               if (ore) chunk.setBlock(lx, ly, lz, ore);
-              else if (y < -64 && (hash3i(wx >> 2, y >> 2, wz >> 2, this.seed ^ 0x6a5a) & 3) === 0) chunk.setBlock(lx, ly, lz, B.BASALT);
+              else if (y < -64 && (A.h3q(wx, y, wz, this.seed ^ 0x6a5a) & 3) === 0) chunk.setBlock(lx, ly, lz, B.BASALT);
               else if (y < 20) chunk.setBlock(lx, ly, lz, B.DEEPSLATE);
               else chunk.setBlock(lx, ly, lz, B.STONE);
             }
@@ -3931,7 +4324,7 @@ class WorldGenerator {
             const below = chunk.getBlock(lx, ly - 1, lz);
             const above = chunk.getBlock(lx, ly + 1, lz);
             const isRock = (b) => b === B.STONE || b === B.DEEPSLATE || b === B.BASALT;
-            const h = hash3i(wx, y, wz, this.seed ^ 0x4455);
+            const h = A.h3(wx, y, wz, this.seed ^ 0x4455);
             if (ugBiome === 1) {
               if (isRock(above) && (h & 7) === 0) chunk.setBlock(lx, ly, lz, B.DRIPSTONE);
               else if (isRock(below) && (h & 7) === 1) chunk.setBlock(lx, ly, lz, B.DRIPSTONE);
@@ -3972,12 +4365,12 @@ class WorldGenerator {
           const biome = BIOMES[biomeIds[cIdx]];
           const nearWater = surfH <= SEA_LEVEL + 1 && biome.cat !== 'cold' && biome.id !== 5;
           const topBlk = getSurf(lx, surfH, lz) !== -1 ? getSurf(lx, surfH, lz) : (nearWater && biome.top === B.GRASS && biome.id !== 35 ? B.SAND : biome.top);
-          const r = hashFloat2(wx, wz, this.seed ^ 0x223344);
+          const r = A.h2(wx, wz, this.seed ^ 0x223344) / 4294967296;
 
           if (surfH < SEA_LEVEL - 1) {
             if (biome.id === 23 && r < 0.08 && surfH < SEA_LEVEL - 3) {
               const cBlk = r < 0.027 ? B.CORAL_PINK : r < 0.054 ? B.CORAL_BLUE : B.CORAL_YELLOW;
-              const ch = 1 + (hash2i(wx, wz, this.seed) % 3);
+              const ch = 1 + (A.h2(wx, wz, this.seed) % 3);
               for (let y = 1; y <= ch && surfH + y < SEA_LEVEL; y++) setSurf(lx, surfH + y, lz, cBlk);
             } else if (r < 0.14 && (getSurf(lx, surfH + 1, lz) === B.WATER || getSurf(lx, surfH + 1, lz) === -1)) {
               setSurf(lx, surfH + 1, lz, B.SEAGRASS);
@@ -3989,26 +4382,26 @@ class WorldGenerator {
           if (aboveSurf !== B.AIR && aboveSurf !== -1) continue;
 
           if (surfH === SEA_LEVEL && (topBlk === B.SAND || topBlk === B.GRASS) && r < 0.045) {
-            const rh = 2 + (hash2i(wx, wz, this.seed) % 2);
+            const rh = 2 + (A.h2(wx, wz, this.seed) % 2);
             for (let y = 1; y <= rh; y++) setSurf(lx, surfH + y, lz, B.REEDS);
             continue;
           }
 
           if (topBlk === B.GRASS || topBlk === B.PODZOL || topBlk === B.MOSS) {
             if ((biome.id === 33 || biome.id === 0 || biome.id === 6) && r < 0.0045) {
-              setSurf(lx, surfH + 1, lz, B.PUMPKIN, hash2i(wx, wz, this.seed) & 3);
+              setSurf(lx, surfH + 1, lz, B.PUMPKIN, A.h2(wx, wz, this.seed) & 3);
             } else if ((biome.id === 14 || biome.id === 30 || biome.id === 35) && r < 0.006) {
               setSurf(lx, surfH + 1, lz, B.MELON);
             } else if (biome.id === 31 && r < 0.03) {
-              setSurf(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
+              setSurf(lx, surfH + 1, lz, (A.h2(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
             } else if (r < biome.flowers) {
-              const fr = hash2i(wx, wz, this.seed ^ 0x99) % 3;
+              const fr = A.h2(wx, wz, this.seed ^ 0x99) % 3;
               setSurf(lx, surfH + 1, lz, fr === 0 ? B.POPPY : fr === 1 ? B.DANDELION : B.ORCHID);
             } else if (r < biome.flowers + 0.14) {
               setSurf(lx, surfH + 1, lz, B.TALL_GRASS);
             }
           } else if (topBlk === B.MYCELIUM && r < 0.055) {
-            setSurf(lx, surfH + 1, lz, (hash2i(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
+            setSurf(lx, surfH + 1, lz, (A.h2(wx, wz, this.seed) & 1) ? B.MUSHROOM_RED : B.MUSHROOM_BROWN);
           } else if ((topBlk === B.SAND || topBlk === B.RED_SAND) && r < 0.008) {
             setSurf(lx, surfH + 1, lz, B.DEAD_BUSH);
           }
@@ -4030,7 +4423,7 @@ class WorldGenerator {
       for (let wz = oz - 4; wz < oz + CHUNK_SIZE + 4; wz++) {
         for (let wx = ox - 4; wx < ox + CHUNK_SIZE + 4; wx++) {
           if ((floorMod(wx, 3) !== 1) || (floorMod(wz, 3) !== 1)) continue;
-          const h = hash2i(wx, wz, this.seed ^ 0x7a3b19);
+          const h = A.h2(wx, wz, this.seed ^ 0x7a3b19);
           const chance = (h & 65535) / 65536;
           const col = this.terrainGen.sampleColumn(wx, wz);
           if (col.height <= SEA_LEVEL) continue;
@@ -5380,6 +5773,124 @@ class World {
     this._tickAccum = 0;
     this._gravityQueue = [];
     this.fallingBlocks = [];
+    this._applyOrigin(0n, 0n);
+  }
+
+  // ---- Unlimited coordinates: everything in this World is relative to (ox, 0, oz), an exact BigInt.
+  // Loaded chunks, entities and physics use small local floats; persisted keys (modifications,
+  // blockEntities) are absolute decimal strings, so they stay exact and portable at any distance.
+  _applyOrigin(ox, oz) {
+    this.ox = ox; this.oz = oz;
+    this.oxN = bigToNum(ox); this.ozN = bigToNum(oz);
+    this.ocx = ox / BigInt(CHUNK_SIZE); this.ocz = oz / BigInt(CHUNK_SIZE);
+    this.ocxN = bigToNum(this.ocx); this.oczN = bigToNum(this.ocz);
+    this.generator.setOrigin(ox, oz);
+  }
+
+  absChunkKey(cx, cy, cz) { return `${absIntStr(this.ocx, this.ocxN, cx)},${cy},${absIntStr(this.ocz, this.oczN, cz)}`; }
+  absBlockKey(wx, wy, wz) { return `${absIntStr(this.ox, this.oxN, wx)},${wy},${absIntStr(this.oz, this.ozN, wz)}`; }
+  absX(lx) { return absIntStr(this.ox, this.oxN, lx); }
+  absZ(lz) { return absIntStr(this.oz, this.ozN, lz); }
+
+  // Absolute key "x,y,z" (blocks, or chunks when chunkUnits) -> local [x, y, z]; null if not near this origin
+  keyToLocal(k, chunkUnits = false) {
+    const p = String(k).split(',');
+    if (p.length !== 3) return null;
+    const x = this._absToLocal(p[0], chunkUnits ? this.ocx : this.ox, chunkUnits ? this.ocxN : this.oxN);
+    const z = this._absToLocal(p[2], chunkUnits ? this.ocz : this.oz, chunkUnits ? this.oczN : this.ozN);
+    const y = Number(p[1]);
+    if (x === null || z === null || !Number.isFinite(y)) return null;
+    return [x, y, z];
+  }
+  _absToLocal(str, o, oN) {
+    if (str.length < 16 && oN !== null) {
+      const v = Number(str);
+      if (!Number.isFinite(v)) return null;
+      const l = v - oN;
+      return Math.abs(l) < NUM_SAFE ? l : null;
+    }
+    let b;
+    try { b = BigInt(str); } catch (e) { return null; }
+    return bigToNum(b - o);
+  }
+
+  // Absolute position -> local float, or null if it is too far from this origin to be simulated here
+  absToLocalX(i, f = 0) { const n = bigToNum(toBig(i) - this.ox); return n === null ? null : n + f; }
+  absToLocalZ(i, f = 0) { const n = bigToNum(toBig(i) - this.oz); return n === null ? null : n + f; }
+
+  // Move the origin (must be a multiple of ORIGIN_STEP). Returns the local shift { dx, dz } that every
+  // other system must subtract from its coordinates, or { far: true } when the jump is so large that
+  // loaded state was dropped instead (teleports); persisted state is untouched either way.
+  setOrigin(ox, oz) {
+    ox = toBig(ox); oz = toBig(oz);
+    const Dx = ox - this.ox, Dz = oz - this.oz;
+    if (Dx === 0n && Dz === 0n) return { dx: 0, dz: 0, far: false };
+    const dxN = bigToNum(Dx), dzN = bigToNum(Dz);
+    const far = dxN === null || dzN === null || Math.abs(dxN) > 2 ** 40 || Math.abs(dzN) > 2 ** 40;
+    this._applyOrigin(ox, oz);
+    if (far) {
+      this.disposeAll();
+      this.fluids.queue.length = 0; this.fluids.queuedSet.clear();
+      this.redstone.timedButtons.length = 0;
+      this._gravityQueue.length = 0;
+      this.fallingBlocks.length = 0;
+      this.dirtyChunks.length = 0;
+      const r = { dx: 0, dz: 0, far: true };
+      if (this.onRebase) this.onRebase(r);
+      return r;
+    }
+    this.shiftLocal(dxN, dzN);
+    const r = { dx: dxN, dz: dzN, far: false };
+    if (this.onRebase) this.onRebase(r);
+    return r;
+  }
+
+  // An absolute point record, safe to keep while the origin moves: { ox, oz } are the origin it is
+  // relative to (decimal strings), x/y/z the offset from it. Used for spawn points and saves.
+  absPoint(x, y, z) { return { ox: String(this.ox), oz: String(this.oz), x, y, z }; }
+
+  // Point record -> local coordinates. When it is far from the current origin the origin moves to it
+  // first (unless locked, e.g. in multiplayer where the server owns the frame; then null).
+  pointToLocal(pt, allowRebase = !this.lockOrigin) {
+    if (!pt) return null;
+    const ox = toBig(pt.ox || 0), oz = toBig(pt.oz || 0);
+    const xi = ox + BigInt(Math.floor(pt.x)), zi = oz + BigInt(Math.floor(pt.z));
+    const xf = pt.x - Math.floor(pt.x), zf = pt.z - Math.floor(pt.z);
+    let dx = bigToNum(xi - this.ox), dz = bigToNum(zi - this.oz);
+    if (dx === null || dz === null || Math.abs(dx) > REBASE_DIST * 2 || Math.abs(dz) > REBASE_DIST * 2) {
+      if (!allowRebase) return null;
+      this.setOrigin(snapOrigin(xi), snapOrigin(zi));
+      dx = Number(xi - this.ox); dz = Number(zi - this.oz);
+    }
+    return { x: dx + xf, y: pt.y, z: dz + zf };
+  }
+
+  // Re-centre the origin on a local position once it has wandered REBASE_DIST away (single player)
+  recenterOn(x, z) {
+    if (this.lockOrigin || (Math.abs(x) < REBASE_DIST && Math.abs(z) < REBASE_DIST)) return null;
+    const ax = this.ox + BigInt(Math.floor(x)), az = this.oz + BigInt(Math.floor(z));
+    return this.setOrigin(snapOrigin(ax), snapOrigin(az));
+  }
+
+  // Re-key all loaded state after the origin moved by (dx, dz) blocks (multiples of ORIGIN_STEP).
+  // Chunk meshes are chunk-relative, so nothing needs regenerating or re-meshing.
+  shiftLocal(dx, dz) {
+    const dcx = dx / CHUNK_SIZE, dcz = dz / CHUNK_SIZE;
+    const old = Array.from(this.chunks.values());
+    this.chunks.clear();
+    for (const ch of old) {
+      ch.cx -= dcx; ch.cz -= dcz;
+      ch.key = `${ch.cx},${ch.cy},${ch.cz}`;
+      if (ch.emitters) for (let i = 0; i < ch.emitters.length; i += 4) { ch.emitters[i] -= dx; ch.emitters[i + 2] -= dz; }
+      this.chunks.set(ch.key, ch);
+    }
+    const fq = this.fluids.queue;
+    this.fluids.queue = [];
+    this.fluids.queuedSet.clear();
+    for (const [x, y, z] of fq) this.fluids.schedule(x - dx, y, z - dz);
+    for (const tb of this.redstone.timedButtons) { tb.x -= dx; tb.z -= dz; }
+    for (const g of this._gravityQueue) { g[0] -= dx; g[2] -= dz; }
+    for (const fb of this.fallingBlocks) { fb.x -= dx; fb.z -= dz; }
   }
 
   chunkKey(cx, cy, cz) { return `${cx},${cy},${cz}`; }
@@ -5447,8 +5958,9 @@ class World {
     const key = `${cx},${cy},${cz}`;
 
     if (recordDelta) {
-      let map = this.modifications.get(key);
-      if (!map) { map = new Map(); this.modifications.set(key, map); }
+      const mk = this.absChunkKey(cx, cy, cz);
+      let map = this.modifications.get(mk);
+      if (!map) { map = new Map(); this.modifications.set(mk, map); }
       map.set(Chunk.idx(lx, ly, lz), [id, meta]);
     }
 
@@ -5493,7 +6005,7 @@ class World {
 
     // Clean up block entities if broken
     if (id === B.AIR && (prevId === B.CHEST || prevId === B.BARREL || prevId === B.FURNACE || prevId === B.FURNACE_LIT)) {
-      this.blockEntities.delete(`${wx},${wy},${wz}`);
+      this.blockEntities.delete(this.absBlockKey(wx, wy, wz));
     }
     if (recordDelta) {
       this.fluids.notifyNeighbors(wx, wy, wz);
@@ -5507,7 +6019,7 @@ class World {
   }
 
   applyChunkModifications(chunk) {
-    const map = this.modifications.get(chunk.key);
+    const map = this.modifications.get(this.absChunkKey(chunk.cx, chunk.cy, chunk.cz));
     if (!map) return;
     for (const [idx, [id, meta]] of map) {
       const lx = idx & 15, lz = (idx >>> 4) & 15, ly = (idx >>> 8) & 15;
@@ -5516,21 +6028,27 @@ class World {
   }
 
   hasModificationAt(wx, wy, wz) {
-    const map = this.modifications.get(`${floorDiv(wx, CHUNK_SIZE)},${floorDiv(wy, CHUNK_SIZE)},${floorDiv(wz, CHUNK_SIZE)}`);
+    const map = this.modifications.get(this.absChunkKey(floorDiv(wx, CHUNK_SIZE), floorDiv(wy, CHUNK_SIZE), floorDiv(wz, CHUNK_SIZE)));
     return !!(map && map.has(Chunk.idx(floorMod(wx, CHUNK_SIZE), floorMod(wy, CHUNK_SIZE), floorMod(wz, CHUNK_SIZE))));
   }
 
-  getBlockEntity(wx, wy, wz) { return this.blockEntities.get(`${wx},${wy},${wz}`) || null; }
+  getBlockEntity(wx, wy, wz) { return this.blockEntities.get(this.absBlockKey(wx, wy, wz)) || null; }
   setBlockEntity(wx, wy, wz, data, mark = true) {
-    this.blockEntities.set(`${wx},${wy},${wz}`, data);
+    this.blockEntities.set(this.absBlockKey(wx, wy, wz), data);
   }
-  deleteBlockEntity(wx, wy, wz) { this.blockEntities.delete(`${wx},${wy},${wz}`); }
+  deleteBlockEntity(wx, wy, wz) { this.blockEntities.delete(this.absBlockKey(wx, wy, wz)); }
 
-  // Tick all active furnaces in real time
-  updateFurnaces(dt) {
+  // Tick all active furnaces in real time. With several Worlds sharing one blockEntities table (server
+  // shards), `done` makes each furnace tick once: shards first claim furnaces in their loaded chunks
+  // (onlyLoaded), then one World ticks whatever is left.
+  updateFurnaces(dt, onlyLoaded = false, done = null) {
     for (const [k, ent] of this.blockEntities) {
       if (ent.type !== 'furnace') continue;
-      const [wx, wy, wz] = k.split(',').map(Number);
+      if (done && done.has(k)) continue;
+      const loc = this.keyToLocal(k);
+      if (onlyLoaded && (!loc || !this.chunks.has(`${floorDiv(loc[0], CHUNK_SIZE)},${floorDiv(loc[1], CHUNK_SIZE)},${floorDiv(loc[2], CHUNK_SIZE)}`))) continue;
+      if (done) done.add(k);
+      const [wx, wy, wz] = loc || [0, -100000, 0]; // not near this origin: smelt, but touch no blocks
       const smeltOut = ent.input ? CRAFTING.smeltMap.get(ent.input.id) : null;
       const canOutput = smeltOut && (!ent.output || (ent.output.id === smeltOut && ent.output.count < 64));
 
@@ -8400,8 +8918,9 @@ class Player {
     this.saturation = 5;
     this.air = this.maxAir;
     this.vx = this.vy = this.vz = 0;
-    this.x = this.spawnPoint.x;
-    this.z = this.spawnPoint.z;
+    const sp = world.pointToLocal(this.spawnPoint) || { x: this.x, y: this.spawnPoint.y, z: this.z };
+    this.x = sp.x;
+    this.z = sp.z;
     world.ensureImmediateChunks(this.x, this.spawnPoint.y, this.z, 2, 2);
     const spY = this.spawnPoint.y;
     const spotFree = isFinite(spY) && !PlayerPhysics.aabbCollides(world, this.x, spY, this.z, this.width * 0.5, this.height);
@@ -9355,7 +9874,7 @@ class MiningSystem {
         return;
       }
       if (t.id === B.BED) {
-        p.spawnPoint = { x: t.x + 0.5, y: t.y + 1.1, z: t.z + 0.5 };
+        p.spawnPoint = this.world.absPoint(t.x + 0.5, t.y + 1.1, t.z + 0.5);
         if (dayNight.isNight && !(this.net && this.net.connected)) {
           dayNight.time = 0.26;
           dayNight.day++;
@@ -9818,6 +10337,14 @@ class MobManager {
   spawnArrow(x, y, z, vx, vy, vz, owner, dmg, extra = null) {
     this.projectiles.push({ x, y, z, vx, vy, vz, owner, dmg, life: 4.5, ...(extra || {}) });
   }
+
+  // World origin moved by (dx, dz): keep every entity at the same absolute spot
+  shiftLocal(dx, dz) {
+    for (const m of this.mobs) { m.x -= dx; m.z -= dz; }
+    for (const p of this.projectiles) { p.x -= dx; p.z -= dz; }
+  }
+
+  clearAll() { this.mobs.length = 0; this.projectiles.length = 0; }
 
   tryInteractTrader(player, eye, dir) {
     for (const m of this.mobs) {
@@ -10552,6 +11079,7 @@ class SaveManager {
       time: dayNight.time,
       weather: { state: weather.state, intensity: weather.intensity, timer: weather.timer },
       player: {
+        ox: String(world.ox), oz: String(world.oz), // exact origin; x/z below are relative to it
         x: player.x, y: player.y, z: player.z,
         yaw: player.yaw, pitch: player.pitch,
         health: player.health, dead: !!player.dead, hunger: player.hunger, saturation: player.saturation,
@@ -11070,12 +11598,18 @@ class UIManager {
         this.addChat('Switched to Survival mode.', 'sys');
       } else this.addChat('Usage: /gamemode <survival|creative>', 'warn');
     } else if (cmd === 'tp') {
-      const tx = parseFloat(parts[1]), ty = parseFloat(parts[2]), tz = parseFloat(parts[3]);
-      if (isFinite(tx) && isFinite(ty) && isFinite(tz)) {
-        this.engine.world.ensureImmediateChunks(tx, ty, tz, 2, 2);
-        p.x = tx; p.y = ty; p.z = tz; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
-        this.addChat(`Teleported to ${tx.toFixed(1)}, ${p.y.toFixed(1)}, ${tz.toFixed(1)}.`, 'sys');
-      } else this.addChat('Usage: /tp <x> <y> <z>', 'warn');
+      // Coordinates of any size: /tp 123456789012345678901234567890 80 -5e40 (exact decimal integers or floats)
+      const X = parseAbsCoord(parts[1]), ty = parseFloat(parts[2]), Z = parseAbsCoord(parts[3]);
+      if (X && Z && isFinite(ty)) {
+        const w = this.engine.world;
+        const loc = w.pointToLocal({ ox: String(X.i), oz: String(Z.i), x: X.f, y: ty, z: Z.f });
+        w.ensureImmediateChunks(loc.x, ty, loc.z, 2, 2);
+        p.x = loc.x; p.y = ty; p.z = loc.z; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
+        this.addChat(`Teleported to ${formatAbsCoord(w.ox, w.oxN, p.x, 1)}, ${p.y.toFixed(1)}, ${formatAbsCoord(w.oz, w.ozN, p.z, 1)}.`, 'sys');
+      } else this.addChat('Usage: /tp <x> <y> <z>  (any size, e.g. /tp 1e30 90 -123456789012345678901)', 'warn');
+    } else if (cmd === 'pos') {
+      const w = this.engine.world;
+      this.addChat(`Position: ${formatAbsCoord(w.ox, w.oxN, p.x, 3)}, ${p.y.toFixed(3)}, ${formatAbsCoord(w.oz, w.ozN, p.z, 3)}`, 'sys');
     } else if (cmd === 'give') {
       const query = (parts[1] || '').toLowerCase().replace(/_/g, ' ');
       const cnt = clamp(parseInt(parts[2] || '1', 10) || 1, 1, 64);
@@ -11097,7 +11631,9 @@ class UIManager {
       p.health = p.maxHealth; p.hunger = p.maxHunger; p.saturation = 20; p.air = p.maxAir;
       this.addChat('Health and hunger restored!', 'sys');
     } else if (cmd === 'spawn') {
-      p.x = p.spawnPoint.x; p.y = p.spawnPoint.y; p.z = p.spawnPoint.z; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
+      const loc = this.engine.world.pointToLocal(p.spawnPoint);
+      this.engine.world.ensureImmediateChunks(loc.x, loc.y, loc.z, 2, 2);
+      p.x = loc.x; p.y = loc.y; p.z = loc.z; p.vx = p.vy = p.vz = 0; p.fallStartY = p.y;
       this.addChat('Returned to spawn point.', 'sys');
     } else if (cmd === 'seed') {
       this.addChat(`World Seed: ${this.engine.world.seedStr}`, 'sys');
@@ -11423,7 +11959,7 @@ class UIManager {
       const cx = floorDiv(Math.floor(player.x), CHUNK_SIZE), cz = floorDiv(Math.floor(player.z), CHUNK_SIZE);
       this._el('debugPanel').textContent =
         `FPS: ${fps} | DrawCalls: ${renderer.drawCalls} | Chunks: ${renderer.chunksDrawn}/${world.loadedCount}\n` +
-        `XYZ: ${player.x.toFixed(2)}, ${player.y.toFixed(2)}, ${player.z.toFixed(2)} | Chunk: ${cx}, ${cz}\n` +
+        `XYZ: ${formatAbsCoord(world.ox, world.oxN, player.x)}, ${player.y.toFixed(2)}, ${formatAbsCoord(world.oz, world.ozN, player.z)} | Chunk: ${absIntStr(world.ocx, world.ocxN, cx)}, ${absIntStr(world.ocz, world.oczN, cz)}\n` +
         `Seed: ${world.seedStr} | Biome: ${biome.name} (${biome.cat})\n` +
         `Light: Sky ${lt.sky} / Block ${lt.block} | Mobs: ${this.engine.mobMgr.mobs.length} | Particles: ${this.engine.particles.list.length}`;
     }
@@ -12575,18 +13111,20 @@ class UIManager {
     });
 
     this._el('btnRespawn').onclick = () => {
+      const outOfRange = this.engine.isMultiplayer() && !this.engine.world.pointToLocal(this.engine.player.spawnPoint);
       this.engine.player.respawn(this.engine.world);
-      if (this.engine.isMultiplayer()) this.engine.net.sendRespawn();
+      if (this.engine.isMultiplayer()) this.engine.net.sendRespawn(outOfRange ? this.engine.player.spawnPoint : null);
       this.engine.state = 'playing';
       this.showScreen(null);
       this.engine.input.requestLock();
     };
     this._el('btnDeathQuit').onclick = async () => {
+      const outOfRange = this.engine.isMultiplayer() && this.engine.player && this.engine.player.dead && !this.engine.world.pointToLocal(this.engine.player.spawnPoint);
       if (this.engine.player && this.engine.player.dead) {
         this.engine.player.respawn(this.engine.world);
       }
       if (this.engine.isMultiplayer()) {
-        this.engine.net.sendRespawn();
+        this.engine.net.sendRespawn(outOfRange ? this.engine.player.spawnPoint : null);
         this.engine.net.sendInventorySync();
         this.engine.disconnectMultiplayer();
       } else {
@@ -12764,6 +13302,8 @@ class RemoteMobView extends MobManager {
     return false;
   }
 
+  clearAll() { super.clearAll(); this.byId.clear(); }
+
   _damageMob() { /* server-authoritative */ }
 }
 
@@ -12907,7 +13447,7 @@ class MultiplayerClient {
   sendMobHit(id, crit, w) { this._send({ type: 'mob_hit', id, crit, w }); }
   sendSelfDamage(a, r) { this._send({ type: 'self_damage', a, r }); }
   sendChat(text) { this._send({ type: 'chat', text }); }
-  sendRespawn() { this._send({ type: 'respawn' }); }
+  sendRespawn(to = null) { this._send(to ? { type: 'respawn', to } : { type: 'respawn' }); }
 
   _invPayload() {
     const p = this.engine.player;
@@ -13098,11 +13638,28 @@ class MultiplayerClient {
       } else {
         eng.world.setBlockEntity(msg.x, msg.y, msg.z, msg.ent, false);
       }
+    } else if (msg.type === 'rebase') {
+      if (eng.world && msg.ox !== undefined && msg.oz !== undefined) {
+        try { eng.world.setOrigin(toBig(msg.ox), toBig(msg.oz)); } catch (e) { console.warn('Bad server rebase', e); }
+      }
+      this._send({ type: 'rebase_ack', seq: msg.seq });
+    } else if (msg.type === 'shard_state') {
+      if (eng.mining) {
+        eng.mining.drops.length = 0;
+        if (Array.isArray(msg.drops)) {
+          for (const [id, x, y, z, s] of msg.drops) {
+            const d = eng.mining.spawnDrop(x, y, z, s.id, s.count, s.dur, s.enchant, id);
+            if (d) { d.vx = d.vy = d.vz = 0; d.pickupDelay = 0; }
+          }
+        }
+      }
     } else if (msg.type === 'rubberband') {
       if (eng.player) {
         eng.player.x = msg.x; eng.player.y = msg.y; eng.player.z = msg.z;
         eng.player.vx = 0; eng.player.vy = 0; eng.player.vz = 0;
         eng.player.fallStartY = msg.y;
+        eng.player.visualEyeY = msg.y + eng.player.eyeHeight;
+        if (eng.world) eng.world.ensureImmediateChunks(msg.x, msg.y, msg.z, 2, 2);
       }
       if (msg.reason) eng.ui.addChat(`[Anti-Cheat] ${msg.reason}`, 'warn');
     } else if (msg.type === 'damage') {
@@ -13290,17 +13847,24 @@ class GameEngine {
     if (this.world) this.world.disposeAll();
     this.worldMeta = { id: 'mp', name: msg.serverName || 'Multiplayer', seed: msg.seed, mode: msg.mode || 'survival', difficulty: msg.difficulty || 'normal', multiplayer: true };
     this.world = new World(msg.seed || 'voxelcraft-mp', this.renderer.gl);
+    // Compute world spawn near absolute (0, 0) before moving to the shard origin
+    const worldSp = this._findGoodSpawn(this.world);
+    const worldSpY = this.world.generator.getColumn(Math.floor(worldSp.x), Math.floor(worldSp.z)).height + 1.2;
 
-    // Apply all server world block deltas & block entities BEFORE chunk generation!
+    // Server owns the coordinate frame in multiplayer
+    this.world.lockOrigin = true;
+    if (msg.ox !== undefined || msg.oz !== undefined) {
+      try { this.world.setOrigin(toBig(msg.ox || 0), toBig(msg.oz || 0)); } catch (e) { console.warn('Bad server origin', e); }
+    }
+
+    // Apply all server world block deltas & block entities (absolute keys) BEFORE chunk generation!
     if (Array.isArray(msg.deltas)) {
       for (const d of msg.deltas) {
         const [wx, wy, wz, id, meta] = d;
-        const cx = floorDiv(wx, CHUNK_SIZE), cy = floorDiv(wy, CHUNK_SIZE), cz = floorDiv(wz, CHUNK_SIZE);
-        const lx = floorMod(wx, CHUNK_SIZE), ly = floorMod(wy, CHUNK_SIZE), lz = floorMod(wz, CHUNK_SIZE);
-        const key = `${cx},${cy},${cz}`;
+        const { key, idx } = absDeltaKey(wx, wy, wz);
         let map = this.world.modifications.get(key);
         if (!map) { map = new Map(); this.world.modifications.set(key, map); }
-        map.set(Chunk.idx(lx, ly, lz), [id, meta || 0]);
+        map.set(idx, [id, meta || 0]);
       }
     }
     if (Array.isArray(msg.blockEntities)) {
@@ -13319,15 +13883,14 @@ class GameEngine {
     if (saved && isFinite(saved.x) && isFinite(saved.y) && isFinite(saved.z) && saved.x !== null) {
       this.world.ensureImmediateChunks(saved.x, saved.y, saved.z, 2, 2);
       this.player.x = saved.x; this.player.y = saved.y; this.player.z = saved.z;
-      const sp = this._findGoodSpawn(this.world);
-      this.player.spawnPoint = { x: sp.x, y: this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2, z: sp.z };
+      this.player.spawnPoint = { ox: '0', oz: '0', x: worldSp.x, y: worldSpY, z: worldSp.z };
     } else {
-      const sp = this._findGoodSpawn(this.world);
+      const sp = this.world.pointToLocal({ ox: '0', oz: '0', x: worldSp.x, y: worldSpY, z: worldSp.z }) || worldSp;
       const estY = this.world.generator.getColumn(Math.floor(sp.x), Math.floor(sp.z)).height;
       this.world.ensureImmediateChunks(sp.x, estY, sp.z, 2, 2);
       const sy = this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2;
       this.player.x = sp.x; this.player.y = sy; this.player.z = sp.z;
-      this.player.spawnPoint = { x: sp.x, y: sy, z: sp.z };
+      this.player.spawnPoint = this.world.absPoint(sp.x, sy, sp.z);
     }
     this.player.fallStartY = this.player.y;
 
@@ -13343,6 +13906,7 @@ class GameEngine {
     this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
     this.player.miningRef = this.mining;
+    this._attachRebase();
 
     if (Array.isArray(msg.players)) this.net._handleMessage({ type: 'players', list: msg.players });
     if (Array.isArray(msg.drops)) {
@@ -13374,7 +13938,7 @@ class GameEngine {
     this.world.ensureImmediateChunks(sp.x, estY, sp.z, 2, 2);
     const sy = this.world.getSurfaceHeight(Math.floor(sp.x), Math.floor(sp.z)) + 0.2;
     this.player.x = sp.x; this.player.y = sy; this.player.z = sp.z;
-    this.player.spawnPoint = { x: sp.x, y: sy, z: sp.z };
+    this.player.spawnPoint = this.world.absPoint(sp.x, sy, sp.z);
     this.player.fallStartY = sy;
 
     this.dayNight = new DayNightSystem();
@@ -13383,6 +13947,7 @@ class GameEngine {
     this.mobMgr = new MobManager(this.world);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
+    this._attachRebase();
 
     this.state = 'playing';
     this.ui.showScreen(null);
@@ -13428,13 +13993,18 @@ class GameEngine {
 
     this.player = new Player(rec.mode || 'survival');
     const p = rec.player;
+    if (p.ox !== undefined || p.oz !== undefined) {
+      try { this.world.setOrigin(snapOrigin(toBig(p.ox || 0)), snapOrigin(toBig(p.oz || 0))); } catch (e) { console.warn('Bad saved origin', e); }
+      const loc = this.world.pointToLocal({ ox: p.ox || '0', oz: p.oz || '0', x: p.x, y: p.y, z: p.z });
+      p.x = loc.x; p.z = loc.z;
+    }
     this.player.x = p.x; this.player.y = p.y; this.player.z = p.z;
     this.player.yaw = p.yaw || 0; this.player.pitch = p.pitch || 0;
     this.player.health = p.health ?? 20; this.player.hunger = p.hunger ?? 20;
     this.player.saturation = p.saturation ?? 5; this.player.air = p.air ?? 10;
     this.player.xp = p.xp ?? 0; this.player.level = p.level ?? 0;
     this.player.flying = !!p.flying;
-    this.player.spawnPoint = p.spawnPoint || { x: p.x, y: p.y, z: p.z };
+    this.player.spawnPoint = p.spawnPoint || this.world.absPoint(p.x, p.y, p.z);
     this.player.fallStartY = p.y;
     if (p.slots) this.player.inventory.slots = p.slots;
     if (p.armor) this.player.inventory.armor = p.armor;
@@ -13455,12 +14025,46 @@ class GameEngine {
     this.mobMgr = new MobManager(this.world);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, null);
     this.player.miningRef = this.mining;
+    this._attachRebase();
 
     this.state = 'playing';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
     this.ui.toast(`Loaded "${rec.name}"`);
     this.input.requestLock();
+  }
+
+  // The World's origin moved: keep every client-side entity at the same absolute position
+  _attachRebase() {
+    this.world.onRebase = (r) => this._onWorldRebase(r);
+  }
+
+  _onWorldRebase(r) {
+    const p = this.player;
+    if (this.mining) { this.mining.target = null; this.mining.minePos = null; this.mining.progress = 0; }
+    if (p) p.activePlate = null;
+    if (r.far) {
+      // Teleport across an astronomically large distance: nothing loaded around us is relevant any more
+      this.particles.list.length = 0;
+      if (this.mobMgr) this.mobMgr.clearAll();
+      if (this.mining) { this.mining.drops.length = 0; if (this.mining._tntQueue) this.mining._tntQueue.length = 0; }
+      if (this.net && this.net.remotePlayers) this.net.remotePlayers.clear();
+      return;
+    }
+    const { dx, dz } = r;
+    if (p) { p.x -= dx; p.z -= dz; }
+    for (const q of this.particles.list) { q.x -= dx; q.z -= dz; }
+    if (this.mobMgr) {
+      this.mobMgr.shiftLocal(dx, dz);
+      for (const m of this.mobMgr.mobs) { if (m.tx !== undefined) { m.tx -= dx; m.tz -= dz; } }
+    }
+    if (this.mining) {
+      for (const d of this.mining.drops) { d.x -= dx; d.z -= dz; }
+      if (this.mining._tntQueue) for (const t of this.mining._tntQueue) { t.x -= dx; t.z -= dz; }
+    }
+    if (this.net && this.net.remotePlayers) {
+      for (const rp of this.net.remotePlayers.values()) { rp.x -= dx; rp.z -= dz; rp.rx -= dx; rp.rz -= dz; }
+    }
   }
 
   async saveCurrentWorld() {
@@ -13648,6 +14252,7 @@ class GameEngine {
       this.dayNight.update(mdt * 0.6, this.weather);
       this.renderer.render(this.world, mc, null, null, null, this.dayNight, this.weather, null, this.settings, mdt);
     } else if (this.world && this.player) {
+      if (!this.isMultiplayer()) this.world.recenterOn(this.player.x, this.player.z);
       const vd = this.settings.data.viewDistance || 7;
       this.world.updateChunks(this.player.x, this.player.y, this.player.z, vd, 6.5);
 

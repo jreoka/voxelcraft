@@ -15,7 +15,10 @@ const EXPORTS = [
   'TRADER_TRADES', 'CAMPFIRE_COOK', 'World', 'Chunk', 'MobManager', 'Player', 'PlayerPhysics',
   'Inventory', 'DayNightSystem', 'enchLvl', 'enchList', 'enchKindsOf', 'makeEnchant',
   'computeBlockDrops', 'computeEnchantOffers', 'computeEnchantPower',
-  'floorDiv', 'floorMod', 'CHUNK_SIZE', 'SEA_LEVEL'
+  'floorDiv', 'floorMod', 'CHUNK_SIZE', 'SEA_LEVEL',
+  // unlimited-coordinate helpers
+  'ORIGIN_STEP', 'REBASE_DIST', 'toBig', 'bigToNum', 'snapOrigin', 'absIntStr', 'absDeltaKey', 'absJson',
+  'parseAbsCoord', 'formatAbsCoord'
 ];
 
 function loadGameCore(htmlPath) {
