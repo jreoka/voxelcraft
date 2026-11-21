@@ -1563,9 +1563,9 @@ const HANDLERS = {
 
   mob_hit(p, msg) {
     const now = Date.now();
-    if (p.pl.dead || now - (p.lastMobHitMs || 0) < 200) return;
+    if (p.pl.dead || now - (p.lastMobHitMs || 0) < 320) return;
     const m = this.mobs.mobs.find(mm => mm.id === (msg.id | 0));
-    if (!m || m.dying) return;
+    if (!m || m.dying || (m.hurtCooldown || 0) > 0) return;
     const def = this.C.MOB_DEFS[m.type];
     const eye = this.eyeOf(p);
     const tx = m.x - eye.x, ty = (m.y + def.h * 0.55) - eye.y, tz = m.z - eye.z;
@@ -1621,7 +1621,7 @@ const HANDLERS = {
     const chk = this.ac.checkPvpHit(p, target);
     if (!chk.ok) return;
     const it = held ? this.C.ITEMS.get(held.id) : null;
-    let dmg = (it && it.dmg) ? it.dmg : 1.5;
+    let dmg = (it && it.dmg) ? it.dmg : 1;
     dmg += this.C.enchLvl(held, 'Sharpness') * 1.25;
     if (msg.crit && !p.pl.onGround) dmg *= 1.35;
     const kb = 1 + this.C.enchLvl(held, 'Knockback') * 0.9;

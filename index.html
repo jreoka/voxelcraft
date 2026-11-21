@@ -10308,7 +10308,7 @@ class MobManager {
       hostile: def.hostile,
       state: 'wander', stateTimer: 2 + Math.random() * 4,
       walkPhase: Math.random() * 6,
-      hurtTimer: 0, attackCd: 0, fuse: 0,
+      hurtTimer: 0, hurtCooldown: 0, onGround: true, attackCd: 0, fuse: 0,
       fleeTimer: 0, loveTimer: 0, baby: !!opts.baby,
       arctic: !!opts.arctic,
       dying: false, deathTimer: 0, wasInWater: false,
@@ -10344,6 +10344,8 @@ class MobManager {
   }
 
   tryPlayerMelee(player, eye, dir, particles, audio, ui) {
+    const now = performance.now();
+    if (now - (player._lastMeleeMs || 0) < 350) return false;
     let best = null, bestD = 3.8;
     for (const m of this.mobs) {
       if (m.dying) continue;
@@ -10355,6 +10357,8 @@ class MobManager {
       if (dot > 0.86) { bestD = dist; best = m; }
     }
     if (!best) return false;
+    if ((best.hurtCooldown || 0) > 0) return true;
+    player._lastMeleeMs = now;
     const held = player.inventory.getHeld();
     const it = held ? ITEMS.get(held.id) : null;
     const crit = !player.onGround && player.vy < -1.0;
@@ -10368,18 +10372,19 @@ class MobManager {
 
   // Melee damage from a held item (also used by the multiplayer server for authoritative hits)
   applyMelee(m, player, held, dir, crit, particles, audio, ui) {
+    if (m.dying || (m.hurtCooldown || 0) > 0) return false;
     const it = held ? ITEMS.get(held.id) : null;
-    let dmg = (it && it.dmg) ? it.dmg : 2;
+    let dmg = (it && it.dmg) ? it.dmg : 1;
     const def = MOB_DEFS[m.type];
     dmg += enchLvl(held, 'Sharpness') * 1.25;
     if (def && def.burnsDay) dmg += enchLvl(held, 'Smite') * 2.5;
-    if (crit) dmg = Math.round(dmg * 1.5);
+    if (crit) dmg = +(dmg * 1.5).toFixed(2);
     const kbMul = 1 + enchLvl(held, 'Knockback') * 0.9;
     m.lootingLvl = enchLvl(held, 'Looting');
     const fa = enchLvl(held, 'Fire Aspect');
     if (fa > 0) m.fireTimer = Math.max(m.fireTimer || 0, fa * 4);
     if (enchList(held).length) particles.spawnBurst(m.x, m.y + def.h * 0.6, m.z, [0.66, 0.42, 1.0], 8, 2.6, 0.08);
-    this._damageMob(m, dmg, dir.x * 6 * kbMul, 4.8 + (kbMul - 1) * 1.5, dir.z * 6 * kbMul, player, particles, audio, ui);
+    return this._damageMob(m, dmg, dir.x * 6 * kbMul, 4.8 + (kbMul - 1) * 1.5, dir.z * 6 * kbMul, player, particles, audio, ui);
   }
 
   tryFeedAnimal(player, eye, dir, particles, audio) {
@@ -10457,12 +10462,14 @@ class MobManager {
     return true;
   }
 
-  _damageMob(m, dmg, kx, ky, kz, player, particles, audio, ui) {
-    if (m.dying) return;
+  _damageMob(m, dmg, kx, ky, kz, player, particles, audio, ui, bypassCd = false) {
+    if (m.dying || (!bypassCd && (m.hurtCooldown || 0) > 0)) return false;
     m.hp -= dmg;
     m.hurtTimer = 0.30;
+    if (!bypassCd) m.hurtCooldown = 0.50;
     const sprintBonus = player && player.sprinting ? 1.45 : 1.0;
-    m.vx += kx * sprintBonus; m.vy = Math.max(m.vy, ky); m.vz += kz * sprintBonus;
+    const upKy = m.onGround ? ky : Math.min(ky * 0.4, 2.0);
+    m.vx += kx * sprintBonus; m.vy = Math.max(m.vy, upKy); m.vz += kz * sprintBonus;
     if (!m.hostile) m.fleeTimer = 5.0;
     audio.playSound('hit');
     particles.spawnBurst(m.x, m.y + 0.9, m.z, [0.95, 0.22, 0.22], 8, 3.6, 0.11);
@@ -10476,6 +10483,7 @@ class MobManager {
       }
       if (player.addXP(def.xp)) audio.playSound('levelup');
     }
+    return true;
   }
 
   // `players` is one player (singleplayer) or an array (the multiplayer server): every mob reacts to
@@ -10540,6 +10548,7 @@ class MobManager {
       }
 
       if (m.hurtTimer > 0) m.hurtTimer -= dt;
+      if (m.hurtCooldown > 0) m.hurtCooldown -= dt;
       if (m.attackCd > 0) m.attackCd -= dt;
       if (m.fireTimer > 0) {
         m.fireTimer -= dt;
@@ -10547,7 +10556,7 @@ class MobManager {
         if (Math.random() < dt * 14) particles.spawnBurst(m.x + (Math.random() - 0.5) * 0.6, m.y + Math.random() * (def.h || 1), m.z + (Math.random() - 0.5) * 0.6, [1.0, 0.55 + Math.random() * 0.3, 0.12], 1, 1.2, 0.08);
         if (m.fireTick >= 1.0) {
           m.fireTick = 0;
-          this._damageMob(m, 1, 0, 0.5, 0, player, particles, audio, ui);
+          this._damageMob(m, 1, 0, 0.5, 0, player, particles, audio, ui, true);
           if (m.dying) continue;
         }
       }
@@ -10557,7 +10566,7 @@ class MobManager {
       if (def.burnsDay && !dayNight.isNight) {
         const lt = this.world.getLightAt(Math.floor(m.x), Math.floor(m.y + 1), Math.floor(m.z));
         if (lt.sky >= 13 && Math.random() < dt * 1.4) {
-          this._damageMob(m, 2, 0, 1, 0, player, particles, audio, ui);
+          this._damageMob(m, 2, 0, 1, 0, player, particles, audio, ui, true);
           particles.spawnBurst(m.x, m.y + 1.4, m.z, [1.0, 0.55, 0.12], 4, 2.0, 0.11);
           if (m.dying) continue;
         }
@@ -10687,18 +10696,24 @@ class MobManager {
       if (hitWall) {
         const fx = m.x + Math.sin(m.yaw) * (mr + 0.35), fz = m.z + Math.cos(m.yaw) * (mr + 0.35);
         const clearAbove = !BLOCKS.get(this.world.getBlock(Math.floor(fx), Math.floor(m.y + 1.3), Math.floor(fz))).solid;
-        if ((clearAbove || def.climber) && Math.abs(m.vy) <= 0.15) m.vy = 7.8;
+        if ((clearAbove && m.onGround) || (def.climber && Math.abs(m.vy) <= 0.15)) m.vy = 7.8;
         else m.targetYaw += 1.6;
       }
 
-      if (def.hopper && Math.abs(m.vy) < 0.05 && moveSpd > 0.5 && Math.random() < dt * 2.5) m.vy = 6.8;
+      if (def.hopper && m.onGround && moveSpd > 0.5 && Math.random() < dt * 2.5) m.vy = 6.8;
 
       const ny = m.y + m.vy * dt;
       if (PlayerPhysics.aabbCollides(this.world, m.x, ny, m.z, mr, mh)) {
-        if (m.vy < 0) m.y = Math.floor(ny) + 1.0;
+        if (m.vy < 0) {
+          m.y = Math.floor(ny) + 1.0;
+          m.onGround = true;
+        } else {
+          m.onGround = false;
+        }
         m.vy = 0;
       } else {
         m.y = ny;
+        m.onGround = false;
       }
       const actualSpd = Math.hypot(m.vx, m.vz);
       if (actualSpd > 0.15) m.walkPhase += dt * (actualSpd * 2.7);
@@ -13235,6 +13250,7 @@ class RemoteMobView extends MobManager {
       const spd = Math.hypot(m.vx, m.vz);
       if (spd > 0.15) m.walkPhase += dt * spd * 2.7;
       if (m.hurtTimer > 0) m.hurtTimer -= dt;
+      if (m.hurtCooldown > 0) m.hurtCooldown -= dt;
       if (m.fireTimer > 0 && Math.random() < dt * 14) {
         particles.spawnBurst(m.x + (Math.random() - 0.5) * 0.6, m.y + Math.random() * (MOB_DEFS[m.type].h || 1), m.z + (Math.random() - 0.5) * 0.6, [1.0, 0.65, 0.12], 1, 1.2, 0.08);
       }
@@ -13268,10 +13284,13 @@ class RemoteMobView extends MobManager {
 
   // Local hit feedback only; the server computes damage, knockback, drops and XP
   applyMelee(m, player, held, dir, crit, particles, audio) {
+    if (m.dying || (m.hurtCooldown || 0) > 0) return false;
     this.net.sendMobHit(m.id, crit, held ? held.id : 0);
     m.hurtTimer = 0.3;
+    m.hurtCooldown = 0.5;
     audio.playSound('hit');
     particles.spawnBurst(m.x, m.y + 0.9, m.z, [0.95, 0.22, 0.22], 8, 3.6, 0.11);
+    return true;
   }
 
   tryFeedAnimal(player, eye, dir, particles, audio) {
