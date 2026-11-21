@@ -12662,6 +12662,9 @@ class InputManager {
     this._lastForwardTap = 0;
     this._forwardWasUp = true;
     this.pointerLocked = false;
+    this._lockAcquiredAt = 0;
+    this._lastMouseTime = 0;
+    this._recentMouseMag = 0;
     this.rebindingAction = null;
     this._escResumeArmed = false;
     this._escDownAt = 0;
@@ -12709,12 +12712,27 @@ class InputManager {
 
   requestLock() {
     if (this.canvas.requestPointerLock) {
-      // Modern browsers return a promise that rejects without a user gesture (e.g. after a
-      // network-triggered world join); swallow that so it doesn't surface as an unhandled error
+      // Request unadjusted (raw) mouse movement when supported to avoid OS/browser pointer-lock
+      // warp spikes, falling back to standard requestPointerLock if unsupported.
+      // Modern browsers return a promise that rejects without a user gesture; swallow that cleanly.
+      const fallbackLock = () => {
+        try {
+          const r2 = this.canvas.requestPointerLock();
+          if (r2 && typeof r2.catch === 'function') r2.catch(() => {});
+        } catch {}
+      };
       try {
-        const r = this.canvas.requestPointerLock();
-        if (r && typeof r.catch === 'function') r.catch(() => {});
-      } catch {}
+        const r = this.canvas.requestPointerLock({ unadjustedMovement: true });
+        if (r && typeof r.catch === 'function') {
+          r.catch((err) => {
+            if (err && (err.name === 'NotSupportedError' || err.name === 'TypeError')) {
+              fallbackLock();
+            }
+          });
+        }
+      } catch {
+        fallbackLock();
+      }
     }
   }
 
@@ -12909,7 +12927,13 @@ class InputManager {
     });
 
     document.addEventListener('pointerlockchange', () => {
+      const wasLocked = this.pointerLocked;
       this.pointerLocked = (document.pointerLockElement === this.canvas);
+      if (this.pointerLocked && !wasLocked) {
+        this._lockAcquiredAt = performance.now();
+        this._lastMouseTime = this._lockAcquiredAt;
+        this._recentMouseMag = 0;
+      }
       // Esc releases pointer lock (the browser swallows that keypress), so treat losing lock mid-game as a pause
       if (!this.pointerLocked && this.engine.state === 'playing' && !this.engine.ui.chatOpen) this.engine.pause();
     });
@@ -12919,10 +12943,33 @@ class InputManager {
         this.engine.ui.moveCursorOverlay(e.clientX, e.clientY);
         return;
       }
-      if (!this.pointerLocked || this.engine.state !== 'playing') return;
+      if (!this.pointerLocked || document.pointerLockElement !== this.canvas || this.engine.state !== 'playing') return;
+      const now = performance.now();
+      // Ignore the brief window immediately after acquiring pointer lock when browsers can emit
+      // a bogus jump from the previous cursor position to the viewport center.
+      if (now - this._lockAcquiredAt < 40) return;
+
+      const dx = e.movementX;
+      const dy = e.movementY;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+
+      const dtMs = Math.max(0, now - this._lastMouseTime);
+      this._lastMouseTime = now;
+
+      // Reject Chromium/OS pointer-lock cursor-warp spikes (single isolated huge deltas).
+      const mag = Math.hypot(dx, dy);
+      if (Math.abs(dx) > 300 || Math.abs(dy) > 300) return;
+      if (dtMs < 50 && mag > 160 && this._recentMouseMag < 25) return;
+
+      const decay = Math.exp(-Math.min(dtMs, 200) / 80);
+      this._recentMouseMag = Math.max(this._recentMouseMag * decay, mag);
+
       const sens = 0.0022 * (this.settings.data.sensitivity || 1.0);
-      this.engine.player.yaw -= e.movementX * sens;
-      this.engine.player.pitch = clamp(this.engine.player.pitch - e.movementY * sens, -1.54, 1.54);
+      let yaw = this.engine.player.yaw - dx * sens;
+      if (yaw > Math.PI) yaw -= Math.PI * 2;
+      else if (yaw < -Math.PI) yaw += Math.PI * 2;
+      this.engine.player.yaw = yaw;
+      this.engine.player.pitch = clamp(this.engine.player.pitch - dy * sens, -1.54, 1.54);
     });
 
     this.canvas.addEventListener('mousedown', (e) => {
