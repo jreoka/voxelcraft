@@ -24,6 +24,26 @@
   --mono: 'Consolas', 'Courier New', monospace;
 }
 * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+:root { color-scheme: dark; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(154, 167, 186, 0.32) transparent;
+}
+*::-webkit-scrollbar { width: 7px; height: 7px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(154, 167, 186, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 198, 220, 0.52);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+*::-webkit-scrollbar-corner { background: transparent; }
 html, body {
   margin: 0; padding: 0; width: 100%; height: 100%;
   overflow: hidden; background: #0a0d12; color: var(--text);
@@ -803,13 +823,30 @@ html, body {
 }
 .craft-station { display: flex; align-items: center; gap: 14px; }
 .arrow-icon {
-  width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%;
-  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-  font-size: 16px; color: #9db2cc;
+  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; border-radius: 50%;
+  background: linear-gradient(180deg, rgba(32, 42, 58, 0.85), rgba(18, 25, 36, 0.92));
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.09), 0 2px 6px rgba(0,0,0,0.35);
+  color: #8fa6c4;
+  transition: background 0.16s, border-color 0.16s, color 0.16s, box-shadow 0.16s;
+}
+.arrow-icon svg {
+  width: 17px; height: 17px; display: block;
 }
 .arrow-icon.ready {
-  background: rgba(110, 231, 104, 0.16); border-color: rgba(110, 231, 104, 0.55);
-  color: #96ff7e;
+  background: linear-gradient(180deg, rgba(84, 210, 82, 0.28), rgba(40, 128, 48, 0.34));
+  border-color: rgba(120, 240, 112, 0.65);
+  box-shadow: 0 0 14px rgba(110, 231, 104, 0.32), inset 0 1px 0 rgba(210, 255, 200, 0.25);
+  color: #9cff88;
+}
+.arrow-icon.ready svg {
+  filter: drop-shadow(0 0 5px rgba(130, 255, 115, 0.55));
+  animation: craftArrowNudge 1.4s ease-in-out infinite;
+}
+@keyframes craftArrowNudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(2px); }
 }
 .furnace-station { display: flex; align-items: center; gap: 22px; padding: 8px 14px; margin: 0 auto; }
 .furnace-col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -952,7 +989,7 @@ html, body {
   display: flex; flex-direction: column; gap: 4px; pointer-events: none; z-index: 15;
 }
 #chatMessages {
-  max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+  max-height: 210px; overflow-y: hidden; display: flex; flex-direction: column; gap: 3px;
   padding: 4px;
 }
 .chat-line {
@@ -963,7 +1000,7 @@ html, body {
 }
 .chat-line.faded { opacity: 0; pointer-events: none; }
 #chatBox.chat-open .chat-line.faded { opacity: 1; }
-#chatBox.chat-open #chatMessages { pointer-events: auto; }
+#chatBox.chat-open #chatMessages { overflow-y: auto; pointer-events: auto; }
 .chat-line.sys { color: #a7e8a0; border-left: 2px solid var(--accent); }
 .chat-line.warn { color: #ffcf6e; border-left: 2px solid var(--gold); }
 .chat-line.err { color: #ff8585; border-left: 2px solid var(--danger); }
@@ -19523,7 +19560,7 @@ class UIManager {
       const match = CRAFTING.matchGrid(this.craftGrid.slice(0, n), hasTable);
       const arrow = document.createElement('div');
       arrow.className = 'arrow-icon' + (match ? ' ready' : '');
-      arrow.textContent = '→';
+      arrow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
       const outStack = match ? { id: match.outId, count: match.outCount } : null;
       const outEl = this._makeSlotEl(outStack);
       if (match) outEl.classList.add('selected');
@@ -19823,7 +19860,7 @@ class UIManager {
 
       let infoText = '', canDo = false, btnLabel = 'Apply', onApply = null;
       if (this.smithMode === 'repair') {
-        const plus = document.createElement('div'); plus.className = 'arrow-icon'; plus.textContent = '+';
+        const plus = document.createElement('div'); plus.className = 'arrow-icon'; plus.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
         const matEl = this._makeSlotEl(s1, null, 'armor-slot', 'Mat');
         this._bindSlotEvents(matEl, () => this.smithSlots[1], (v) => this.smithSlots[1] = v, { zone: 'smith' });
         row.appendChild(plus); row.appendChild(matEl);
@@ -19849,7 +19886,7 @@ class UIManager {
           };
         }
       } else if (this.smithMode === 'upgrade') {
-        const plus = document.createElement('div'); plus.className = 'arrow-icon'; plus.textContent = '+';
+        const plus = document.createElement('div'); plus.className = 'arrow-icon'; plus.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
         const matEl = this._makeSlotEl(s1, null, 'armor-slot', 'Ingot');
         this._bindSlotEvents(matEl, () => this.smithSlots[1], (v) => this.smithSlots[1] = v, { zone: 'smith' });
         row.appendChild(plus); row.appendChild(matEl);
@@ -19890,7 +19927,7 @@ class UIManager {
         }
       }
 
-      const arr = document.createElement('div'); arr.className = 'arrow-icon'; arr.textContent = '→';
+      const arr = document.createElement('div'); arr.className = 'arrow-icon' + (canDo ? ' ready' : ''); arr.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
       const actBtn = document.createElement('button');
       actBtn.className = 'btn sm' + (canDo ? ' primary' : '');
       actBtn.textContent = btnLabel;
@@ -20463,7 +20500,7 @@ class RemoteMobView extends MobManager {
   applySnapshot(list, audio) {
     const seen = new Set();
     for (const r of list || []) {
-      const [id, ti, x, y, z, yaw, hy, hp, flags, fuse, wool] = r;
+      const [id, ti, x, y, z, yaw, hy, hp, flags, fuse, wool, curHp] = r;
       const type = MOB_TYPES[ti];
       if (!type) continue;
       seen.add(id);
@@ -20475,6 +20512,7 @@ class RemoteMobView extends MobManager {
       }
       m.tx = x; m.ty = y; m.tz = z; m.tyaw = yaw;
       m.headYaw = hy; m.headPitch = hp;
+      if (typeof curHp === 'number') m.hp = curHp;
       if ((flags & 1) && !m._wasHurt && audio) {
         const vy0 = y + (MOB_DEFS[type].h || 1) * 0.7;
         audio.playSound('hit', x, vy0, z);
@@ -20784,7 +20822,9 @@ class MultiplayerClient {
         heldId: held ? held.id : 0, sel: p.inventory.selected,
         sprint: !!p.sprinting, block: !!p.blocking,
         onGround: p.onGround, flying: p.flying,
-        inWater: p.inWater, onLadder: p.onLadder,
+        inWater: !!(p.inWater || p.inLava || p.inCobweb), onLadder: p.onLadder,
+        gliding: !!p.gliding, grappling: !!(p.grapple && p.grapple.latched),
+        dodging: (p.dodgeTimer || 0) > 0,
         f: +p.hunger.toFixed(2), s: +p.saturation.toFixed(2)
       });
     }

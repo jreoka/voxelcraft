@@ -25,6 +25,8 @@ pub struct PlayerAC {
     pub air_hover_sec: f64,
     pub jump_start_y: f64,
     pub speed_burst: f64,
+    pub speed_win_dist: f64,
+    pub speed_win_dt: f64,
     pub packet_window_start: i64,
     pub packet_count: usize,
     pub break_timestamps: Vec<i64>,
@@ -32,6 +34,9 @@ pub struct PlayerAC {
     pub last_pvp_ms: i64,
     pub knockback_until_ms: i64,
     pub slime_bounce_until_ms: i64,
+    pub dodge_grace_until_ms: i64,
+    pub last_dodge_ms: i64,
+    pub mobility_grace_until_ms: i64,
     pub teleport_grace_until_ms: i64,
     pub warned: bool,
 }
@@ -50,6 +55,8 @@ impl PlayerAC {
             air_hover_sec: 0.0,
             jump_start_y: y,
             speed_burst: 0.0,
+            speed_win_dist: 0.0,
+            speed_win_dt: 0.0,
             packet_window_start: now,
             packet_count: 0,
             break_timestamps: Vec::new(),
@@ -57,6 +64,9 @@ impl PlayerAC {
             last_pvp_ms: 0,
             knockback_until_ms: 0,
             slime_bounce_until_ms: 0,
+            dodge_grace_until_ms: 0,
+            last_dodge_ms: 0,
+            mobility_grace_until_ms: 0,
             teleport_grace_until_ms: now + 2500,
             warned: false,
         }
@@ -72,6 +82,8 @@ impl PlayerAC {
         self.jump_start_y = y;
         self.air_hover_sec = 0.0;
         self.speed_burst = 0.0;
+        self.speed_win_dist = 0.0;
+        self.speed_win_dt = 0.0;
         self.last_move_ms = now;
     }
 }

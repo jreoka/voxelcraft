@@ -1467,6 +1467,7 @@ impl ServerState {
                             flags,
                             round_dec(m.fuse, 100.0),
                             m.wool_idx,
+                            round_dec(m.hp.max(0.0), 10.0),
                         ]));
                     }
                     p.send_json(&json!({ "type": "mobs", "list": list }));
@@ -1500,6 +1501,11 @@ impl ServerState {
             p.z = p.ac.last_safe_z;
             p.ac.last_move_ms = now_ms();
             p.ac.teleport_grace_until_ms = now_ms() + 700;
+            p.ac.speed_win_dist = 0.0;
+            p.ac.speed_win_dt = 0.0;
+            p.ac.speed_burst = 0.0;
+            p.ac.air_hover_sec = 0.0;
+            p.ac.jump_start_y = p.y;
             p.send_json(&json!({ "type": "rubberband", "x": p.x, "y": p.y, "z": p.z, "reason": reason }));
         }
     }
@@ -1525,6 +1531,9 @@ impl ServerState {
         let in_water = msg.get("inWater").and_then(|v| v.as_bool()).unwrap_or(false);
         let on_ladder = msg.get("onLadder").and_then(|v| v.as_bool()).unwrap_or(false);
         let flying = msg.get("flying").and_then(|v| v.as_bool()).unwrap_or(false);
+        let req_gliding = msg.get("gliding").and_then(|v| v.as_bool()).unwrap_or(false);
+        let req_grappling = msg.get("grappling").and_then(|v| v.as_bool()).unwrap_or(false);
+        let req_dodging = msg.get("dodging").and_then(|v| v.as_bool()).unwrap_or(false);
 
         let has_moved = self.players[pid].has_moved;
         if !has_moved {
@@ -1543,14 +1552,27 @@ impl ServerState {
             return;
         }
 
-        let on_slime = self.shards.get_mut(&shard_id).is_some_and(|sh| {
-            sh.core.get_block_ensured(x.floor() as i32, (y - 0.35).floor() as i32, z.floor() as i32, &mut self.world.tables) == B::SLIME_BLOCK
+        let (on_slime, server_in_liquid) = self.shards.get_mut(&shard_id).map_or((false, false), |sh| {
+            let slime = sh.core.get_block_ensured(x.floor() as i32, (y - 0.35).floor() as i32, z.floor() as i32, &mut self.world.tables) == B::SLIME_BLOCK;
+            let mut liquid = false;
+            'liq: for &dy_off in &[-0.55_f64, 0.1, 0.9] {
+                let by = (y + dy_off).floor() as i32;
+                for &(dx_off, dz_off) in &[(0.0_f64, 0.0_f64), (-0.3, -0.3), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)] {
+                    let b = sh.core.get_block_ensured((x + dx_off).floor() as i32, by, (z + dz_off).floor() as i32, &mut self.world.tables);
+                    if b == B::WATER || b == B::LAVA || b == B::COBWEB {
+                        liquid = true;
+                        break 'liq;
+                    }
+                }
+            }
+            (slime, liquid)
         });
+        let in_water = in_water || server_in_liquid;
 
         let ac_cfg = self.config.anticheat.clone();
         let violation: Option<(&str, f64, String, String)> = {
             let p = self.players.get_mut(pid).unwrap();
-            let dt = (((now - p.ac.last_move_ms) as f64) / 1000.0).clamp(0.02, 1.5);
+            let dt = (((now - p.ac.last_move_ms) as f64) / 1000.0).clamp(0.005, 1.5);
             let (dx, dy, dz) = (x - p.x, y - p.y, z - p.z);
             let horiz_dist = dx.hypot(dz);
             let total_dist = (dx * dx + dy * dy + dz * dz).sqrt();
@@ -1561,39 +1583,76 @@ impl ServerState {
                 p.ac.slime_bounce_until_ms = now + 2600;
             }
             let in_slime = now < p.ac.slime_bounce_until_ms;
+            let has_glider = is_creative || p.pl.inventory.slots.iter().flatten().any(|st| st.id == IT::GLIDER);
+            let has_grapple = is_creative || p.pl.inventory.slots.iter().flatten().any(|st| st.id == IT::GRAPPLE_HOOK);
+            let gliding = req_gliding && has_glider;
+            let grappling = req_grappling && has_grapple;
+            if gliding || grappling {
+                p.ac.mobility_grace_until_ms = now + 650;
+            }
+            let in_mobility = now < p.ac.mobility_grace_until_ms;
+            if req_dodging && now - p.ac.last_dodge_ms >= 1300 {
+                p.ac.last_dodge_ms = now;
+                p.ac.dodge_grace_until_ms = now + 450;
+            }
+            let in_dodge = now < p.ac.dodge_grace_until_ms;
 
             if !is_creative && flying {
                 Some(("ILLEGAL_FLY", 5.0, "Flight is not allowed in Survival mode.".into(), "Client reported flying=true in survival".into()))
             } else {
-                let max_tp = if is_creative { ac_cfg.max_teleport_dist * 1.8 } else { ac_cfg.max_teleport_dist };
+                let max_tp = if is_creative {
+                    ac_cfg.max_creative_speed.max(ac_cfg.max_teleport_dist * 1.8)
+                } else if gliding || grappling || in_mobility {
+                    ac_cfg.max_teleport_dist * 1.5
+                } else {
+                    ac_cfg.max_teleport_dist
+                };
                 if !in_grace && total_dist > max_tp {
                     Some(("TELEPORT", 5.0, format!("Teleport/Blink detected ({:.1}m).", total_dist), format!("Moved {:.1}m in {:.0}ms", total_dist, dt * 1000.0)))
                 } else {
                     let mut v = None;
                     if !in_grace {
+                        // Rolling 0.55s window averages out TCP/WebSocket packet jitter (e.g. sprint-jumping)
+                        p.ac.speed_win_dist += horiz_dist;
+                        p.ac.speed_win_dt += dt;
                         let base_max = if is_creative { ac_cfg.max_creative_speed } else { ac_cfg.max_horiz_speed };
-                        let max_speed = if in_kb { base_max * 1.65 } else { base_max };
-                        let horiz_speed = horiz_dist / dt;
-                        if horiz_speed > max_speed && horiz_dist > 0.45 {
-                            p.ac.speed_burst += (horiz_speed - max_speed) * dt;
-                            if p.ac.speed_burst > 1.8 || horiz_speed > max_speed * 1.9 {
-                                p.ac.speed_burst = 0.0;
-                                v = Some(("SPEED", 4.0, format!("Speed hack detected ({:.1} m/s).", horiz_speed), format!("Horiz speed {:.1} m/s (max {:.1})", horiz_speed, max_speed)));
-                            }
+                        let max_speed = if gliding || grappling {
+                            base_max.max(24.0)
+                        } else if in_kb || in_dodge || in_mobility {
+                            base_max * 1.65
                         } else {
-                            p.ac.speed_burst = (p.ac.speed_burst - 2.4 * dt).max(0.0);
+                            base_max
+                        };
+                        if p.ac.speed_win_dt >= 0.55 {
+                            let avg_speed = p.ac.speed_win_dist / p.ac.speed_win_dt;
+                            if avg_speed > max_speed {
+                                p.ac.speed_burst += (avg_speed - max_speed) * p.ac.speed_win_dt;
+                                if p.ac.speed_burst > 2.6 || avg_speed > max_speed * 1.85 {
+                                    p.ac.speed_burst = 0.0;
+                                    v = Some(("SPEED", 3.5, format!("Speed hack detected ({:.1} m/s).", avg_speed), format!("Avg horiz speed {:.1} m/s over {:.2}s (max {:.1})", avg_speed, p.ac.speed_win_dt, max_speed)));
+                                }
+                            } else {
+                                p.ac.speed_burst = (p.ac.speed_burst - 2.8 * p.ac.speed_win_dt).max(0.0);
+                            }
+                            p.ac.speed_win_dist = 0.0;
+                            p.ac.speed_win_dt = 0.0;
                         }
+                    } else {
+                        p.ac.speed_win_dist = 0.0;
+                        p.ac.speed_win_dt = 0.0;
                     }
                     if v.is_none() {
                         if !is_creative && !in_grace {
-                            let supported = on_ground || in_water || on_ladder;
+                            let supported = on_ground || in_water || on_ladder || gliding || grappling || in_mobility;
                             if supported {
                                 p.ac.air_hover_sec = 0.0;
                                 p.ac.last_ground_y = y;
                                 p.ac.jump_start_y = y;
-                                p.ac.last_safe_x = x; p.ac.last_safe_y = y; p.ac.last_safe_z = z;
+                                if on_ground || in_water || on_ladder {
+                                    p.ac.last_safe_x = x; p.ac.last_safe_y = y; p.ac.last_safe_z = z;
+                                }
                             } else {
-                                if dy >= -0.04 {
+                                if dy >= -0.04 && !in_kb {
                                     p.ac.air_hover_sec += dt;
                                 } else {
                                     p.ac.air_hover_sec = (p.ac.air_hover_sec - dt * 0.7).max(0.0);
@@ -1602,13 +1661,13 @@ impl ServerState {
                                 let max_jump = if in_slime { 22.0 } else { ac_cfg.max_jump_gain };
                                 if jump_gain > max_jump {
                                     p.ac.air_hover_sec = 0.0;
-                                    v = Some(("HIGH_JUMP", 4.5, format!("Fly / High-Jump detected (+{:.1}m).", jump_gain), format!("Ascended +{:.2}m without ground/ladder/water", jump_gain)));
+                                    v = Some(("HIGH_JUMP", 4.0, format!("Fly / High-Jump detected (+{:.1}m).", jump_gain), format!("Ascended +{:.2}m without ground/ladder/water", jump_gain)));
                                 } else {
                                     let max_hover = if in_slime { 5.0 } else { ac_cfg.max_air_hover_sec };
                                     if p.ac.air_hover_sec > max_hover {
                                         let hs = p.ac.air_hover_sec;
                                         p.ac.air_hover_sec = 0.0;
-                                        v = Some(("FLY_HOVER", 4.5, "Fly / Hover detected.".into(), format!("Airborne non-falling for {:.2}s", hs)));
+                                        v = Some(("FLY_HOVER", 4.0, "Fly / Hover detected.".into(), format!("Airborne non-falling for {:.2}s", hs)));
                                     }
                                 }
                             }
@@ -2648,11 +2707,11 @@ impl ServerState {
         let def = &MOB_DEFS[type_idx];
         let (tx, ty, tz) = (mx - eye.0, (my + def.h * 0.55) - eye.1, mz - eye.2);
         let dist = (tx * tx + ty * ty + tz * tz).sqrt();
-        if self.config.anticheat.enabled && dist > 4.8 {
+        if self.config.anticheat.enabled && dist > 5.4 {
             self.flag_player(pid, "MOB_REACH", 2.0, &format!("Hit {} from {:.1}m", def.name, dist));
             return;
         }
-        if self.config.anticheat.enabled && dist > 1.5 && (tx * dir.0 + ty * dir.1 + tz * dir.2) / dist.max(1.0) < 0.3 {
+        if self.config.anticheat.enabled && dist > 2.0 && (tx * dir.0 + ty * dir.1 + tz * dir.2) / dist.max(1.0) < 0.15 {
             self.flag_player(pid, "MOB_ANGLE", 2.0, &format!("Hit {} outside look cone", def.name));
             return;
         }
