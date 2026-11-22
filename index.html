@@ -11872,15 +11872,15 @@ class Renderer {
     if (!id) {
       // Bare first-person arm tucked in the bottom-right corner with a crisp Minecraft punch arc
       const swArcY = Math.sin(Math.sqrt(swing) * Math.PI * 2) * 0.03;
-      const px = 0.70 + offX - sw2 * 0.16;
-      const py = -0.46 + offY + swArcY + sw * 0.06;
-      const pz = -0.25 - sw * 0.10;
+      const px = 0.55 + offX - sw2 * 0.16;
+      const py = -0.56 + offY + swArcY + sw * 0.06;
+      const pz = -0.22 - sw * 0.10;
       const R = this._rot(
-        0.66 + sw2 * 0.38 + swayX * 0.7,
-        0.42 + sw * 0.20 + swayY * 0.5,
-        -0.30 + strafeRoll + breathR + sw * 0.26
+        0.34 + sw2 * 0.36 + swayX * 0.7,
+        0.84 + sw * 0.22 + swayY * 0.5,
+        -0.22 + strafeRoll + breathR + sw * 0.24
       );
-      pushArm(px, py, pz, R, 0.56);
+      pushArm(px, py, pz, R, 0.50);
     } else {
       const model = this._itemModel(id);
       if (model.kind !== 'sprite') {
@@ -20808,12 +20808,16 @@ class MultiplayerClient {
   update(dt) {
     if (!this.connected || !this.engine.player) return;
     const p = this.engine.player;
+    // Latch 1-frame ground landings between 18Hz move packets (e.g. holding Space while sprint-jumping up blocks)
+    if (p.onGround) this._touchedGround = true;
 
     // 1. Send player movement at ~18 Hz (hunger/saturation ride along: the server only accepts decreases)
     this._moveAccum += dt;
     if (this._moveAccum >= 0.055) {
       this._moveAccum = 0;
       const held = p.inventory.getHeld();
+      const onGround = !!(p.onGround || this._touchedGround);
+      this._touchedGround = false;
       this._send({
         type: 'move',
         x: +p.x.toFixed(3), y: +p.y.toFixed(3), z: +p.z.toFixed(3),
@@ -20821,7 +20825,7 @@ class MultiplayerClient {
         crouch: p.crouching, swing: p.swingActive ? +p.swing.toFixed(2) : 0,
         heldId: held ? held.id : 0, sel: p.inventory.selected,
         sprint: !!p.sprinting, block: !!p.blocking,
-        onGround: p.onGround, flying: p.flying,
+        onGround, flying: p.flying,
         inWater: !!(p.inWater || p.inLava || p.inCobweb), onLadder: p.onLadder,
         gliding: !!p.gliding, grappling: !!(p.grapple && p.grapple.latched),
         dodging: (p.dodgeTimer || 0) > 0,

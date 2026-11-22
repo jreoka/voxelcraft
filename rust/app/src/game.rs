@@ -1552,7 +1552,11 @@ impl ServerState {
             return;
         }
 
-        let (on_slime, server_in_liquid) = self.shards.get_mut(&shard_id).map_or((false, false), |sh| {
+        let (px_prev, py_prev, pz_prev) = {
+            let p = &self.players[pid];
+            (p.x, p.y, p.z)
+        };
+        let (on_slime, server_in_liquid, server_near_ground) = self.shards.get_mut(&shard_id).map_or((false, false, false), |sh| {
             let slime = sh.core.get_block_ensured(x.floor() as i32, (y - 0.35).floor() as i32, z.floor() as i32, &mut self.world.tables) == B::SLIME_BLOCK;
             let mut liquid = false;
             'liq: for &dy_off in &[-0.55_f64, 0.1, 0.9] {
@@ -1565,7 +1569,23 @@ impl ServerState {
                     }
                 }
             }
-            (slime, liquid)
+            // Detect solid ground beneath the player's AABB (hw=0.30) at current pos or midpoint so
+            // 1-frame landings while sprint-jumping up blocks between 18Hz packets never look like flying.
+            let mut near_ground = false;
+            let mid = ((px_prev + x) * 0.5, (py_prev + y) * 0.5, (pz_prev + z) * 0.5);
+            'gnd: for &(sx, sy, sz) in &[(x, y, z), mid] {
+                for &dy_off in &[-0.08_f64, -0.58] {
+                    let by = (sy + dy_off).floor() as i32;
+                    for &(dx_off, dz_off) in &[(0.0_f64, 0.0_f64), (-0.29, -0.29), (0.29, -0.29), (-0.29, 0.29), (0.29, 0.29)] {
+                        let b = sh.core.get_block_ensured((sx + dx_off).floor() as i32, by, (sz + dz_off).floor() as i32, &mut self.world.tables);
+                        if BLOCKS.get(b).solid {
+                            near_ground = true;
+                            break 'gnd;
+                        }
+                    }
+                }
+            }
+            (slime, liquid, near_ground)
         });
         let in_water = in_water || server_in_liquid;
 
@@ -1643,12 +1663,12 @@ impl ServerState {
                     }
                     if v.is_none() {
                         if !is_creative && !in_grace {
-                            let supported = on_ground || in_water || on_ladder || gliding || grappling || in_mobility;
+                            let supported = on_ground || server_near_ground || in_water || on_ladder || gliding || grappling || in_mobility;
                             if supported {
                                 p.ac.air_hover_sec = 0.0;
                                 p.ac.last_ground_y = y;
                                 p.ac.jump_start_y = y;
-                                if on_ground || in_water || on_ladder {
+                                if on_ground || in_water || on_ladder || (server_near_ground && (y - y.floor()) < 0.25) {
                                     p.ac.last_safe_x = x; p.ac.last_safe_y = y; p.ac.last_safe_z = z;
                                 }
                             } else {
