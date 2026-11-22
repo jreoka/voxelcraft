@@ -18,7 +18,7 @@ use voxelcraft_core::math::{big_to_num, format_abs_coord, parse_abs_coord};
 
 use crate::accounts::AccountStore;
 use crate::anticheat::now_ms;
-use crate::config::save_config;
+use crate::config::{normalize_origin, save_config};
 use crate::game::{ServerState, WsOut};
 
 const MAX_WS_PAYLOAD: usize = 256 * 1024;
@@ -69,16 +69,43 @@ pub fn build_router(ctx: Arc<AppCtx>) -> Router {
 }
 
 fn extract_ip(headers: &HeaderMap, addr: SocketAddr, trust_proxy: bool) -> String {
-    if trust_proxy
-        && let Some(fwd) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
-            && let Some(first) = fwd.split(',').next() {
-                let t = first.trim();
-                if !t.is_empty() {
-                    return t.strip_prefix("::ffff:").unwrap_or(t).to_string();
-                }
+    if trust_proxy {
+        if let Some(fly_ip) = headers.get("fly-client-ip").and_then(|v| v.to_str().ok()) {
+            let t = fly_ip.trim();
+            if !t.is_empty() {
+                return t.strip_prefix("::ffff:").unwrap_or(t).to_string();
             }
+        }
+        if let Some(fwd) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok())
+            && let Some(first) = fwd.split(',').next()
+        {
+            let t = first.trim();
+            if !t.is_empty() {
+                return t.strip_prefix("::ffff:").unwrap_or(t).to_string();
+            }
+        }
+    }
     let raw = addr.ip().to_string();
     raw.strip_prefix("::ffff:").unwrap_or(&raw).to_string()
+}
+
+fn origin_allowed(headers: &HeaderMap, allowed_origin: Option<&str>) -> bool {
+    let Some(expected) = allowed_origin else {
+        return true;
+    };
+    headers
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .and_then(normalize_origin)
+        .is_some_and(|origin| origin == expected)
+}
+
+fn forbidden_response() -> Response {
+    let mut resp = Response::new("Forbidden".into());
+    *resp.status_mut() = StatusCode::FORBIDDEN;
+    resp.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+    resp
 }
 
 async fn handle_status(
@@ -89,6 +116,10 @@ async fn handle_status(
 ) -> Response {
     if let Ok(ws) = ws {
         return handle_ws_upgrade(ctx, ws, addr, headers);
+    }
+    let allowed_origin = ctx.state.lock().unwrap().allowed_origin.clone();
+    if !origin_allowed(&headers, allowed_origin.as_deref()) {
+        return forbidden_response();
     }
     let body = {
         #[derive(serde::Serialize)]
@@ -154,7 +185,14 @@ async fn handle_status(
     *resp.status_mut() = StatusCode::OK;
     let h = resp.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"));
-    h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    if let Some(origin) = allowed_origin {
+        if let Ok(val) = HeaderValue::from_str(&origin) {
+            h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, val);
+            h.insert(header::VARY, HeaderValue::from_static("Origin"));
+        }
+    } else {
+        h.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    }
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     resp
 }
@@ -168,7 +206,7 @@ async fn handle_root_or_ws(
     if let Ok(ws) = ws {
         return handle_ws_upgrade(ctx, ws, addr, headers);
     }
-    serve_client_html(&ctx)
+    serve_client_html(&ctx, &headers)
 }
 
 async fn handle_html(
@@ -180,7 +218,7 @@ async fn handle_html(
     if let Ok(ws) = ws {
         return handle_ws_upgrade(ctx, ws, addr, headers);
     }
-    serve_client_html(&ctx)
+    serve_client_html(&ctx, &headers)
 }
 
 async fn handle_fallback(
@@ -192,15 +230,32 @@ async fn handle_fallback(
     if let Ok(ws) = ws {
         return handle_ws_upgrade(ctx, ws, addr, headers);
     }
-    let mut resp = Response::new("Not found. Visit / to play VoxelCraft or /status for server status.".into());
+    let allowed_origin = ctx.state.lock().unwrap().allowed_origin.clone();
+    if !origin_allowed(&headers, allowed_origin.as_deref()) {
+        return forbidden_response();
+    }
+    let mut resp = Response::new("Not found.".into());
     *resp.status_mut() = StatusCode::NOT_FOUND;
     resp.headers_mut()
         .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
     resp
 }
 
-fn serve_client_html(ctx: &Arc<AppCtx>) -> Response {
-    let path = ctx.state.lock().unwrap().client_html_path.clone();
+fn serve_client_html(ctx: &Arc<AppCtx>, headers: &HeaderMap) -> Response {
+    let (path, allowed_origin) = {
+        let st = ctx.state.lock().unwrap();
+        (st.client_html_path.clone(), st.allowed_origin.clone())
+    };
+    let Some(path) = path else {
+        if !origin_allowed(headers, allowed_origin.as_deref()) {
+            return forbidden_response();
+        }
+        let mut resp = Response::new("Web client is not hosted on this server.".into());
+        *resp.status_mut() = StatusCode::NOT_FOUND;
+        resp.headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
+        return resp;
+    };
     match std::fs::read(&path) {
         Ok(bytes) => {
             let mut resp = Response::new(bytes.into());
@@ -230,19 +285,26 @@ fn handle_ws_upgrade(
     addr: SocketAddr,
     headers: HeaderMap,
 ) -> Response {
-    let (ip, allowed) = {
+    let (ip, origin_ok, rate_ok) = {
         let mut st = ctx.state.lock().unwrap();
-        let ip = extract_ip(&headers, addr, st.config.trust_proxy);
-        let cur = *st.ip_counts.get(&ip).unwrap_or(&0);
-        let max_per_ip = st.config.max_per_ip.max(1);
-        if cur >= max_per_ip {
-            (ip, false)
+        if !origin_allowed(&headers, st.allowed_origin.as_deref()) {
+            (String::new(), false, false)
         } else {
-            st.ip_counts.insert(ip.clone(), cur + 1);
-            (ip, true)
+            let ip = extract_ip(&headers, addr, st.config.trust_proxy);
+            let cur = *st.ip_counts.get(&ip).unwrap_or(&0);
+            let max_per_ip = st.config.max_per_ip.max(1);
+            if cur >= max_per_ip {
+                (ip, true, false)
+            } else {
+                st.ip_counts.insert(ip.clone(), cur + 1);
+                (ip, true, true)
+            }
         }
     };
-    if !allowed {
+    if !origin_ok {
+        return forbidden_response();
+    }
+    if !rate_ok {
         return (StatusCode::TOO_MANY_REQUESTS, "").into_response();
     }
     ws.max_message_size(MAX_WS_PAYLOAD)

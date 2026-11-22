@@ -26,10 +26,12 @@ async fn main() {
     let opts = CliOptions::parse();
     let cfg = load_config(&opts);
 
-    if !opts.client_html_path.exists() {
+    if let Some(ref client_path) = opts.client_html_path
+        && !client_path.exists()
+    {
         eprintln!(
-            "[Fatal] Client file not found: {}\nPlace index.html next to the server or pass --client <path>.",
-            opts.client_html_path.display()
+            "[Fatal] Client file not found: {}\nPlace index.html next to the server, pass --client <path>, or pass --no-client.",
+            client_path.display()
         );
         std::process::exit(1);
     }
@@ -38,7 +40,12 @@ async fn main() {
     accounts.load();
     let accounts_count = accounts.len();
 
-    let state = ServerState::new(cfg.clone(), opts.data_dir.clone(), opts.client_html_path.clone());
+    let state = ServerState::new(
+        cfg.clone(),
+        opts.data_dir.clone(),
+        opts.client_html_path.clone(),
+        opts.allowed_origin.clone(),
+    );
     let seed = state.world.seed.clone();
     let deltas_len = state.world.tables.deltas.len();
     let world_path = state.world.world_path.clone();
@@ -56,14 +63,23 @@ async fn main() {
 
     println!("============================================================");
     println!("  VoxelCraft Server v{} (Rust) — Running on {}:{}", SERVER_VERSION, cfg.host, cfg.port);
-    println!("  Web Client : http://localhost:{}/", cfg.port);
+    if !opts.no_client {
+        println!("  Web Client : http://localhost:{}/", cfg.port);
+    }
     println!("  WebSocket  : ws://<your-server-address>:{}", cfg.port);
     println!("  Status API : http://localhost:{}/status", cfg.port);
+    if let Some(ref origin) = opts.allowed_origin {
+        println!("  Allowed URL: {}", origin);
+    }
     println!("  World Seed : {} | Mode: {} | PvP: {}", seed, cfg.mode, if cfg.pvp { "ON" } else { "OFF" });
     println!("  World File : {} ({} deltas)", world_path.display(), deltas_len);
     println!("  Accounts   : {} claimed", accounts_count);
     println!("  Data Dir   : {}", opts.data_dir.display());
-    println!("  Client     : {}", opts.client_html_path.display());
+    if let Some(ref client_path) = opts.client_html_path {
+        println!("  Client     : {}", client_path.display());
+    } else {
+        println!("  Client     : disabled (server-only)");
+    }
     println!("============================================================");
     if !opts.no_console {
         println!("Type /help in this terminal for server console commands.");
@@ -195,8 +211,22 @@ async fn main() {
     let app = build_router(Arc::clone(&ctx));
     let shutdown_ctx = Arc::clone(&ctx);
     let shutdown_fut = async move {
+        #[cfg(unix)]
+        let terminate = async {
+            if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                sig.recv().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
+                shutdown_ctx.stop();
+            }
+            _ = terminate => {
                 shutdown_ctx.stop();
             }
             _ = shutdown_ctx.shutdown.notified() => {}

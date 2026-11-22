@@ -258,7 +258,8 @@ pub struct Shard {
 pub struct ServerState {
     pub config: ServerConfig,
     pub data_dir: PathBuf,
-    pub client_html_path: PathBuf,
+    pub client_html_path: Option<PathBuf>,
+    pub allowed_origin: Option<String>,
     pub world: WorldState,
     pub ac: AntiCheat,
     pub players: IndexMap<String, PlayerSession>,
@@ -280,7 +281,12 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(config: ServerConfig, data_dir: PathBuf, client_html_path: PathBuf) -> Self {
+    pub fn new(
+        config: ServerConfig,
+        data_dir: PathBuf,
+        client_html_path: Option<PathBuf>,
+        allowed_origin: Option<String>,
+    ) -> Self {
         let world_path = data_dir.join("world-data.json");
         let mut world = WorldState::new(&config, world_path);
         world.load();
@@ -301,6 +307,7 @@ impl ServerState {
             config,
             data_dir,
             client_html_path,
+            allowed_origin,
             world,
             ac: AntiCheat::new(),
             players: IndexMap::new(),

@@ -10,10 +10,37 @@ pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Clone, Debug)]
 pub struct CliOptions {
     pub no_console: bool,
+    pub no_client: bool,
     pub data_dir: PathBuf,
-    pub client_html_path: PathBuf,
+    pub client_html_path: Option<PathBuf>,
+    pub allowed_origin: Option<String>,
     pub cli_host: Option<String>,
     pub cli_port: Option<u16>,
+}
+
+pub fn normalize_origin(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(scheme_end) = trimmed.find("://") {
+        let after_scheme = &trimmed[scheme_end + 3..];
+        let host_end = after_scheme
+            .find('/')
+            .map(|i| scheme_end + 3 + i)
+            .unwrap_or(trimmed.len());
+        Some(trimmed[..host_end].to_ascii_lowercase())
+    } else {
+        Some(trimmed.to_ascii_lowercase())
+    }
+}
+
+fn env_flag(name: &str) -> Option<bool> {
+    std::env::var(name).ok().and_then(|v| match v.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    })
 }
 
 impl CliOptions {
@@ -26,6 +53,10 @@ impl CliOptions {
                 .and_then(|i| argv.get(i + 1).cloned())
         };
         let no_console = argv.iter().any(|a| a == "--no-console") || !std::io::stdin().is_terminal();
+        let no_client = argv.iter().any(|a| a == "--no-client") || env_flag("NO_CLIENT").unwrap_or(false);
+        let allowed_origin = get_arg("url")
+            .or_else(|| std::env::var("URL").ok())
+            .and_then(|u| normalize_origin(&u));
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let data_dir = get_arg("data-dir")
             .or_else(|| std::env::var("DATA_DIR").ok())
@@ -36,9 +67,11 @@ impl CliOptions {
         } else {
             cwd.join(data_dir)
         };
-        let client_html_path = if let Some(explicit) = get_arg("client").or_else(|| std::env::var("CLIENT_HTML").ok()) {
+        let client_html_path = if no_client {
+            None
+        } else if let Some(explicit) = get_arg("client").or_else(|| std::env::var("CLIENT_HTML").ok()) {
             let p = PathBuf::from(explicit);
-            if p.is_absolute() { p } else { cwd.join(p) }
+            Some(if p.is_absolute() { p } else { cwd.join(p) })
         } else {
             let mut found = None;
             for name in ["index.html", "voxelcraft.html"] {
@@ -48,14 +81,22 @@ impl CliOptions {
                     break;
                 }
             }
-            found.unwrap_or_else(|| cwd.join("index.html"))
+            if found.is_some() {
+                found
+            } else if allowed_origin.is_some() {
+                None
+            } else {
+                Some(cwd.join("index.html"))
+            }
         };
         let cli_host = get_arg("host");
         let cli_port = get_arg("port").and_then(|s| s.parse::<u16>().ok());
         Self {
             no_console,
+            no_client: no_client || client_html_path.is_none(),
             data_dir,
             client_html_path,
+            allowed_origin,
             cli_host,
             cli_port,
         }
@@ -209,6 +250,9 @@ pub fn load_config(opts: &CliOptions) -> ServerConfig {
             && pn > 0 {
                 cfg.port = pn;
             }
+    if let Some(tp) = env_flag("TRUST_PROXY") {
+        cfg.trust_proxy = tp;
+    }
     if let Some(h) = &opts.cli_host {
         cfg.host = h.clone();
     }

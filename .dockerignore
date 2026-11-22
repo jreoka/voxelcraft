@@ -1,0 +1,12 @@
+.git
+index.html
+voxelcraft.html
+Dockerfile
+.dockerignore
+fly.toml
+rust/app/target
+rust/core/target
+*.log
+world-data.json
+accounts.json
+server-config.json
