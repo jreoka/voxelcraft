@@ -12975,6 +12975,54 @@ class Player {
 }
 
 class PlayerPhysics {
+  static _blockMaxYIfCollides(b, meta, bx, by, bz, px0, px1, py0, py1, pz0, pz1) {
+    // Fences & closed Fence Gates have 1.5-block vertical barrier!
+    if (b.shape === 'fence' || b.shape === 'fence_gate') {
+      if (b.shape === 'fence_gate' && (meta & 4)) return -Infinity;
+      return (py0 < by + 1.5 && py1 > by) ? by + 1.5 : -Infinity;
+    }
+    if (by < Math.floor(py0)) return -Infinity;
+
+    // True 2-block Doors (open passes freely; closed blocks exact thin panel!)
+    if (b.shape === 'door') {
+      if (meta & 4) return -Infinity;
+      const facing = meta & 3;
+      let dx0 = bx, dx1 = bx + 1, dz0 = bz, dz1 = bz + 1;
+      if (facing === 0) dz0 = bz + 0.78;
+      else if (facing === 1) dx0 = bx + 0.78;
+      else if (facing === 2) dz1 = bz + 0.22;
+      else dx1 = bx + 0.22;
+      return (px0 < dx1 && px1 > dx0 && py0 < by + 1 && py1 > by && pz0 < dz1 && pz1 > dz0) ? by + 1 : -Infinity;
+    }
+
+    // Trapdoors (open passes freely; closed is upper or lower thin deck)
+    if (b.shape === 'trapdoor') {
+      if (meta & 4) return -Infinity;
+      const bottom = (meta & 8) !== 0;
+      const bMinY = bottom ? by : by + 0.80;
+      const bMaxY = bottom ? by + 0.20 : by + 1.0;
+      return (py0 < bMaxY && py1 > bMinY) ? bMaxY : -Infinity;
+    }
+
+    // Slab lower/upper half precision
+    if (b.shape === 'slab') {
+      const top = (meta & 8) !== 0;
+      const bMinY = top ? by + 0.5 : by;
+      const bMaxY = top ? by + 1.0 : by + 0.5;
+      return (py0 < bMaxY && py1 > bMinY) ? bMaxY : -Infinity;
+    }
+
+    // Short functional shapes
+    if (b.shape === 'enchant_table') {
+      return (py0 < by + 0.76 && py1 > by) ? by + 0.76 : -Infinity;
+    }
+    if (b.shape === 'campfire') {
+      return (py0 < by + 0.38 && py1 > by) ? by + 0.38 : -Infinity;
+    }
+
+    return (py0 < by + 1 && py1 > by) ? by + 1 : -Infinity;
+  }
+
   static aabbCollides(world, x, y, z, hw, h) {
     const minX = Math.floor(x - hw), maxX = Math.floor(x + hw);
     const minY = Math.floor(y - 0.5), maxY = Math.floor(y + h - 0.001);
@@ -12988,61 +13036,63 @@ class PlayerPhysics {
           if (id === 0) continue;
           const b = BLOCKS.blocks[id];
           if (!b || !b.solid) continue;
-          const meta = world.getMeta(bx, by, bz);
-
-          // Fences & closed Fence Gates have 1.5-block vertical barrier!
-          if (b.shape === 'fence' || b.shape === 'fence_gate') {
-            if (b.shape === 'fence_gate' && (meta & 4)) continue;
-            if (py0 < by + 1.5 && py1 > by) return true;
-            continue;
+          if (this._blockMaxYIfCollides(b, world.getMeta(bx, by, bz), bx, by, bz, px0, px1, py0, py1, pz0, pz1) > -Infinity) {
+            return true;
           }
-          if (by < Math.floor(py0)) continue;
-
-          // True 2-block Doors (open passes freely; closed blocks exact thin panel!)
-          if (b.shape === 'door') {
-            if (meta & 4) continue;
-            const facing = meta & 3;
-            let dx0 = bx, dx1 = bx + 1, dz0 = bz, dz1 = bz + 1;
-            if (facing === 0) dz0 = bz + 0.78;
-            else if (facing === 1) dx0 = bx + 0.78;
-            else if (facing === 2) dz1 = bz + 0.22;
-            else dx1 = bx + 0.22;
-            if (px0 < dx1 && px1 > dx0 && py0 < by + 1 && py1 > by && pz0 < dz1 && pz1 > dz0) return true;
-            continue;
-          }
-
-          // Trapdoors (open passes freely; closed is upper or lower thin deck)
-          if (b.shape === 'trapdoor') {
-            if (meta & 4) continue;
-            const bottom = (meta & 8) !== 0;
-            if (bottom ? (py0 < by + 0.20 && py1 > by) : (py0 < by + 1.0 && py1 > by + 0.80)) return true;
-            continue;
-          }
-
-          // Slab lower/upper half precision
-          if (b.shape === 'slab') {
-            const top = (meta & 8) !== 0;
-            const bMinY = top ? by + 0.5 : by;
-            const bMaxY = top ? by + 1.0 : by + 0.5;
-            if (py0 < bMaxY && py1 > bMinY) return true;
-            continue;
-          }
-
-          // Short functional shapes
-          if (b.shape === 'enchant_table') {
-            if (py0 < by + 0.76 && py1 > by) return true;
-            continue;
-          }
-          if (b.shape === 'campfire') {
-            if (py0 < by + 0.38 && py1 > by) return true;
-            continue;
-          }
-
-          return true;
         }
       }
     }
     return false;
+  }
+
+  // Exact highest supporting collider top Y across the full AABB footprint (prevents bouncing on
+  // bottom trapdoors, slabs, fences, campfires, enchanting tables, and block edges)
+  static resolveGroundY(world, x, oldY, ny, z, hw, h) {
+    const minX = Math.floor(x - hw), maxX = Math.floor(x + hw);
+    const minY = Math.floor(ny - 0.5), maxY = Math.floor(ny + h - 0.001);
+    const minZ = Math.floor(z - hw), maxZ = Math.floor(z + hw);
+    const px0 = x - hw, px1 = x + hw, py0 = ny, py1 = ny + h, pz0 = z - hw, pz1 = z + hw;
+    const maxAllowed = oldY + 0.05;
+    let bestTop = -Infinity;
+
+    for (let by = minY; by <= maxY; by++) {
+      for (let bz = minZ; bz <= maxZ; bz++) {
+        for (let bx = minX; bx <= maxX; bx++) {
+          const id = world.getBlock(bx, by, bz);
+          if (id === 0) continue;
+          const b = BLOCKS.blocks[id];
+          if (!b || !b.solid) continue;
+          const topY = this._blockMaxYIfCollides(b, world.getMeta(bx, by, bz), bx, by, bz, px0, px1, py0, py1, pz0, pz1);
+          if (topY > bestTop && topY <= maxAllowed) bestTop = topY;
+        }
+      }
+    }
+    return bestTop > -Infinity ? bestTop : oldY;
+  }
+
+  static resolveStepUpY(world, x, y, z, hw, h, maxStep = 0.55) {
+    const minX = Math.floor(x - hw), maxX = Math.floor(x + hw);
+    const minY = Math.floor(y - 0.5), maxY = Math.floor(y + h - 0.001);
+    const minZ = Math.floor(z - hw), maxZ = Math.floor(z + hw);
+    const px0 = x - hw, px1 = x + hw, py0 = y, py1 = y + h, pz0 = z - hw, pz1 = z + hw;
+    let needY = y;
+
+    for (let by = minY; by <= maxY; by++) {
+      for (let bz = minZ; bz <= maxZ; bz++) {
+        for (let bx = minX; bx <= maxX; bx++) {
+          const id = world.getBlock(bx, by, bz);
+          if (id === 0) continue;
+          const b = BLOCKS.blocks[id];
+          if (!b || !b.solid) continue;
+          const topY = this._blockMaxYIfCollides(b, world.getMeta(bx, by, bz), bx, by, bz, px0, px1, py0, py1, pz0, pz1);
+          if (topY > needY) needY = topY;
+        }
+      }
+    }
+    if (needY > y && needY <= y + maxStep && !this.aabbCollides(world, x, needY, z, hw, h)) {
+      return needY;
+    }
+    return -Infinity;
   }
 
   static _isClimbableAt(world, x, y, z) {
@@ -13376,7 +13426,7 @@ class PlayerPhysics {
     const canStepUp = player.onGround || player.onLadder || player.ladderCoyote > 0 || (player.ladderJumpTimer > 0 && player.ladderLaunch);
 
     for (let s = 0; s < steps; s++) {
-      // X movement + auto step-up (0.55m for slabs/stairs/ladder ledges) + sneak edge safety
+      // X movement + auto step-up (0.55m for slabs/trapdoors/stairs/ladder ledges) + sneak edge safety
       const nx = player.x + player.vx * sdt;
       if (!this.aabbCollides(world, nx, player.y, player.z, hw, h)) {
         if (player.crouching && player.onGround && !this.aabbCollides(world, nx, player.y - 0.15, player.z, hw, h)) {
@@ -13384,10 +13434,13 @@ class PlayerPhysics {
         } else {
           player.x = nx;
         }
-      } else if (canStepUp && !this.aabbCollides(world, nx, player.y + 0.55, player.z, hw, h)) {
-        player.x = nx; player.y += 0.55;
       } else {
-        player.vx = 0;
+        const stepY = canStepUp ? this.resolveStepUpY(world, nx, player.y, player.z, hw, h, 0.55) : -Infinity;
+        if (stepY > -Infinity) {
+          player.x = nx; player.y = stepY;
+        } else {
+          player.vx = 0;
+        }
       }
 
       // Z movement
@@ -13398,10 +13451,13 @@ class PlayerPhysics {
         } else {
           player.z = nz;
         }
-      } else if (canStepUp && !this.aabbCollides(world, player.x, player.y + 0.55, nz, hw, h)) {
-        player.z = nz; player.y += 0.55;
       } else {
-        player.vz = 0;
+        const stepY = canStepUp ? this.resolveStepUpY(world, player.x, player.y, nz, hw, h, 0.55) : -Infinity;
+        if (stepY > -Infinity) {
+          player.z = nz; player.y = stepY;
+        } else {
+          player.vz = 0;
+        }
       }
 
       // Y movement
@@ -13411,16 +13467,7 @@ class PlayerPhysics {
         player.onGround = false;
       } else {
         if (player.vy < 0) {
-          player.y = Math.floor(ny) + 1.0;
-          const underId = world.getBlock(Math.floor(player.x), Math.floor(ny), Math.floor(player.z));
-          const underB = BLOCKS.get(underId);
-          if (underB.shape === 'slab' && !(world.getMeta(Math.floor(player.x), Math.floor(ny), Math.floor(player.z)) & 8)) {
-            if (ny < Math.floor(ny) + 0.52) player.y = Math.floor(ny) + 0.5;
-          } else if (underB.shape === 'enchant_table') {
-            if (ny < Math.floor(ny) + 0.78) player.y = Math.floor(ny) + 0.76;
-          } else if (underB.shape === 'campfire') {
-            if (ny < Math.floor(ny) + 0.40) player.y = Math.floor(ny) + 0.38;
-          }
+          player.y = this.resolveGroundY(world, player.x, player.y, ny, player.z, hw, h);
           player.onGround = true;
         }
         player.vy = 0;
@@ -15633,7 +15680,7 @@ class MobManager {
       const ny = m.y + m.vy * dt;
       if (PlayerPhysics.aabbCollides(this.world, m.x, ny, m.z, mr, mh)) {
         if (m.vy < 0) {
-          m.y = Math.floor(ny) + 1.0;
+          m.y = PlayerPhysics.resolveGroundY(this.world, m.x, m.y, ny, m.z, mr, mh);
           m.onGround = true;
         } else {
           m.onGround = false;

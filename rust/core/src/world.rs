@@ -754,6 +754,62 @@ impl CoreWorld {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn block_max_y_if_collides(
+        b: &crate::blocks::BlockDef,
+        meta: u8,
+        bx: i32,
+        by: i32,
+        bz: i32,
+        px0: f64,
+        px1: f64,
+        py0: f64,
+        py1: f64,
+        pz0: f64,
+        pz1: f64,
+    ) -> Option<f64> {
+        let byf = by as f64;
+        if b.shape == "fence" || b.shape == "fence_gate" {
+            if b.shape == "fence_gate" && (meta & 4) != 0 { return None; }
+            return if py0 < byf + 1.5 && py1 > byf { Some(byf + 1.5) } else { None };
+        }
+        if by < py0.floor() as i32 { return None; }
+        if b.shape == "door" {
+            if (meta & 4) != 0 { return None; }
+            let facing = meta & 3;
+            let (mut dx0, mut dx1, mut dz0, mut dz1) = (bx as f64, (bx + 1) as f64, bz as f64, (bz + 1) as f64);
+            match facing {
+                0 => dz0 = (bz as f64) + 0.78,
+                1 => dx0 = (bx as f64) + 0.78,
+                2 => dz1 = (bz as f64) + 0.22,
+                _ => dx1 = (bx as f64) + 0.22,
+            }
+            return if px0 < dx1 && px1 > dx0 && py0 < byf + 1.0 && py1 > byf && pz0 < dz1 && pz1 > dz0 {
+                Some(byf + 1.0)
+            } else {
+                None
+            };
+        }
+        if b.shape == "trapdoor" {
+            if (meta & 4) != 0 { return None; }
+            let bottom = (meta & 8) != 0;
+            let (b_min_y, b_max_y) = if bottom { (byf, byf + 0.20) } else { (byf + 0.80, byf + 1.0) };
+            return if py0 < b_max_y && py1 > b_min_y { Some(b_max_y) } else { None };
+        }
+        if b.shape == "slab" {
+            let top = (meta & 8) != 0;
+            let (b_min_y, b_max_y) = if top { (byf + 0.5, byf + 1.0) } else { (byf, byf + 0.5) };
+            return if py0 < b_max_y && py1 > b_min_y { Some(b_max_y) } else { None };
+        }
+        if b.shape == "enchant_table" {
+            return if py0 < byf + 0.76 && py1 > byf { Some(byf + 0.76) } else { None };
+        }
+        if b.shape == "campfire" {
+            return if py0 < byf + 0.38 && py1 > byf { Some(byf + 0.38) } else { None };
+        }
+        if py0 < byf + 1.0 && py1 > byf { Some(byf + 1.0) } else { None }
+    }
+
     pub fn aabb_collides(&self, x: f64, y: f64, z: f64, hw: f64, h: f64) -> bool {
         let min_x = (x - hw).floor() as i32;
         let max_x = (x + hw).floor() as i32;
@@ -771,52 +827,44 @@ impl CoreWorld {
                     let Some(b) = BLOCKS.blocks[id as usize].as_ref() else { continue };
                     if !b.solid { continue; }
                     let meta = self.get_meta(bx, by, bz);
-                    let byf = by as f64;
-                    if b.shape == "fence" || b.shape == "fence_gate" {
-                        if b.shape == "fence_gate" && (meta & 4) != 0 { continue; }
-                        if py0 < byf + 1.5 && py1 > byf { return true; }
-                        continue;
+                    if Self::block_max_y_if_collides(b, meta, bx, by, bz, px0, px1, py0, py1, pz0, pz1).is_some() {
+                        return true;
                     }
-                    if by < py0.floor() as i32 { continue; }
-                    if b.shape == "door" {
-                        if (meta & 4) != 0 { continue; }
-                        let facing = meta & 3;
-                        let (mut dx0, mut dx1, mut dz0, mut dz1) = (bx as f64, (bx + 1) as f64, bz as f64, (bz + 1) as f64);
-                        match facing {
-                            0 => dz0 = (bz as f64) + 0.78,
-                            1 => dx0 = (bx as f64) + 0.78,
-                            2 => dz1 = (bz as f64) + 0.22,
-                            _ => dx1 = (bx as f64) + 0.22,
-                        }
-                        if px0 < dx1 && px1 > dx0 && py0 < byf + 1.0 && py1 > byf && pz0 < dz1 && pz1 > dz0 {
-                            return true;
-                        }
-                        continue;
-                    }
-                    if b.shape == "trapdoor" {
-                        if (meta & 4) != 0 { continue; }
-                        if py0 < byf + 1.0 && py1 > byf + 0.80 { return true; }
-                        continue;
-                    }
-                    if b.shape == "slab" {
-                        let top = (meta & 8) != 0;
-                        let (b_min_y, b_max_y) = if top { (byf + 0.5, byf + 1.0) } else { (byf, byf + 0.5) };
-                        if py0 < b_max_y && py1 > b_min_y { return true; }
-                        continue;
-                    }
-                    if b.shape == "enchant_table" {
-                        if py0 < byf + 0.76 && py1 > byf { return true; }
-                        continue;
-                    }
-                    if b.shape == "campfire" {
-                        if py0 < byf + 0.38 && py1 > byf { return true; }
-                        continue;
-                    }
-                    return true;
                 }
             }
         }
         false
+    }
+
+    pub fn resolve_ground_y(&self, x: f64, old_y: f64, ny: f64, z: f64, hw: f64, h: f64) -> f64 {
+        let min_x = (x - hw).floor() as i32;
+        let max_x = (x + hw).floor() as i32;
+        let min_y = (ny - 0.5).floor() as i32;
+        let max_y = (ny + h - 0.001).floor() as i32;
+        let min_z = (z - hw).floor() as i32;
+        let max_z = (z + hw).floor() as i32;
+        let (px0, px1, py0, py1, pz0, pz1) = (x - hw, x + hw, ny, ny + h, z - hw, z + hw);
+        let max_allowed = old_y + 0.05;
+        let mut best_top = f64::NEG_INFINITY;
+
+        for by in min_y..=max_y {
+            for bz in min_z..=max_z {
+                for bx in min_x..=max_x {
+                    let id = self.get_block(bx, by, bz);
+                    if id == 0 { continue; }
+                    let Some(b) = BLOCKS.blocks[id as usize].as_ref() else { continue };
+                    if !b.solid { continue; }
+                    let meta = self.get_meta(bx, by, bz);
+                    if let Some(top_y) = Self::block_max_y_if_collides(b, meta, bx, by, bz, px0, px1, py0, py1, pz0, pz1)
+                        && top_y > best_top
+                        && top_y <= max_allowed
+                    {
+                        best_top = top_y;
+                    }
+                }
+            }
+        }
+        if best_top.is_finite() { best_top } else { old_y }
     }
 }
 

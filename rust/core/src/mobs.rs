@@ -752,7 +752,7 @@ impl MobManager {
                     let ny = m.y + m.vy * dt;
                     if world.aabb_collides(m.x, ny, m.z, mr, mh) {
                         if m.vy < 0.0 {
-                            m.y = ny.floor() + 1.0;
+                            m.y = world.resolve_ground_y(m.x, m.y, ny, m.z, mr, mh);
                             m.on_ground = true;
                         } else {
                             m.on_ground = false;
