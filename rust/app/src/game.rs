@@ -27,7 +27,7 @@ use voxelcraft_core::world::{BlockEntity, CoreRedstoneAdapter, CoreWorld, contai
 use crate::anticheat::{AntiCheat, PlayerAC, now_ms, sanitize_enchant};
 use crate::config::ServerConfig;
 use crate::ledger::{Ledger, stack_key};
-use crate::world_state::{SavedPlayerProfile, WorldState};
+use crate::world_state::{SavedLocation, SavedPlayerProfile, WorldState};
 
 const MAX_DROPS: usize = 1500;
 const MERGE_DIST: f64 = (1_i64 << 20) as f64;
@@ -114,6 +114,15 @@ pub struct PendingFrame {
     pub far: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct TpaRequest {
+    pub from_id: String,
+    pub from_name: String,
+    pub to_id: String,
+    pub here: bool, // false: from -> to (/tpa), true: to -> from (/tpahere)
+    pub expires_at: i64,
+}
+
 pub struct PlayerSession {
     pub id: String,
     pub name: String,
@@ -150,6 +159,9 @@ pub struct PlayerSession {
     pub last_break_ms: i64,
     pub last_mob_hit_ms: i64,
     pub last_shot_ms: i64,
+    pub homes: IndexMap<String, SavedLocation>,
+    pub last_pos: Option<SavedLocation>,
+    pub last_msg_from: Option<String>,
 }
 
 impl PlayerSession {
@@ -271,6 +283,7 @@ pub struct ServerState {
     pub day_night: DayNightSystem,
     pub ip_counts: HashMap<String, usize>,
     pub failed_logins: HashMap<String, (u32, i64)>,
+    pub tpa_requests: Vec<TpaRequest>,
     pub started_at: i64,
     pub save_pending_at: Option<i64>,
     pub stopping: bool,
@@ -319,6 +332,7 @@ impl ServerState {
             day_night: DayNightSystem::new(),
             ip_counts: HashMap::new(),
             failed_logins: HashMap::new(),
+            tpa_requests: Vec::new(),
             started_at: now_ms(),
             save_pending_at: None,
             stopping: false,
@@ -467,6 +481,7 @@ impl ServerState {
             limbo: p.limbo.iter().flatten().cloned().collect(),
             mode: Some(p.mode.clone()),
             last_seen: Some(now_ms()),
+            homes: p.homes.clone(),
         };
         if !p.has_moved {
             if let Some(old) = self.world.saved_players.get(&p.name.to_lowercase()) {
@@ -550,6 +565,54 @@ impl ServerState {
         let lx = (xi - &dst_ox).to_f64().unwrap_or(0.0) + xf;
         let lz = (zi - &dst_oz).to_f64().unwrap_or(0.0) + zf;
         self.move_player_to_shard(pid, dst, lx, y, lz, reason, announce);
+    }
+
+    pub fn player_abs_loc(&self, pid: &str) -> Option<SavedLocation> {
+        let p = self.players.get(pid)?;
+        let sh = self.shards.get(&p.shard_id)?;
+        let xi = &sh.ox + BigInt::from(p.x.floor() as i64);
+        let zi = &sh.oz + BigInt::from(p.z.floor() as i64);
+        Some(SavedLocation {
+            xi: xi.to_string(),
+            xf: round_dec(p.x - p.x.floor(), 1000.0),
+            y: round_dec(p.y, 1000.0),
+            zi: zi.to_string(),
+            zf: round_dec(p.z - p.z.floor(), 1000.0),
+        })
+    }
+
+    pub fn teleport_to_loc(&mut self, pid: &str, loc: &SavedLocation, reason: Option<&str>) -> bool {
+        let (Ok(xi), Ok(zi)) = (loc.xi.parse::<BigInt>(), loc.zi.parse::<BigInt>()) else {
+            return false;
+        };
+        let prev = self.player_abs_loc(pid);
+        if let (Some(prev), Some(p)) = (prev, self.players.get_mut(pid)) {
+            p.last_pos = Some(prev);
+        }
+        let y = if loc.y.is_finite() { loc.y.clamp(-64.0, 320.0) } else { 80.0 };
+        let xf = if loc.xf.is_finite() { loc.xf.clamp(0.0, 0.999) } else { 0.5 };
+        let zf = if loc.zf.is_finite() { loc.zf.clamp(0.0, 0.999) } else { 0.5 };
+        self.place_abs(pid, &xi, xf, y, &zi, zf, reason, true);
+        true
+    }
+
+    pub fn default_spawn_loc(&mut self) -> SavedLocation {
+        if let Some(sp) = &self.world.spawn {
+            return sp.clone();
+        }
+        let hid = self.home_shard_id;
+        let y = if let Some(sh) = self.shards.get_mut(&hid) {
+            sh.core.get_surface_height(8, 8) as f64 + 1.2
+        } else {
+            80.0
+        };
+        SavedLocation {
+            xi: "8".to_string(),
+            xf: 0.5,
+            y,
+            zi: "8".to_string(),
+            zf: 0.5,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1915,9 +1978,17 @@ impl ServerState {
 
     fn handle_respawn(&mut self, pid: &str, msg: &Value) {
         let now = now_ms();
+        let death_loc = if self.players.get(pid).is_some_and(|p| p.pl.dead) {
+            self.player_abs_loc(pid)
+        } else {
+            None
+        };
         let was_dead = {
             let Some(p) = self.players.get_mut(pid) else { return };
             if p.pl.dead {
+                if let Some(loc) = death_loc {
+                    p.last_pos = Some(loc);
+                }
                 p.pl.dead = false;
                 p.pl.health = p.pl.max_health;
                 p.pl.hunger = p.pl.max_hunger;
@@ -3055,6 +3126,9 @@ impl ServerState {
             last_break_ms: 0,
             last_mob_hit_ms: 0,
             last_shot_ms: 0,
+            homes: saved.as_ref().map(|s| s.homes.clone()).unwrap_or_default(),
+            last_pos: None,
+            last_msg_from: None,
         };
         self.players.insert(id.clone(), session);
         if has_pos {

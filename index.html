@@ -5279,7 +5279,8 @@ class TextureAtlas {
       } else {
         // Crisp 3D isometric voxel icon
         const [tx, ty] = this._tileOrigin(b.tex[0]);
-        const [sx, sy] = this._tileOrigin(b.tex[3] !== undefined ? b.tex[3] : b.tex[2]);
+        const [fx, fy] = this._tileOrigin(b.tex[3] !== undefined && it.blockId !== B.FARMLAND ? b.tex[3] : b.tex[2]);
+        const [sx, sy] = this._tileOrigin(b.tex[2]);
         ctx.save();
         ctx.translate(18, 4);
         ctx.transform(0.86, 0.44, -0.86, 0.44, 0, 0);
@@ -5293,7 +5294,7 @@ class TextureAtlas {
         ctx.save();
         ctx.translate(4.2, 11);
         ctx.transform(0.86, 0.44, 0, 0.96, 0, 0);
-        ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.drawImage(this.canvas, fx, fy, TILE_PX, TILE_PX, 0, 0, 16, 16);
         ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 0, 16, 16);
         ctx.restore();
         ctx.save();
@@ -10204,9 +10205,11 @@ const ENT_FLOATS = 15; // pos(3) norm(3) uv(2) sel(1) rgba(4) light(2)
 class Renderer {
   constructor(canvas, atlas) {
     this.canvas = canvas;
-    this.gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+    this.gl =
+      canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' }) ||
+      canvas.getContext('webgl2', { antialias: false, alpha: false }) ||
+      canvas.getContext('webgl2');
     if (!this.gl) throw new Error('WebGL2 is required to run VoxelCraft.');
-    const gl = this.gl;
 
     this.atlas = atlas;
     this.proj = Mat4.create();
@@ -10215,6 +10218,33 @@ class Renderer {
     this.vp = Mat4.create();
     this.shadowVP = Mat4.create();
     this.frustum = Array.from({ length: 6 }, () => new Float32Array(4));
+    this.contextLost = false;
+    this.onContextRestored = null;
+
+    this._initGLResources();
+
+    this.time = 0;
+    this.drawCalls = 0;
+    this.chunksDrawn = 0;
+    this.shadowChunks = 0;
+    this._curLight = [1, 0];
+    this._light = { dir: [0, 1, 0], col: [1, 1, 1], amb: [0.4, 0.45, 0.5] };
+    this.resize();
+
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      this.contextLost = true;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this._initGLResources();
+      this.contextLost = false;
+      this.resize();
+      if (this.onContextRestored) this.onContextRestored();
+    });
+  }
+
+  _initGLResources() {
+    const gl = this.gl;
     this._uCache = new Map();
     this._enabledAttribs = 0;
 
@@ -10231,14 +10261,6 @@ class Renderer {
     gl.depthFunc(gl.LEQUAL);
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
-
-    this.time = 0;
-    this.drawCalls = 0;
-    this.chunksDrawn = 0;
-    this.shadowChunks = 0;
-    this._curLight = [1, 0];
-    this._light = { dir: [0, 1, 0], col: [1, 1, 1], amb: [0.4, 0.45, 0.5] };
-    this.resize();
   }
 
   resize() {
@@ -11444,6 +11466,7 @@ class Renderer {
   }
 
   render(world, cam, mobMgr, drops, particles, dayNight, weather, mining, settings, dt, remotePlayers = null) {
+    if (this.contextLost || this.gl.isContextLost()) return;
     this.resize();
     this.time += dt;
     this.drawCalls = 0;
@@ -11827,9 +11850,17 @@ class Renderer {
           const shape = this._getBlockShapeBoxes(prev.id, gMeta, world, gx, gy, gz);
           const texArr = pBlk ? pBlk.tex : [0, 0, 0];
           const doorTex = isTopDoor && texArr[3] !== undefined ? texArr[3] : texArr[2];
-          const faceTiles = pBlk && pBlk.shape === 'door'
-            ? [texArr[0], texArr[1], doorTex, doorTex, doorTex, doorTex]
-            : [texArr[0], texArr[1], texArr[3] !== undefined ? texArr[3] : texArr[2], texArr[2], texArr[2], texArr[2]];
+          let faceTiles;
+          if (pBlk && pBlk.shape === 'door') {
+            faceTiles = [texArr[0], texArr[1], doorTex, doorTex, doorTex, doorTex];
+          } else {
+            faceTiles = [texArr[0], texArr[1], texArr[2], texArr[2], texArr[2], texArr[2]];
+            if (texArr[3] !== undefined && prev.id !== B.FARMLAND) {
+              const facing = gMeta & 3;
+              const frontFaceIdx = facing === 0 ? 2 : facing === 1 ? 4 : facing === 2 ? 3 : 5;
+              faceTiles[frontFaceIdx] = texArr[3];
+            }
+          }
           for (const bx of shape.boxes) {
             let cx, cy, cz, sx, sy, sz, R;
             if (bx.cx !== undefined) {
@@ -21242,6 +21273,16 @@ class GameEngine {
     this.settings = new SettingsManager();
     this.atlas = new TextureAtlas();
     this.renderer = new Renderer(this.canvas, this.atlas);
+    this.renderer.onContextRestored = () => {
+      if (this.world && this.world.chunks) {
+        for (const ch of this.world.chunks.values()) {
+          ch.opaqueBuf = null; ch.fluidBuf = null;
+          ch.opaqueCount = 0; ch.fluidCount = 0;
+          ch.dirty = true;
+        }
+      }
+      if (this.ui) this.ui.toast('Graphics context restored.');
+    };
     this.audio = new AudioSystem(this.settings);
     this.saveMgr = new SaveManager();
     this.net = new MultiplayerClient(this);
@@ -21934,7 +21975,7 @@ window.addEventListener('DOMContentLoaded', () => {
   try {
     window.__VOXELCRAFT__ = new GameEngine();
   } catch (err) {
-    document.body.innerHTML = `<div style="padding:40px;color:#fff;font-family:sans-serif"><h2>VoxelCraft Initialization Error</h2><pre>${err.stack || err}</pre></div>`;
+    document.body.innerHTML = `<div style="padding:40px;color:#fff;font-family:sans-serif;max-width:680px"><h2>VoxelCraft Initialization Error</h2><pre style="white-space:pre-wrap;opacity:.9">${err.stack || err}</pre><p style="color:#b8c4d8;font-size:14px;line-height:1.5">If your monitors just flashed black, Windows reset your GPU driver and the browser temporarily disabled WebGL2. Reload the page (or restart your browser if it persists).</p><button onclick="location.reload()" style="margin-top:8px;padding:9px 18px;border-radius:8px;border:1px solid rgba(255,255,255,0.25);background:#2d7d46;color:#fff;font-weight:700;cursor:pointer">Reload</button></div>`;
     console.error(err);
   }
 });

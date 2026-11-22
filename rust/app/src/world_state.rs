@@ -14,6 +14,16 @@ use crate::config::{ServerConfig, atomic_write_json};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SavedLocation {
+    pub xi: String,
+    pub xf: f64,
+    pub y: f64,
+    pub zi: String,
+    pub zf: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedPlayerProfile {
     pub name: String,
     #[serde(default)]
@@ -37,6 +47,8 @@ pub struct SavedPlayerProfile {
     pub limbo: Vec<ItemStack>,
     pub mode: Option<String>,
     pub last_seen: Option<i64>,
+    #[serde(default)]
+    pub homes: IndexMap<String, SavedLocation>,
 }
 
 pub struct WorldState {
@@ -46,6 +58,7 @@ pub struct WorldState {
     pub time: f64,
     pub weather: String,
     pub weather_timer: f64,
+    pub spawn: Option<SavedLocation>,
     pub tables: SharedWorldTables,
     pub saved_players: IndexMap<String, SavedPlayerProfile>,
 }
@@ -63,6 +76,7 @@ impl WorldState {
             time: 0.28,
             weather: "clear".to_string(),
             weather_timer: 240.0,
+            spawn: None,
             tables: SharedWorldTables::default(),
             saved_players: IndexMap::new(),
         }
@@ -90,6 +104,10 @@ impl WorldState {
                     if let Some(w) = data.get("weather").and_then(|v| v.as_str()) {
                         self.weather = w.to_string();
                     }
+                    if let Some(sp) = data.get("spawn")
+                        && let Ok(loc) = serde_json::from_value::<SavedLocation>(sp.clone()) {
+                            self.spawn = Some(loc);
+                        }
                     if let Some(deltas) = data.get("deltas").and_then(|v| v.as_array()) {
                         for d in deltas {
                             if let Some(arr) = d.as_array()
@@ -186,6 +204,7 @@ impl WorldState {
             "day": self.day,
             "time": time_rounded,
             "weather": self.weather,
+            "spawn": self.spawn,
             "deltas": deltas,
             "blockEntities": block_entities,
             "players": self.saved_players,

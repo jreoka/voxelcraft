@@ -19,7 +19,7 @@ use voxelcraft_core::math::{big_to_num, format_abs_coord, parse_abs_coord};
 use crate::accounts::AccountStore;
 use crate::anticheat::now_ms;
 use crate::config::{normalize_origin, save_config};
-use crate::game::{ServerState, WsOut};
+use crate::game::{ServerState, TpaRequest, WsOut};
 
 const MAX_WS_PAYLOAD: usize = 256 * 1024;
 
@@ -417,6 +417,7 @@ async fn handle_ws_connection(ctx: Arc<AppCtx>, socket: WebSocket, ip: String) {
                     p.online = false;
                 }
                 st.save_player_profile(&pid);
+                st.tpa_requests.retain(|r| r.from_id != pid && r.to_id != pid);
                 if let Some(p) = st.players.shift_remove(&pid) {
                     if let Some(sh) = st.shards.get_mut(&p.shard_id) {
                         sh.player_ids.retain(|id| id != &pid);
@@ -692,12 +693,14 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
 
     match cmd.as_str() {
         "help" => {
-            reply(st, "Player cmds: /list, /ping, /pos, /msg <player> <text>, /passwd <old> <new>", "sys");
+            reply(st, "Player cmds: /sethome [name], /home [name], /delhome [name], /homes, /spawn, /back", "sys");
+            reply(st, "TPA & Social: /tpa <player>, /tpahere <player>, /tpaccept, /tpdeny, /tpcancel, /msg <player> <text>, /r <text>", "sys");
+            reply(st, "Utility: /list, /pos, /ping, /passwd <old> <new>", "sys");
             if is_op {
                 let extra = if is_console { ", /stop" } else { "" };
                 reply(
                     st,
-                    &format!("Admin cmds: /op, /deop, /kick, /ban, /unban, /tp, /gamemode, /give, /time, /weather, /pvp, /ac, /save, /say{}", extra),
+                    &format!("Admin cmds: /op, /deop, /kick, /ban, /unban, /tp, /setspawn, /gamemode, /give, /time, /weather, /pvp, /ac, /save, /say{}", extra),
                     "sys",
                 );
             }
@@ -749,8 +752,257 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
             };
             let from_name = sender_pid.map_or("Server".to_string(), |id| st.players[id].name.clone());
             let tname = st.players[&tid].name.clone();
-            st.players[&tid].send_json(&json!({ "type": "chat", "kind": "sys", "text": format!("[PM from {}] {}", from_name, body) }));
+            if let Some(tp) = st.players.get_mut(&tid) {
+                if sender_pid.is_some() {
+                    tp.last_msg_from = Some(from_name.clone());
+                }
+                tp.send_json(&json!({ "type": "chat", "kind": "sys", "text": format!("[PM from {}] {}", from_name, body) }));
+            }
             reply(st, &format!("[PM to {}] {}", tname, body), "sys");
+            return None;
+        }
+        "r" | "reply" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let body = args.join(" ");
+            if body.is_empty() {
+                reply(st, "Usage: /r <message>", "warn");
+                return None;
+            }
+            let Some(last_name) = st.players[pid].last_msg_from.clone() else {
+                reply(st, "No one has messaged you recently.", "warn");
+                return None;
+            };
+            let Some(tid) = st.find_player_id_by_name(&last_name) else {
+                reply(st, &format!("{} is no longer online.", last_name), "warn");
+                return None;
+            };
+            let from_name = st.players[pid].name.clone();
+            let tname = st.players[&tid].name.clone();
+            if let Some(tp) = st.players.get_mut(&tid) {
+                tp.last_msg_from = Some(from_name.clone());
+                tp.send_json(&json!({ "type": "chat", "kind": "sys", "text": format!("[PM from {}] {}", from_name, body) }));
+            }
+            reply(st, &format!("[PM to {}] {}", tname, body), "sys");
+            return None;
+        }
+        "sethome" if !is_console => {
+            let pid = sender_pid.unwrap();
+            if st.players[pid].pl.dead {
+                reply(st, "You cannot set a home while dead.", "warn");
+                return None;
+            }
+            let raw_name = args.first().copied().unwrap_or("home");
+            let hname = raw_name.to_lowercase();
+            if hname.is_empty() || hname.len() > 20 || !hname.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+                reply(st, "Home name must be 1-20 letters, numbers, '_' or '-'.", "warn");
+                return None;
+            }
+            const MAX_HOMES: usize = 5;
+            if !is_op && !st.players[pid].homes.contains_key(&hname) && st.players[pid].homes.len() >= MAX_HOMES {
+                reply(st, &format!("Home limit reached ({} max). Delete one with /delhome <name> first.", MAX_HOMES), "warn");
+                return None;
+            }
+            let Some(loc) = st.player_abs_loc(pid) else { return None };
+            let (sx, sy, sz) = (loc.xi.clone(), loc.y, loc.zi.clone());
+            if let Some(p) = st.players.get_mut(pid) {
+                p.homes.insert(hname.clone(), loc);
+            }
+            st.save_player_profile(pid);
+            st.schedule_world_save(2000);
+            reply(st, &format!("Home '{}' set at X {}, Y {:.1}, Z {}.", hname, sx, sy, sz), "sys");
+            return None;
+        }
+        "home" if !is_console => {
+            let pid = sender_pid.unwrap();
+            if st.players[pid].pl.dead {
+                reply(st, "You cannot teleport while dead.", "warn");
+                return None;
+            }
+            let hname = args.first().copied().unwrap_or("home").to_lowercase();
+            let Some(loc) = st.players[pid].homes.get(&hname).cloned() else {
+                if st.players[pid].homes.is_empty() {
+                    reply(st, "You have no homes set. Stand where you want and run /sethome [name].", "warn");
+                } else {
+                    let list: Vec<String> = st.players[pid].homes.keys().cloned().collect();
+                    reply(st, &format!("Home '{}' not found. Your homes: {}", hname, list.join(", ")), "warn");
+                }
+                return None;
+            };
+            st.teleport_to_loc(pid, &loc, Some(&format!("Teleported to home '{}'.", hname)));
+            return None;
+        }
+        "delhome" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let hname = args.first().copied().unwrap_or("home").to_lowercase();
+            let removed = st.players.get_mut(pid).and_then(|p| p.homes.shift_remove(&hname)).is_some();
+            if removed {
+                st.save_player_profile(pid);
+                st.schedule_world_save(2000);
+                reply(st, &format!("Deleted home '{}'.", hname), "sys");
+            } else {
+                reply(st, &format!("Home '{}' not found.", hname), "warn");
+            }
+            return None;
+        }
+        "homes" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let p = &st.players[pid];
+            if p.homes.is_empty() {
+                reply(st, "You have no homes set. Use /sethome [name] to set one.", "sys");
+            } else {
+                let items: Vec<String> = p
+                    .homes
+                    .iter()
+                    .map(|(k, v)| format!("{} ({}, {:.0}, {})", k, v.xi, v.y, v.zi))
+                    .collect();
+                reply(st, &format!("Your homes ({}): {}", items.len(), items.join(", ")), "sys");
+            }
+            return None;
+        }
+        "spawn" if !is_console => {
+            let pid = sender_pid.unwrap();
+            if st.players[pid].pl.dead {
+                reply(st, "You cannot teleport while dead.", "warn");
+                return None;
+            }
+            let loc = st.default_spawn_loc();
+            st.teleport_to_loc(pid, &loc, Some("Teleported to server spawn."));
+            return None;
+        }
+        "back" if !is_console => {
+            let pid = sender_pid.unwrap();
+            if st.players[pid].pl.dead {
+                reply(st, "You cannot teleport while dead.", "warn");
+                return None;
+            }
+            let Some(loc) = st.players[pid].last_pos.clone() else {
+                reply(st, "No previous location saved yet.", "warn");
+                return None;
+            };
+            st.teleport_to_loc(pid, &loc, Some("Returned to your previous location."));
+            return None;
+        }
+        "tpa" | "tpahere" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let here = cmd == "tpahere";
+            let Some(target_arg) = args.first() else {
+                reply(st, &format!("Usage: /{} <player>", cmd), "warn");
+                return None;
+            };
+            let Some(tid) = st.find_player_id_by_name(target_arg) else {
+                reply(st, &format!("Player '{}' not found.", target_arg), "warn");
+                return None;
+            };
+            if tid == pid {
+                reply(st, "You cannot send a teleport request to yourself.", "warn");
+                return None;
+            }
+            let now = now_ms();
+            st.tpa_requests.retain(|r| r.expires_at > now);
+            let from_name = st.players[pid].name.clone();
+            let to_name = st.players[&tid].name.clone();
+            st.tpa_requests.retain(|r| !(r.from_id == pid && r.to_id == tid));
+            st.tpa_requests.push(TpaRequest {
+                from_id: pid.to_string(),
+                from_name: from_name.clone(),
+                to_id: tid.clone(),
+                here,
+                expires_at: now + 60_000,
+            });
+            let prompt = if here {
+                format!("{} wants you to teleport to them. Type /tpaccept or /tpdeny (expires in 60s).", from_name)
+            } else {
+                format!("{} wants to teleport to you. Type /tpaccept or /tpdeny (expires in 60s).", from_name)
+            };
+            st.players[&tid].send_json(&json!({ "type": "chat", "kind": "sys", "text": prompt }));
+            reply(st, &format!("Sent teleport request to {} (expires in 60s).", to_name), "sys");
+            return None;
+        }
+        "tpaccept" | "tpyes" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let now = now_ms();
+            st.tpa_requests.retain(|r| r.expires_at > now);
+            let filter_name = args.first().map(|s| s.to_lowercase());
+            let idx = st.tpa_requests.iter().rposition(|r| {
+                r.to_id == pid
+                    && filter_name
+                        .as_ref()
+                        .is_none_or(|f| r.from_name.to_lowercase() == *f)
+            });
+            let Some(idx) = idx else {
+                reply(st, "You have no pending teleport requests.", "warn");
+                return None;
+            };
+            let req = st.tpa_requests.remove(idx);
+            if !st.players.contains_key(&req.from_id) {
+                reply(st, &format!("{} is no longer online.", req.from_name), "warn");
+                return None;
+            }
+            let (mover_id, dest_id, mover_msg, other_id, other_msg) = if req.here {
+                let to_name = st.players[pid].name.clone();
+                (
+                    pid.to_string(),
+                    req.from_id.clone(),
+                    format!("Teleported to {}.", req.from_name),
+                    req.from_id.clone(),
+                    format!("{} accepted your teleport request.", to_name),
+                )
+            } else {
+                let to_name = st.players[pid].name.clone();
+                (
+                    req.from_id.clone(),
+                    pid.to_string(),
+                    format!("{} accepted! Teleported to {}.", to_name, to_name),
+                    pid.to_string(),
+                    format!("Accepted teleport request from {}.", req.from_name),
+                )
+            };
+            if st.players[&mover_id].pl.dead {
+                reply(st, "Cannot teleport while dead.", "warn");
+                return None;
+            }
+            let Some(mut dest_loc) = st.player_abs_loc(&dest_id) else { return None };
+            dest_loc.y = (dest_loc.y + 0.5).clamp(-64.0, 320.0);
+            st.teleport_to_loc(&mover_id, &dest_loc, Some(&mover_msg));
+            if let Some(op) = st.players.get(&other_id) {
+                op.send_json(&json!({ "type": "chat", "kind": "sys", "text": other_msg }));
+            }
+            return None;
+        }
+        "tpdeny" | "tpadeny" | "tpno" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let now = now_ms();
+            st.tpa_requests.retain(|r| r.expires_at > now);
+            let filter_name = args.first().map(|s| s.to_lowercase());
+            let idx = st.tpa_requests.iter().rposition(|r| {
+                r.to_id == pid
+                    && filter_name
+                        .as_ref()
+                        .is_none_or(|f| r.from_name.to_lowercase() == *f)
+            });
+            let Some(idx) = idx else {
+                reply(st, "You have no pending teleport requests.", "warn");
+                return None;
+            };
+            let req = st.tpa_requests.remove(idx);
+            let my_name = st.players[pid].name.clone();
+            if let Some(fp) = st.players.get(&req.from_id) {
+                fp.send_json(&json!({ "type": "chat", "kind": "warn", "text": format!("{} denied your teleport request.", my_name) }));
+            }
+            reply(st, &format!("Denied teleport request from {}.", req.from_name), "sys");
+            return None;
+        }
+        "tpcancel" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let now = now_ms();
+            st.tpa_requests.retain(|r| r.expires_at > now);
+            let before = st.tpa_requests.len();
+            st.tpa_requests.retain(|r| r.from_id != pid);
+            if st.tpa_requests.len() < before {
+                reply(st, "Cancelled your pending teleport request(s).", "sys");
+            } else {
+                reply(st, "You have no outgoing teleport requests.", "warn");
+            }
             return None;
         }
         _ => {}
@@ -860,6 +1112,15 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
             };
             reply(st, &format!("Gave {}x item #{} to {}.", cnt, id, tname), "sys");
         }
+        "setspawn" if !is_console => {
+            let pid = sender_pid.unwrap();
+            let Some(loc) = st.player_abs_loc(pid) else { return None };
+            let (sx, sy, sz) = (loc.xi.clone(), loc.y, loc.zi.clone());
+            st.world.spawn = Some(loc);
+            st.world.tables.dirty = true;
+            st.schedule_world_save(1000);
+            reply(st, &format!("Server spawn set to X {}, Y {:.1}, Z {}.", sx, sy, sz), "sys");
+        }
         "tp" => {
             if args.len() == 2 {
                 let (Some(aid), Some(bid)) = (st.find_player_id_by_name(args[0]), st.find_player_id_by_name(args[1])) else {
@@ -874,6 +1135,10 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
                     let zi = &sh.oz + BigInt::from(b.z.floor() as i64);
                     (a.name.clone(), b.name.clone(), xi, b.x - b.x.floor(), b.y + 0.5, zi, b.z - b.z.floor())
                 };
+                if let Some(prev) = st.player_abs_loc(&aid)
+                    && let Some(ap) = st.players.get_mut(&aid) {
+                        ap.last_pos = Some(prev);
+                    }
                 st.place_abs(&aid, &xi, xf, by, &zi, zf, Some(&format!("Teleported to {}.", bname)), true);
                 reply(st, &format!("Teleported {} to {}.", aname, bname), "sys");
             } else if args.len() == 3 && !is_console {
@@ -887,6 +1152,10 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
                 let sz = format_abs_coord(&zi, big_to_num(&zi), zf, 1);
                 let pid = sender_pid.unwrap();
                 let pname = st.players[pid].name.clone();
+                if let Some(prev) = st.player_abs_loc(pid)
+                    && let Some(pp) = st.players.get_mut(pid) {
+                        pp.last_pos = Some(prev);
+                    }
                 st.place_abs(pid, &xi, xf, y, &zi, zf, Some(&format!("Teleported to {}, {:.1}, {}.", sx, y, sz)), true);
                 reply(st, &format!("Teleported {} to {}, {:.1}, {}.", pname, sx, y, sz), "sys");
             } else if args.len() == 4 {
@@ -904,6 +1173,10 @@ fn execute_command_locked(st: &mut ServerState, raw: &str, sender_pid: Option<&s
                 let sx = format_abs_coord(&xi, big_to_num(&xi), xf, 1);
                 let sz = format_abs_coord(&zi, big_to_num(&zi), zf, 1);
                 let aname = st.players[&aid].name.clone();
+                if let Some(prev) = st.player_abs_loc(&aid)
+                    && let Some(ap) = st.players.get_mut(&aid) {
+                        ap.last_pos = Some(prev);
+                    }
                 st.place_abs(&aid, &xi, xf, y, &zi, zf, Some(&format!("Teleported to {}, {:.1}, {}.", sx, y, sz)), true);
                 reply(st, &format!("Teleported {} to {}, {:.1}, {}.", aname, sx, y, sz), "sys");
             } else {
