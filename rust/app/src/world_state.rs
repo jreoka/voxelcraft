@@ -66,6 +66,8 @@ pub struct SavedPlayerProfile {
     pub homes: IndexMap<String, SavedLocation>,
     #[serde(default)]
     pub advancements: SavedAdvancements,
+    #[serde(default)]
+    pub quest_done: IndexMap<String, i64>,
 }
 
 pub struct WorldState {

@@ -161,6 +161,7 @@ pub struct PlayerSession {
     pub last_shot_ms: i64,
     pub homes: IndexMap<String, SavedLocation>,
     pub advancements: SavedAdvancements,
+    pub quest_done: IndexMap<String, i64>,
     pub last_pos: Option<SavedLocation>,
     pub last_msg_from: Option<String>,
 }
@@ -487,6 +488,7 @@ impl ServerState {
             last_seen: Some(now_ms()),
             homes: p.homes.clone(),
             advancements: p.advancements.clone(),
+            quest_done: p.quest_done.clone(),
         };
         if !p.has_moved {
             if let Some(old) = self.world.saved_players.get(&p.name.to_lowercase()) {
@@ -1828,6 +1830,7 @@ impl ServerState {
         match mtype {
             "inv_sync" => self.handle_inv_sync(pid, msg),
             "advancements_sync" => self.handle_advancements_sync(pid, msg),
+            "quests_sync" => self.handle_quests_sync(pid, msg),
             "pickup" => self.handle_pickup(pid, msg),
             "drop_item" => self.handle_drop_item(pid, msg),
             "self_damage" => self.handle_self_damage(pid, msg),
@@ -1933,6 +1936,44 @@ impl ServerState {
                         p.advancements.stats.insert(k.clone(), incoming);
                         ch = true;
                     }
+                }
+            }
+            ch
+        };
+        if changed {
+            self.save_player_profile(pid);
+            self.schedule_world_save(5000);
+        }
+    }
+
+    fn handle_quests_sync(&mut self, pid: &str, msg: &Value) {
+        const VALID_QUEST_IDS: &[&str] = &[
+            "q_wood", "q_bench", "q_spick", "q_torch", "q_bed",
+            "q_furnace", "q_shield", "q_smith", "q_gear",
+            "q_farm", "q_wolf", "q_kill5",
+            "q_diamond", "q_elixir", "q_enchant",
+            "q_sigil", "q_boss", "q_endgame",
+        ];
+
+        let changed = {
+            let Some(p) = self.players.get_mut(pid) else { return };
+            let mut ch = false;
+            if let Some(done_obj) = msg.get("done").and_then(|v| v.as_object()) {
+                let now = now_ms();
+                for (k, v) in done_obj {
+                    if !VALID_QUEST_IDS.contains(&k.as_str()) {
+                        continue;
+                    }
+                    if p.quest_done.contains_key(k) {
+                        continue;
+                    }
+                    let ts = v
+                        .as_i64()
+                        .or_else(|| v.as_f64().filter(|f| f.is_finite()).map(|f| f as i64))
+                        .unwrap_or(now)
+                        .clamp(1, now + 86_400_000);
+                    p.quest_done.insert(k.clone(), ts);
+                    ch = true;
                 }
             }
             ch
@@ -3087,6 +3128,7 @@ impl ServerState {
                 "slots": p.pl.inventory.slots,
                 "armor": p.pl.inventory.armor,
                 "advancements": p.advancements,
+                "questDone": p.quest_done,
             },
             "players": existing_players,
             "deltas": deltas,
@@ -3215,6 +3257,7 @@ impl ServerState {
             last_shot_ms: 0,
             homes: saved.as_ref().map(|s| s.homes.clone()).unwrap_or_default(),
             advancements: saved.as_ref().map(|s| s.advancements.clone()).unwrap_or_default(),
+            quest_done: saved.as_ref().map(|s| s.quest_done.clone()).unwrap_or_default(),
             last_pos: None,
             last_msg_from: None,
         };

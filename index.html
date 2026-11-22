@@ -17054,7 +17054,79 @@ const QUEST_CHAPTERS = [
 ];
 
 class QuestSystem {
-  constructor() { this._t = 0; }
+  constructor() {
+    this._t = 0;
+    this.storageKey = null;
+    this.serverSync = false;
+    this.validIds = new Set(QUEST_CHAPTERS.flatMap(ch => ch.steps.map(s => s.id)));
+  }
+  _buildCtx(p) {
+    const owned = new Set();
+    for (const s of p.inventory.slots) if (s) owned.add(s.id);
+    for (const a of p.inventory.armor) if (a) owned.add(a.id);
+    return {
+      p,
+      has: (id) => owned.has(id),
+      hasAny: (arr) => arr.some(id => owned.has(id)),
+      adv: (id) => !!ADVANCEMENTS.done[id]
+    };
+  }
+  attach(engine, data = null, storageKey = null, serverSync = false) {
+    this.storageKey = storageKey;
+    this.serverSync = !!serverSync;
+    this._t = 0.9;
+    let localData = null;
+    if (storageKey) {
+      try { localData = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { localData = null; }
+    }
+    const base = serverSync ? data : (storageKey ? localData : data);
+    const done = {};
+    if (base && typeof base === 'object') {
+      for (const [id, ts] of Object.entries(base)) {
+        if (this.validIds.has(id) && ts) done[id] = ts;
+      }
+    }
+    let needsSync = false;
+    if (serverSync && localData && typeof localData === 'object') {
+      for (const [id, ts] of Object.entries(localData)) {
+        if (this.validIds.has(id) && ts && !done[id]) {
+          done[id] = ts;
+          needsSync = true;
+        }
+      }
+    }
+    const p = engine && engine.player;
+    if (p) {
+      // Returning multiplayer players from before quest persistence already have saved advancements:
+      // silently mark any already-satisfied quest steps as complete so they don't spam toasts on join.
+      if (serverSync && Object.keys(done).length === 0 && Object.keys(ADVANCEMENTS.done).length > 0) {
+        const ctx = this._buildCtx(p);
+        const now = Date.now();
+        for (const ch of QUEST_CHAPTERS) {
+          for (const st of ch.steps) {
+            if (!done[st.id] && st.check(ctx)) {
+              done[st.id] = now;
+              needsSync = true;
+            }
+          }
+        }
+      }
+      p.questDone = done;
+    }
+    if (storageKey) {
+      try { localStorage.setItem(storageKey, JSON.stringify(done)); } catch {}
+    }
+    if (needsSync && engine) this._persist(engine);
+  }
+  _persist(engine) {
+    const done = (engine && engine.player && engine.player.questDone) || {};
+    if (this.storageKey) {
+      try { localStorage.setItem(this.storageKey, JSON.stringify(done)); } catch {}
+    }
+    if (this.serverSync && engine && engine.net && engine.net.connected) {
+      engine.net.sendQuestsSync(done);
+    }
+  }
   getActiveChapterIndex(player) {
     if (!player) return 0;
     const done = player.questDone || {};
@@ -17069,15 +17141,7 @@ class QuestSystem {
     this._t -= dt;
     if (this._t > 0) return;
     this._t = 0.9;
-    const owned = new Set();
-    for (const s of p.inventory.slots) if (s) owned.add(s.id);
-    for (const a of p.inventory.armor) if (a) owned.add(a.id);
-    const ctx = {
-      p,
-      has: (id) => owned.has(id),
-      hasAny: (arr) => arr.some(id => owned.has(id)),
-      adv: (id) => !!ADVANCEMENTS.done[id]
-    };
+    const ctx = this._buildCtx(p);
     let changed = false;
     for (const ch of QUEST_CHAPTERS) {
       for (const st of ch.steps) {
@@ -17091,7 +17155,10 @@ class QuestSystem {
         }
       }
     }
-    if (changed) engine.ui.refreshQuestTracker();
+    if (changed) {
+      this._persist(engine);
+      engine.ui.refreshQuestTracker();
+    }
   }
 }
 const QUESTS = new QuestSystem();
@@ -17397,6 +17464,9 @@ class AdvancementTracker {
     this._queue.length = 0;
     this._walkAcc = 0;
     this._lastWalkPersist = this.stats.walked || 0;
+    if (storageKey) {
+      try { localStorage.setItem(storageKey, JSON.stringify(this.serialize())); } catch {}
+    }
     if (migrated) this._persist();
   }
 
@@ -21103,6 +21173,11 @@ class MultiplayerClient {
     this._send({ type: 'advancements_sync', done: data.done || {}, stats: data.stats || {} });
   }
 
+  sendQuestsSync(done) {
+    if (!this.connected || !done) return;
+    this._send({ type: 'quests_sync', done });
+  }
+
   tryPvpMelee(player, eye, dir, particles, audio) {
     if (!this.pvp || performance.now() - this._lastAttackMs < 260) return false;
     let best = null, bestD = 3.9;
@@ -21573,6 +21648,8 @@ class GameEngine {
     this.world.serverTicks = true;
     const advKey = `voxelcraft_adv_${hashString(`${this.net.serverUrl || ''}|${(this.net.playerName || '').toLowerCase()}`)}`;
     ADVANCEMENTS.attach(this, (saved && saved.advancements) || null, advKey, true);
+    const questKey = `voxelcraft_quests_${hashString(`${this.net.serverUrl || ''}|${(this.net.playerName || '').toLowerCase()}`)}`;
+    QUESTS.attach(this, (saved && saved.questDone) || null, questKey, true);
     this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
     this.player.miningRef = this.mining;
@@ -21591,6 +21668,7 @@ class GameEngine {
     this.state = 'playing';
     this.ui.showScreen(null);
     this.ui.refreshHotbar();
+    this.ui.refreshQuestTracker();
     this.ui.addChat(msg.motd || `Connected to ${msg.serverName || 'Server'}! Press T to chat, Tab for player list.`, 'sys');
     this.ui.toast(`Connected to ${msg.serverName || 'Multiplayer Server'}!`);
     if (wasDead) this.ui.showDeath('You died before you left.');
@@ -21643,6 +21721,7 @@ class GameEngine {
     this.player.miningRef = this.mining;
     this._attachRebase();
     ADVANCEMENTS.attach(this, null);
+    QUESTS.attach(this, null);
 
     this.state = 'playing';
     this.ui.showScreen(null);
@@ -21748,6 +21827,7 @@ class GameEngine {
     this.player.miningRef = this.mining;
     this._attachRebase();
     ADVANCEMENTS.attach(this, rec.advancements || null);
+    QUESTS.attach(this, p.questDone || null);
 
     this.state = 'playing';
     this.ui.showScreen(null);
