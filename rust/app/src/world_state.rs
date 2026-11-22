@@ -22,6 +22,15 @@ pub struct SavedLocation {
     pub zf: f64,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedAdvancements {
+    #[serde(default)]
+    pub done: IndexMap<String, i64>,
+    #[serde(default)]
+    pub stats: IndexMap<String, u64>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedPlayerProfile {
@@ -33,6 +42,12 @@ pub struct SavedPlayerProfile {
     pub x: Option<f64>,
     pub y: Option<f64>,
     pub z: Option<f64>,
+    #[serde(default)]
+    pub yaw: Option<f64>,
+    #[serde(default)]
+    pub pitch: Option<f64>,
+    #[serde(default)]
+    pub sel: Option<usize>,
     pub health: Option<f64>,
     pub hunger: Option<f64>,
     pub saturation: Option<f64>,
@@ -49,6 +64,8 @@ pub struct SavedPlayerProfile {
     pub last_seen: Option<i64>,
     #[serde(default)]
     pub homes: IndexMap<String, SavedLocation>,
+    #[serde(default)]
+    pub advancements: SavedAdvancements,
 }
 
 pub struct WorldState {

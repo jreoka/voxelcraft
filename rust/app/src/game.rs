@@ -27,7 +27,7 @@ use voxelcraft_core::world::{BlockEntity, CoreRedstoneAdapter, CoreWorld, contai
 use crate::anticheat::{AntiCheat, PlayerAC, now_ms, sanitize_enchant};
 use crate::config::ServerConfig;
 use crate::ledger::{Ledger, stack_key};
-use crate::world_state::{SavedLocation, SavedPlayerProfile, WorldState};
+use crate::world_state::{SavedAdvancements, SavedLocation, SavedPlayerProfile, WorldState};
 
 const MAX_DROPS: usize = 1500;
 const MERGE_DIST: f64 = (1_i64 << 20) as f64;
@@ -160,6 +160,7 @@ pub struct PlayerSession {
     pub last_mob_hit_ms: i64,
     pub last_shot_ms: i64,
     pub homes: IndexMap<String, SavedLocation>,
+    pub advancements: SavedAdvancements,
     pub last_pos: Option<SavedLocation>,
     pub last_msg_from: Option<String>,
 }
@@ -470,6 +471,9 @@ impl ServerState {
             x: Some(round_dec(p.x, 1000.0)),
             y: Some(round_dec(p.y, 1000.0)),
             z: Some(round_dec(p.z, 1000.0)),
+            yaw: Some(round_dec(p.yaw, 1000.0)),
+            pitch: Some(round_dec(p.pitch, 1000.0)),
+            sel: Some(p.sel),
             health: Some(p.pl.health),
             hunger: Some(p.pl.hunger),
             saturation: Some(p.pl.saturation),
@@ -482,6 +486,7 @@ impl ServerState {
             mode: Some(p.mode.clone()),
             last_seen: Some(now_ms()),
             homes: p.homes.clone(),
+            advancements: p.advancements.clone(),
         };
         if !p.has_moved {
             if let Some(old) = self.world.saved_players.get(&p.name.to_lowercase()) {
@@ -490,6 +495,9 @@ impl ServerState {
                 prof.x = old.x;
                 prof.y = old.y;
                 prof.z = old.z;
+                prof.yaw = old.yaw;
+                prof.pitch = old.pitch;
+                prof.sel = old.sel;
             } else {
                 prof.x = None;
             }
@@ -1819,6 +1827,7 @@ impl ServerState {
         }
         match mtype {
             "inv_sync" => self.handle_inv_sync(pid, msg),
+            "advancements_sync" => self.handle_advancements_sync(pid, msg),
             "pickup" => self.handle_pickup(pid, msg),
             "drop_item" => self.handle_drop_item(pid, msg),
             "self_damage" => self.handle_self_damage(pid, msg),
@@ -1875,6 +1884,63 @@ impl ServerState {
             self.flag_player(pid, "INV_MISMATCH", 1.5, "Inventory contained items the server never granted (corrected)");
         }
         self.save_player_profile(pid);
+    }
+
+    fn handle_advancements_sync(&mut self, pid: &str, msg: &Value) {
+        const VALID_ADV_IDS: &[&str] = &[
+            "wood", "bench", "pickaxe", "stone", "upgrade", "torch", "night",
+            "furnace", "iron", "armor", "bucket", "diamonds", "obsidian",
+            "farmer", "bread", "arborist", "sleep", "trade",
+            "hunter", "slayer", "depths", "sky", "marathon", "experience",
+            "enchanter", "diamond_kit", "netherite", "best_friend", "alchemist",
+            "grappler", "glider_pilot", "blood_survivor", "smith_master", "colossus_slayer",
+        ];
+        const VALID_STAT_KEYS: &[&str] = &["kills", "walked"];
+
+        let changed = {
+            let Some(p) = self.players.get_mut(pid) else { return };
+            let mut ch = false;
+            if let Some(done_obj) = msg.get("done").and_then(|v| v.as_object()) {
+                let now = now_ms();
+                for (k, v) in done_obj {
+                    if !VALID_ADV_IDS.contains(&k.as_str()) {
+                        continue;
+                    }
+                    if p.advancements.done.contains_key(k) {
+                        continue;
+                    }
+                    let ts = v
+                        .as_i64()
+                        .or_else(|| v.as_f64().filter(|f| f.is_finite()).map(|f| f as i64))
+                        .unwrap_or(now)
+                        .clamp(1, now + 86_400_000);
+                    p.advancements.done.insert(k.clone(), ts);
+                    ch = true;
+                }
+            }
+            if let Some(stats_obj) = msg.get("stats").and_then(|v| v.as_object()) {
+                for (k, v) in stats_obj {
+                    if !VALID_STAT_KEYS.contains(&k.as_str()) {
+                        continue;
+                    }
+                    let incoming = v
+                        .as_u64()
+                        .or_else(|| v.as_f64().filter(|f| f.is_finite() && *f >= 0.0).map(|f| f as u64))
+                        .unwrap_or(0)
+                        .min(1_000_000_000);
+                    let cur = p.advancements.stats.get(k).copied().unwrap_or(0);
+                    if incoming > cur {
+                        p.advancements.stats.insert(k.clone(), incoming);
+                        ch = true;
+                    }
+                }
+            }
+            ch
+        };
+        if changed {
+            self.save_player_profile(pid);
+            self.schedule_world_save(5000);
+        }
     }
 
     fn handle_pickup(&mut self, pid: &str, msg: &Value) {
@@ -3009,6 +3075,9 @@ impl ServerState {
                 "x": if has_pos { Some(p.x) } else { None },
                 "y": if has_pos { Some(p.y) } else { None },
                 "z": if has_pos { Some(p.z) } else { None },
+                "yaw": p.yaw,
+                "pitch": p.pitch,
+                "sel": p.sel,
                 "health": p.pl.health,
                 "hunger": p.pl.hunger,
                 "saturation": p.pl.saturation,
@@ -3017,6 +3086,7 @@ impl ServerState {
                 "dead": p.pl.dead,
                 "slots": p.pl.inventory.slots,
                 "armor": p.pl.inventory.armor,
+                "advancements": p.advancements,
             },
             "players": existing_players,
             "deltas": deltas,
@@ -3044,12 +3114,29 @@ impl ServerState {
         } else {
             (8.5, 80.0, 8.5)
         };
+        let iyaw = saved
+            .as_ref()
+            .and_then(|s| s.yaw)
+            .filter(|v| v.is_finite())
+            .unwrap_or(0.0);
+        let ipitch = saved
+            .as_ref()
+            .and_then(|s| s.pitch)
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2))
+            .unwrap_or(-0.15);
+        let isel = saved
+            .as_ref()
+            .and_then(|s| s.sel)
+            .map(|v| v.min(8))
+            .unwrap_or(0);
         let mode = saved
             .as_ref()
             .and_then(|s| s.mode.clone())
             .unwrap_or_else(|| self.config.mode.clone());
         let mut pl = CorePlayer::new(&mode, rand::thread_rng().r#gen());
         pl.x = ix; pl.y = iy; pl.z = iz;
+        pl.yaw = iyaw; pl.pitch = ipitch;
         if let Some(s) = &saved {
             if let Some(h) = s.health.filter(|v| v.is_finite()) { pl.health = h.clamp(0.0, 20.0); }
             if let Some(h) = s.hunger.filter(|v| v.is_finite()) { pl.hunger = h.clamp(0.0, 20.0); }
@@ -3099,8 +3186,8 @@ impl ServerState {
             x: ix,
             y: iy,
             z: iz,
-            yaw: 0.0,
-            pitch: 0.0,
+            yaw: iyaw,
+            pitch: ipitch,
             crouch: false,
             swing: 0.0,
             held_id: 0,
@@ -3110,7 +3197,7 @@ impl ServerState {
             ping: 0,
             online: true,
             last_activity: now,
-            sel: 0,
+            sel: isel,
             pl,
             limbo,
             ledger,
@@ -3127,6 +3214,7 @@ impl ServerState {
             last_mob_hit_ms: 0,
             last_shot_ms: 0,
             homes: saved.as_ref().map(|s| s.homes.clone()).unwrap_or_default(),
+            advancements: saved.as_ref().map(|s| s.advancements.clone()).unwrap_or_default(),
             last_pos: None,
             last_msg_from: None,
         };

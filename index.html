@@ -12916,6 +12916,7 @@ class Player {
     this.ladderJumpTimer = 0;
     this.ladderLaunch = false;
     this.ladderCoyote = 0;
+    this.waterJumpTimer = 0;
     this.fallStartY = 70;
     this.hurtCooldown = 0;
     this.regenTimer = 0;
@@ -13478,7 +13479,7 @@ class PlayerPhysics {
         player.flying = !player.flying;
         player.gliding = false;
         player.vy = 0;
-      } else if (!player.flying && !player.onGround && !player.inWater && !player.onLadder && player.coyoteTimer <= 0 && !player.grapple && player.hasGlider()) {
+      } else if (!player.flying && !player.onGround && !player.inWater && !player.onLadder && player.coyoteTimer <= 0 && player.waterJumpTimer <= 0 && !player.grapple && player.hasGlider()) {
         player.gliding = !player.gliding;
         if (player.gliding) {
           player.vy = Math.max(player.vy, -1.5);
@@ -13498,6 +13499,7 @@ class PlayerPhysics {
     player.ladderJumpTimer = Math.max(0, player.ladderJumpTimer - dt);
     if (player.onLadder) player.ladderCoyote = 0.20;
     else player.ladderCoyote = Math.max(0, player.ladderCoyote - dt);
+    player.waterJumpTimer = Math.max(0, player.waterJumpTimer - dt);
 
     // Vertical physics (with full jumping up a block off ladders + smooth top-of-ladder mantle!)
     if (player.grapple && player.grapple.latched) {
@@ -13535,16 +13537,45 @@ class PlayerPhysics {
       } else {
         player.vy = -2.3;
       }
-    } else if (player.inWater || player.inLava) {
+    } else if ((player.inWater || player.inLava) && player.waterJumpTimer <= 0) {
       player.vy -= 7.5 * dt;
-      if (input.isAction('jump')) player.vy = Math.min(player.vy + 24 * dt, 4.8);
-      player.vy *= (1 - 3.2 * dt);
+      if (input.isAction('jump') || player.jumpBuffer > 0) {
+        const aboveFeetId = world.getBlock(fx, fy + 1, fz);
+        const atSurface = aboveFeetId !== B.WATER && aboveFeetId !== B.LAVA;
+        let canWaterHop = false;
+        if (atSurface && !player.crouching) {
+          if (player.onGround && player.jumpBuffer > 0) {
+            canWaterHop = true;
+          } else if (mLen > 0.05) {
+            const hwProbe = player.width * 0.5;
+            const hProbe = player.height;
+            const px = player.x + (moveX / mLen) * 0.32;
+            const pz = player.z + (moveZ / mLen) * 0.32;
+            if (this.aabbCollides(world, px, player.y, pz, hwProbe, hProbe) &&
+                this.resolveStepUpY(world, px, player.y, pz, hwProbe, hProbe, 1.05) > -Infinity) {
+              canWaterHop = true;
+            }
+          }
+        }
+        if (canWaterHop) {
+          player.vy = Math.max(player.vy, 7.6);
+          player.waterJumpTimer = 0.24;
+          player.jumpBuffer = 0;
+          player.onGround = false;
+        } else if (input.isAction('jump') && player.vy < 4.8) {
+          player.vy = Math.min(player.vy + 24 * dt, 4.8);
+        }
+      }
+      if (player.waterJumpTimer <= 0) {
+        player.vy *= (1 - 3.2 * dt);
+      }
       player.fallStartY = player.y;
     } else {
       player.vy -= (player.inCobweb ? 6.0 : 26.5) * dt;
       player.vy = Math.max(player.vy, player.inCobweb ? -1.8 : -46);
+      if (player.inWater || player.inLava) player.fallStartY = player.y;
       const jumpHeldOnGround = player.onGround && input.isAction('jump') && !player.inCobweb;
-      if ((player.jumpBuffer > 0 && (player.coyoteTimer > 0 || player.ladderCoyote > 0)) || jumpHeldOnGround) {
+      if (!player.inWater && !player.inLava && ((player.jumpBuffer > 0 && (player.coyoteTimer > 0 || player.ladderCoyote > 0)) || jumpHeldOnGround)) {
         player.vy = player.hasEffect('speed') ? 10.6 : 9.0;
         // Sprint-jump forward impulse, hard-capped so repeated hops can't stack speed
         if (player.sprinting && mLen > 0.1) {
@@ -13571,8 +13602,8 @@ class PlayerPhysics {
     const preLandVy = player.vy;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(player.vx), Math.abs(player.vy), Math.abs(player.vz)) * dt / 0.22));
     const sdt = dt / steps;
-    // Mid-air step-up only applies to ladder launches; normal jumps must clear ledges on their own
-    const canStepUp = player.onGround || player.onLadder || player.ladderCoyote > 0 || (player.ladderJumpTimer > 0 && player.ladderLaunch);
+    // Mid-air step-up applies to ladder launches and water-edge hops; normal jumps must clear ledges on their own
+    const canStepUp = player.onGround || player.onLadder || player.ladderCoyote > 0 || (player.ladderJumpTimer > 0 && player.ladderLaunch) || player.waterJumpTimer > 0;
 
     for (let s = 0; s < steps; s++) {
       // X movement + auto step-up (0.55m for slabs/trapdoors/stairs/ladder ledges) + sneak edge safety
@@ -17319,33 +17350,66 @@ class AdvancementTracker {
     this.done = {};
     this.stats = { kills: 0, walked: 0 };
     this.engine = null;
-    this.storageKey = null; // multiplayer: localStorage key; singleplayer: saved inside the world record
+    this.storageKey = null; // local cache key (legacy migration / fallback)
+    this.serverSync = false; // multiplayer: authoritative copy lives on the server
     this._pollT = 0;
     this._startDay = null;
     this._lastPos = null;
     this._queue = [];
     this._showing = false;
+    this._lastWalkPersist = 0;
   }
 
-  attach(engine, data, storageKey = null) {
+  attach(engine, data, storageKey = null, serverSync = false) {
     this.engine = engine;
     this.storageKey = storageKey;
+    this.serverSync = !!serverSync;
+    let localData = null;
     if (storageKey) {
-      try { data = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { data = null; }
+      try { localData = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { localData = null; }
     }
-    this.done = (data && data.done) ? { ...data.done } : {};
-    this.stats = { kills: 0, walked: 0, ...((data && data.stats) || {}) };
+    const base = serverSync ? data : (storageKey ? localData : data);
+    this.done = (base && base.done) ? { ...base.done } : {};
+    this.stats = { kills: 0, walked: 0, ...((base && base.stats) || {}) };
+    let migrated = false;
+    // Merge any locally cached advancements into server state so players keep prior progress
+    if (serverSync && localData) {
+      if (localData.done) {
+        for (const [id, ts] of Object.entries(localData.done)) {
+          if (this.byId.has(id) && !this.done[id]) {
+            this.done[id] = ts || Date.now();
+            migrated = true;
+          }
+        }
+      }
+      if (localData.stats) {
+        for (const key of ['kills', 'walked']) {
+          const v = Math.floor(Number(localData.stats[key]) || 0);
+          if (v > (this.stats[key] || 0)) {
+            this.stats[key] = v;
+            migrated = true;
+          }
+        }
+      }
+    }
     this._startDay = null;
     this._lastPos = null;
     this._queue.length = 0;
     this._walkAcc = 0;
+    this._lastWalkPersist = this.stats.walked || 0;
+    if (migrated) this._persist();
   }
 
   serialize() { return { done: this.done, stats: this.stats }; }
 
   _persist() {
-    if (!this.storageKey) return;
-    try { localStorage.setItem(this.storageKey, JSON.stringify(this.serialize())); } catch {}
+    const payload = this.serialize();
+    if (this.storageKey) {
+      try { localStorage.setItem(this.storageKey, JSON.stringify(payload)); } catch {}
+    }
+    if (this.serverSync && this.engine && this.engine.net && this.engine.net.connected) {
+      this.engine.net.sendAdvancementsSync(payload);
+    }
   }
 
   // Only count goals that still exist (old saves may carry ids of retired advancements)
@@ -17367,7 +17431,21 @@ class AdvancementTracker {
   bump(stat, amt = 1) {
     if (!this.engine || !this.engine.player || this.engine.player.mode === 'creative') return;
     this.stats[stat] = (this.stats[stat] || 0) + amt;
-    for (const d of this.defs) if (d.stat === stat && this.stats[stat] >= d.goal) this.grant(d.id);
+    let granted = false;
+    for (const d of this.defs) {
+      if (d.stat === stat && this.stats[stat] >= d.goal && !this.done[d.id]) {
+        this.grant(d.id);
+        granted = true;
+      }
+    }
+    if (!granted && (this.serverSync || this.storageKey)) {
+      if (stat === 'kills') {
+        this._persist();
+      } else if (stat === 'walked' && this.stats.walked - (this._lastWalkPersist || 0) >= 25) {
+        this._lastWalkPersist = this.stats.walked;
+        this._persist();
+      }
+    }
   }
 
   onKill(type) {
@@ -21020,6 +21098,11 @@ class MultiplayerClient {
     this._send({ type: 'inv_sync', ...payload });
   }
 
+  sendAdvancementsSync(data) {
+    if (!this.connected || !data) return;
+    this._send({ type: 'advancements_sync', done: data.done || {}, stats: data.stats || {} });
+  }
+
   tryPvpMelee(player, eye, dir, particles, audio) {
     if (!this.pvp || performance.now() - this._lastAttackMs < 260) return false;
     let best = null, bestD = 3.9;
@@ -21453,10 +21536,13 @@ class GameEngine {
 
     this.player = new Player(msg.mode || 'survival');
     const saved = msg.player;
-    // The server owns inventory, health, hunger and XP; we start from its copy
+    // The server owns inventory, health, hunger, rotation, advancements and XP; we start from its copy
     if (saved) {
       if (Array.isArray(saved.slots)) this.player.inventory.slots = saved.slots.slice(0, 36).concat(new Array(Math.max(0, 36 - saved.slots.length)).fill(null));
       if (Array.isArray(saved.armor)) this.player.inventory.armor = saved.armor.slice(0, 5).concat(new Array(Math.max(0, 5 - saved.armor.length)).fill(null));
+      if (isFinite(saved.yaw) && saved.yaw !== null) this.player.yaw = saved.yaw;
+      if (isFinite(saved.pitch) && saved.pitch !== null) this.player.pitch = clamp(saved.pitch, -Math.PI / 2 + 0.01, Math.PI / 2 - 0.01);
+      if (Number.isInteger(saved.sel) && saved.sel >= 0 && saved.sel <= 8) this.player.inventory.selected = saved.sel;
     }
     this.net._lastInvJson = JSON.stringify(this.net._invPayload());
     this.player.serverStats = true;
@@ -21474,6 +21560,7 @@ class GameEngine {
       this.player.spawnPoint = this.world.absPoint(sp.x, sy, sp.z);
     }
     this.player.fallStartY = this.player.y;
+    this.player.visualEyeY = this.player.y + this.player.eyeHeight;
 
     this.dayNight = new DayNightSystem();
     if (msg.day) this.dayNight.day = msg.day;
@@ -21484,7 +21571,8 @@ class GameEngine {
 
     this.particles = new ParticleSystem(1400, this.atlas, this.world);
     this.world.serverTicks = true;
-    ADVANCEMENTS.attach(this, null, `voxelcraft_adv_${hashString(`${this.net.serverUrl || ''}|${(this.net.playerName || '').toLowerCase()}`)}`);
+    const advKey = `voxelcraft_adv_${hashString(`${this.net.serverUrl || ''}|${(this.net.playerName || '').toLowerCase()}`)}`;
+    ADVANCEMENTS.attach(this, (saved && saved.advancements) || null, advKey, true);
     this.mobMgr = new RemoteMobView(this.world, this.net);
     this.mining = new MiningSystem(this.world, this.player, this.particles, this.audio, this.ui, this.mobMgr, this.net);
     this.player.miningRef = this.mining;
