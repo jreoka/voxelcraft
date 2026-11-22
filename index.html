@@ -629,20 +629,31 @@ html, body {
   box-shadow: 0 10px 30px rgba(0,0,0,0.55);
 }
 .slot {
-  width: 50px; height: 50px; border-radius: 7px;
-  background: var(--slot-bg); border: 1px solid rgba(255,255,255,0.12);
+  width: 50px; height: 50px; border-radius: 8px;
+  background: linear-gradient(180deg, rgba(8, 12, 18, 0.92), rgba(16, 22, 32, 0.88));
+  border: 1px solid rgba(255,255,255,0.11);
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.65), inset 0 -1px 0 rgba(255,255,255,0.06);
   position: relative; display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: border-color 0.08s, background 0.08s;
+  cursor: pointer; transition: border-color 0.08s, background 0.08s, transform 0.08s, box-shadow 0.08s;
 }
-.slot:hover { border-color: rgba(255,255,255,0.42); background: rgba(32, 40, 54, 0.88); }
-.slot.drag-target { border-color: rgba(255,255,255,0.7); background: rgba(70, 82, 104, 0.9); }
+.slot:hover {
+  border-color: rgba(160, 235, 150, 0.55);
+  background: linear-gradient(180deg, rgba(22, 30, 44, 0.95), rgba(32, 44, 60, 0.92));
+  box-shadow: inset 0 1px 4px rgba(0,0,0,0.45), 0 0 10px rgba(110, 220, 105, 0.16);
+}
+.slot.drag-target { border-color: rgba(255,255,255,0.78); background: rgba(64, 78, 100, 0.92); }
 .slot.selected {
   border: 2px solid #96ff7e;
-  background: var(--slot-hi);
-  box-shadow: 0 0 14px rgba(105, 225, 100, 0.35);
+  background: linear-gradient(180deg, rgba(36, 74, 38, 0.65), rgba(24, 52, 28, 0.72));
+  box-shadow: 0 0 14px rgba(105, 225, 100, 0.35), inset 0 1px 3px rgba(0,0,0,0.4);
+}
+.slot.active-hotbar {
+  border-color: rgba(150, 255, 126, 0.75);
+  box-shadow: inset 0 0 10px rgba(110, 230, 100, 0.2), 0 0 8px rgba(110, 230, 100, 0.22);
 }
 .slot img {
   width: 36px; height: 36px; image-rendering: pixelated; pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.45));
 }
 .slot .cnt {
   position: absolute; right: 4px; bottom: 2px;
@@ -652,51 +663,154 @@ html, body {
 }
 .slot .slot-num {
   position: absolute; left: 4px; top: 2px;
-  font-size: 10px; color: rgba(255,255,255,0.45); pointer-events: none;
+  font-size: 9.5px; font-weight: 700; color: rgba(255,255,255,0.38); pointer-events: none;
 }
 .slot .dur-bar {
   position: absolute; left: 5px; right: 5px; bottom: 3px; height: 3px;
-  background: rgba(0,0,0,0.7); border-radius: 2px; overflow: hidden;
+  background: rgba(0,0,0,0.75); border-radius: 2px; overflow: hidden;
 }
 .slot .dur-fill { height: 100%; background: #5be356; }
 .slot.armor-slot::after {
-  content: attr(data-label); position: absolute; font-size: 9px;
-  color: rgba(255,255,255,0.28); text-transform: uppercase; pointer-events: none;
+  content: attr(data-label); position: absolute; font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.26); text-transform: uppercase; pointer-events: none;
 }
 .slot.has-item::after { content: ''; }
 
+/* Placement Orientation HUD Hint */
+#orientHint {
+  display: none; align-items: center; gap: 8px;
+  padding: 5px 12px; margin-bottom: 4px; border-radius: 999px;
+  background: rgba(10, 14, 22, 0.84);
+  border: 1px solid rgba(130, 225, 195, 0.42);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+  font-size: 12px; font-weight: 600; color: #e8f5f0;
+  backdrop-filter: blur(4px);
+}
+#orientHint.active { display: inline-flex; }
+#orientHint .orient-key {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 19px; padding: 0 5px; border-radius: 4px;
+  background: rgba(130, 225, 195, 0.18); border: 1px solid rgba(130, 225, 195, 0.55);
+  color: #8df5d2; font-family: var(--mono); font-size: 11px; font-weight: 800;
+}
+#orientHint .orient-val { color: #96ff7e; font-weight: 700; }
+
 /* Inventory / Crafting / Furnace / Chest Modal */
 #containerScreen {
-  background: rgba(6, 9, 14, 0.65);
-  backdrop-filter: blur(3px);
+  background: radial-gradient(circle at 50% 45%, rgba(12, 18, 28, 0.62), rgba(5, 8, 13, 0.82));
+  backdrop-filter: blur(6px);
 }
 .inv-shell {
-  display: flex; gap: 16px; max-width: 96vw; max-height: 92vh;
+  display: flex; gap: 14px; max-width: 96vw; max-height: 92vh; align-items: stretch;
 }
 .inv-main {
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: 14px; padding: 18px 20px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+  background: linear-gradient(180deg, rgba(20, 26, 36, 0.96), rgba(14, 19, 27, 0.97));
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px; padding: 16px 20px 14px;
+  box-shadow: 0 28px 70px rgba(0,0,0,0.72), inset 0 1px 0 rgba(255,255,255,0.08);
+  display: flex; flex-direction: column;
 }
 .inv-side {
-  width: 270px; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 14px; padding: 14px; display: flex; flex-direction: column;
-  max-height: 540px;
+  width: 300px;
+  background: linear-gradient(180deg, rgba(18, 24, 34, 0.95), rgba(13, 18, 26, 0.97));
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 16px; padding: 14px; display: flex; flex-direction: column;
+  max-height: 590px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.07);
 }
 .inv-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 12px; font-weight: 800; font-size: 16px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-weight: 800; font-size: 16px; letter-spacing: 0.01em;
 }
-.inv-grid { display: grid; grid-template-columns: repeat(9, 50px); gap: 4px; }
-.craft-grid-2 { display: grid; grid-template-columns: repeat(2, 50px); gap: 4px; }
-.craft-grid-3 { display: grid; grid-template-columns: repeat(3, 50px); gap: 4px; }
+.inv-title-wrap { display: flex; align-items: center; gap: 8px; }
+.inv-title-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #6ee768; box-shadow: 0 0 10px rgba(110, 231, 104, 0.7);
+}
+.inv-grid { display: grid; grid-template-columns: repeat(9, 50px); gap: 5px; }
+.inv-tray {
+  padding: 8px; border-radius: 11px;
+  background: rgba(7, 10, 16, 0.52);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.45);
+}
+.inv-hotbar-tray {
+  margin-top: 8px; padding: 8px; border-radius: 11px;
+  background: rgba(12, 18, 26, 0.72);
+  border: 1px solid rgba(150, 255, 126, 0.16);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.4);
+}
+.inv-footer-hints {
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 11px; color: rgba(200, 214, 232, 0.56);
+}
+.inv-footer-hints kbd {
+  display: inline-block; padding: 1px 5px; border-radius: 4px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(235, 244, 255, 0.82); font-family: var(--mono); font-size: 10px; margin-right: 3px;
+}
+.craft-grid-2 { display: grid; grid-template-columns: repeat(2, 50px); gap: 5px; }
+.craft-grid-3 { display: grid; grid-template-columns: repeat(3, 50px); gap: 5px; }
 .inv-top-row {
-  display: flex; gap: 20px; align-items: center; justify-content: space-between;
-  margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 16px; align-items: stretch; justify-content: space-between;
+  margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+/* Player Paperdoll & Equipment Card */
+.inv-char-card {
+  display: flex; gap: 10px; align-items: stretch;
+  padding: 10px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(10, 14, 22, 0.78), rgba(14, 20, 30, 0.65));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.45);
+}
+.inv-armor-col { display: flex; flex-direction: column; gap: 5px; }
+.inv-armor-col .slot { width: 44px; height: 44px; }
+.inv-armor-col .slot img { width: 32px; height: 32px; }
+.inv-paperdoll {
+  width: 118px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+  padding: 8px 6px; border-radius: 10px;
+  background: radial-gradient(circle at 50% 42%, rgba(45, 70, 95, 0.32), rgba(8, 12, 18, 0.85));
+  border: 1px solid rgba(255,255,255,0.07);
+}
+.inv-doll-canvas { width: 84px; height: 114px; image-rendering: pixelated; }
+.inv-stat-pills {
+  width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;
+}
+.inv-stat-pill {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  padding: 2px 4px; border-radius: 5px;
+  background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.07);
+  font-size: 10.5px; font-weight: 700; color: #dbe6f5;
+}
+.inv-offhand-col {
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px;
+}
+.inv-offhand-col .slot { width: 44px; height: 44px; }
+.inv-offhand-col .slot img { width: 32px; height: 32px; }
+.inv-craft-card {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 10px 14px; border-radius: 12px;
+  background: rgba(10, 14, 22, 0.62);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.4);
+}
+.inv-craft-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin-bottom: 10px; align-self: flex-start;
 }
 .craft-station { display: flex; align-items: center; gap: 14px; }
-.arrow-icon { font-size: 24px; color: var(--muted); }
-.furnace-station { display: flex; align-items: center; gap: 22px; padding: 8px 14px; }
+.arrow-icon {
+  width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  font-size: 16px; color: #9db2cc;
+}
+.arrow-icon.ready {
+  background: rgba(110, 231, 104, 0.16); border-color: rgba(110, 231, 104, 0.55);
+  color: #96ff7e;
+}
+.furnace-station { display: flex; align-items: center; gap: 22px; padding: 8px 14px; margin: 0 auto; }
 .furnace-col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .burn-meter {
   width: 34px; height: 10px; border-radius: 5px; background: rgba(0,0,0,0.6);
@@ -710,21 +824,36 @@ html, body {
 .smelt-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #5ec95a, #b6ff85); }
 
 .recipe-search {
-  width: 100%; padding: 7px 10px; border-radius: 7px;
-  border: 1px solid var(--border); background: rgba(10,14,20,0.85);
+  width: 100%; padding: 8px 11px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12); background: rgba(8, 12, 18, 0.9);
   color: var(--text); font-size: 13px; margin-bottom: 8px; outline: none;
+  transition: border-color 0.12s;
+}
+.recipe-search:focus { border-color: rgba(130, 235, 120, 0.6); }
+.side-filter-bar {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.side-filter-pill {
+  padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
+  color: var(--muted); cursor: pointer; transition: all 0.1s;
+}
+.side-filter-pill:hover { color: #fff; border-color: rgba(255,255,255,0.25); }
+.side-filter-pill.active {
+  background: rgba(105, 225, 100, 0.18); border-color: rgba(125, 240, 115, 0.55);
+  color: #a8ff98;
 }
 .recipe-list {
-  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px;
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 3px;
 }
 .recipe-row {
   display: flex; align-items: center; gap: 9px; padding: 6px 8px;
-  border-radius: 8px; background: rgba(12,16,24,0.72);
-  border: 1px solid rgba(255,255,255,0.08); cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  border-radius: 9px; background: rgba(10, 14, 22, 0.78);
+  border: 1px solid rgba(255,255,255,0.07); cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
 }
-.recipe-row.can-craft { border-color: rgba(100,220,95,0.45); background: rgba(34, 60, 36, 0.35); }
-.recipe-row:hover { border-color: var(--accent); background: rgba(42, 74, 46, 0.5); }
+.recipe-row.can-craft { border-color: rgba(100,220,95,0.45); background: rgba(30, 58, 34, 0.38); }
+.recipe-row:hover { border-color: var(--accent); background: rgba(42, 74, 46, 0.55); }
 .recipe-row img { width: 28px; height: 28px; image-rendering: pixelated; }
 .recipe-info { flex: 1; min-width: 0; }
 .recipe-name { font-size: 12.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -764,7 +893,7 @@ html, body {
 }
 .section-label {
   font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--muted); margin: 8px 0 5px;
+  letter-spacing: 0.08em; color: var(--muted); margin: 6px 0 5px;
 }
 
 /* Enchanted slot glow & quick-action toolbar */
@@ -775,7 +904,7 @@ html, body {
 .tt-ench { color: #c78aff; font-size: 11px; margin-top: 2px; font-weight: 600; }
 .inv-actions { display: flex; gap: 6px; align-items: center; }
 .creative-grid {
-  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(4, 50px);
+  flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(5, 50px);
   gap: 5px; align-content: start; padding-right: 4px;
 }
 .ench-wrap { display: flex; gap: 16px; width: 100%; align-items: flex-start; }
@@ -1106,6 +1235,7 @@ html, body {
     </div>
   </div>
   <div id="bottomHud">
+    <div id="orientHint"><span class="orient-key" id="orientKeyLbl">R</span><span>Orientation: <span class="orient-val" id="orientValLbl">Bottom</span></span></div>
     <div id="heldLabel"></div>
     <div class="status-bars">
       <div class="bar-group">
@@ -1481,26 +1611,32 @@ html, body {
   <div class="inv-shell">
     <div class="inv-main">
       <div class="inv-header">
-        <span id="containerTitle">Inventory</span>
+        <div class="inv-title-wrap"><span class="inv-title-dot"></span><span id="containerTitle">Inventory</span></div>
         <div class="inv-actions">
           <button class="btn sm" id="btnInvSort" title="Sort &amp; stack inventory">Sort</button>
           <button class="btn sm" id="btnChestQuickStack" style="display:none" title="Deposit matching items into container">Quick Stack</button>
           <button class="btn sm" id="btnChestTakeAll" style="display:none" title="Take all items from container">Take All</button>
-          <button class="btn sm" id="btnCloseContainer">Close [E / ESC]</button>
+          <button class="btn sm" id="btnCloseContainer">Close [E]</button>
         </div>
       </div>
       <div id="containerTopArea" class="inv-top-row"></div>
-      <div class="section-label">Inventory <span style="font-weight:400;opacity:.65;text-transform:none">(Shift-Click quick move · Double-Click gather · 1-9 swap · Drag outside to drop)</span></div>
-      <div class="inv-grid" id="mainInvGrid"></div>
-      <div class="section-label">Hotbar</div>
-      <div class="inv-grid" id="modalHotbarGrid"></div>
+      <div class="section-label">Backpack</div>
+      <div class="inv-tray"><div class="inv-grid" id="mainInvGrid"></div></div>
+      <div class="inv-hotbar-tray"><div class="inv-grid" id="modalHotbarGrid"></div></div>
+      <div class="inv-footer-hints">
+        <span><kbd>Shift+Click</kbd>Quick Move</span>
+        <span><kbd>Right-Click</kbd>Split / Place 1</span>
+        <span><kbd>Double-Click</kbd>Gather Stack</span>
+        <span><kbd>1-9</kbd>Hotbar Swap</span>
+      </div>
     </div>
     <div class="inv-side" id="recipeSidePanel">
-      <div class="inv-header" style="margin-bottom:8px;font-size:14px">
+      <div class="inv-header" style="margin-bottom:8px;padding-bottom:8px;font-size:14px">
         <span id="sidePanelTitle">Recipe Book</span>
         <button class="btn sm" id="btnToggleCreativeCatalog" style="display:none;padding:4px 8px;font-size:11px">Catalog</button>
       </div>
       <input type="text" class="recipe-search" id="recipeSearch" placeholder="Search recipes...">
+      <div class="side-filter-bar" id="sideFilterBar"></div>
       <div class="recipe-list" id="recipeList"></div>
       <div class="creative-grid" id="creativeCatalog" style="display:none"></div>
     </div>
@@ -2196,6 +2332,7 @@ class SettingsManager {
         inventory: 'KeyE',
         drop: 'KeyQ',
         torch: 'KeyF',
+        rotate: 'KeyR',
         dodge: 'KeyV',
         map: 'KeyM',
         waypoint: 'KeyB',
@@ -4984,11 +5121,11 @@ class TextureAtlas {
       } else if (b.cross || b.shape === 'ladder' || b.shape === 'bars' || b.shape === 'bamboo' || b.shape === 'campfire') {
         const [ox, oy] = this._tileOrigin(b.tex[0]);
         ctx.drawImage(this.canvas, ox, oy, TILE_PX, TILE_PX, 4, 4, 28, 28);
-      } else if (b.shape === 'carpet' || b.shape === 'pressure_plate' || b.shape === 'button') {
+      } else if (b.shape === 'carpet' || b.shape === 'pressure_plate' || b.shape === 'button' || b.shape === 'trapdoor') {
         const [tx, ty] = this._tileOrigin(b.tex[0]);
-        const hScale = b.shape === 'button' ? 0.36 : 0.22;
+        const hScale = b.shape === 'button' ? 0.36 : b.shape === 'trapdoor' ? 0.24 : 0.20;
         const wScale = b.shape === 'button' ? 0.62 : 0.86;
-        const yOff = b.shape === 'button' ? 14 : 16;
+        const yOff = b.shape === 'button' ? 14 : b.shape === 'trapdoor' ? 13 : 16;
         ctx.save();
         ctx.translate(18, yOff);
         ctx.transform(wScale, wScale * 0.5, -wScale, wScale * 0.5, 0, 0);
@@ -4998,13 +5135,108 @@ class TextureAtlas {
         ctx.translate(18 - 16 * wScale, yOff + 8 * wScale);
         ctx.transform(wScale, wScale * 0.5, 0, hScale, 0, 0);
         ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
-        ctx.fillStyle = 'rgba(0,0,0,0.20)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(0, 0, 16, 16);
         ctx.restore();
         ctx.save();
         ctx.translate(18, yOff + 16 * wScale);
         ctx.transform(wScale, -wScale * 0.5, 0, hScale, 0, 0);
         ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
-        ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
+      } else if (b.shape === 'slab') {
+        const [tx, ty] = this._tileOrigin(b.tex[0]);
+        const [sx, sy] = this._tileOrigin(b.tex[2]);
+        ctx.save();
+        ctx.translate(18, 11);
+        ctx.transform(0.86, 0.44, -0.86, 0.44, 0, 0);
+        ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(4.2, 18);
+        ctx.transform(0.86, 0.44, 0, 0.48, 0, 0);
+        ctx.drawImage(this.canvas, sx, sy + TILE_PX * 0.5, TILE_PX, TILE_PX * 0.5, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(18, 25);
+        ctx.transform(0.86, -0.44, 0, 0.48, 0, 0);
+        ctx.drawImage(this.canvas, sx, sy + TILE_PX * 0.5, TILE_PX, TILE_PX * 0.5, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
+      } else if (b.shape === 'stairs') {
+        const [tx, ty] = this._tileOrigin(b.tex[0]);
+        const [sx, sy] = this._tileOrigin(b.tex[2]);
+        // Helper to draw an isometric sub-box in [0..1] local coords (x: left-down, z: right-down, y: up)
+        const drawIsoSub = (x0, y0, z0, x1, y1, z1) => {
+          const ax = 13.76, ay = 7.04, uy = 15.36;
+          const proj = (x, y, z) => [18 + (x - z) * ax, 20 + (x + z) * ay - y * uy];
+          // Top face
+          const t0 = proj(x0, y1, z0);
+          ctx.save();
+          ctx.translate(t0[0], t0[1]);
+          ctx.transform((x1 - x0) * ax / 16, (x1 - x0) * ay / 16, -(z1 - z0) * ax / 16, (z1 - z0) * ay / 16, 0, 0);
+          ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+          ctx.restore();
+          // Left-front face (+Z)
+          const l0 = proj(x0, y1, z1);
+          ctx.save();
+          ctx.translate(l0[0], l0[1]);
+          ctx.transform((x1 - x0) * ax / 16, (x1 - x0) * ay / 16, 0, (y1 - y0) * uy / 16, 0, 0);
+          ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
+          ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 0, 16, 16);
+          ctx.restore();
+          // Right-front face (+X)
+          const r0 = proj(x1, y1, z1);
+          ctx.save();
+          ctx.translate(r0[0], r0[1]);
+          ctx.transform((z1 - z0) * ax / 16, -(z1 - z0) * ay / 16, 0, (y1 - y0) * uy / 16, 0, 0);
+          ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
+          ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(0, 0, 16, 16);
+          ctx.restore();
+        };
+        drawIsoSub(0, 0, 0, 1, 0.5, 1);
+        drawIsoSub(0, 0.5, 0, 0.5, 1, 1);
+      } else if (b.shape === 'fence' || b.shape === 'fence_gate') {
+        const [sx, sy] = this._tileOrigin(b.tex[2]);
+        const drawPost = (dx, dy, w, h, shadeA = 0) => {
+          ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, dx, dy, w, h);
+          if (shadeA > 0) { ctx.fillStyle = `rgba(0,0,0,${shadeA})`; ctx.fillRect(dx, dy, w, h); }
+        };
+        if (b.shape === 'fence') {
+          // Two horizontal rails behind posts + two vertical posts
+          drawPost(6, 11, 24, 5, 0.14);
+          drawPost(6, 21, 24, 5, 0.22);
+          drawPost(5, 5, 7, 27, 0.04);
+          drawPost(24, 5, 7, 27, 0.18);
+          ctx.fillStyle = 'rgba(255,255,255,0.15)';
+          ctx.fillRect(5, 5, 7, 2); ctx.fillRect(24, 5, 7, 2);
+        } else {
+          // Fence gate: two outer posts + inner gate panel
+          drawPost(4, 7, 6, 24, 0.05);
+          drawPost(26, 7, 6, 24, 0.20);
+          drawPost(10, 11, 16, 15, 0.14);
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(17, 11, 2, 15);
+        }
+      } else if (b.shape === 'enchant_table') {
+        const [tx, ty] = this._tileOrigin(b.tex[0]);
+        const [sx, sy] = this._tileOrigin(b.tex[2]);
+        ctx.save();
+        ctx.translate(18, 7);
+        ctx.transform(0.86, 0.44, -0.86, 0.44, 0, 0);
+        ctx.drawImage(this.canvas, tx, ty, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(4.2, 14);
+        ctx.transform(0.86, 0.44, 0, 0.74, 0, 0);
+        ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(0, 0, 16, 16);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(18, 21);
+        ctx.transform(0.86, -0.44, 0, 0.74, 0, 0);
+        ctx.drawImage(this.canvas, sx, sy, TILE_PX, TILE_PX, 0, 0, 16, 16);
+        ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(0, 0, 16, 16);
         ctx.restore();
       } else {
         // Crisp 3D isometric voxel icon
@@ -8145,12 +8377,15 @@ class VoxelMesher {
             else this._emitBox(false, x, y, z, x+0.18, y+1, z+1, blk, col, sky, bl, flags, -1, dTex);
           } else if (blk.shape === 'trapdoor') {
             const open = (meta & 4) !== 0;
+            const bottom = (meta & 8) !== 0;
             const facing = meta & 3;
             if (open) {
               if (facing === 0) this._emitBox(false, x, y, z+0.82, x+1, y+1, z+1, blk, col, sky, bl, flags);
               else if (facing === 1) this._emitBox(false, x+0.82, y, z, x+1, y+1, z+1, blk, col, sky, bl, flags);
               else if (facing === 2) this._emitBox(false, x, y, z, x+1, y+1, z+0.18, blk, col, sky, bl, flags);
               else this._emitBox(false, x, y, z, x+0.18, y+1, z+1, blk, col, sky, bl, flags);
+            } else if (bottom) {
+              this._emitBox(false, x, y, z, x+1, y+0.18, z+1, blk, col, sky, bl, flags);
             } else {
               this._emitBox(false, x, y+0.82, z, x+1, y+1, z+1, blk, col, sky, bl, flags);
             }
@@ -9323,7 +9558,7 @@ class World {
       const id = this.getBlock(x, y, z);
       const blk = id !== B.AIR ? BLOCKS.get(id) : null;
       if (blk && !blk.liquid && (!solidOnly || blk.solid)) {
-        return { x, y, z, nx, ny, nz, id, dist: t };
+        return { x, y, z, nx, ny, nz, id, dist: t, hx: ox + dx * t, hy: oy + dy * t, hz: oz + dz * t };
       }
       if (tMaxX < tMaxY) {
         if (tMaxX < tMaxZ) { x += stepX; t = tMaxX; tMaxX += tDeltaX; nx = -stepX; ny = 0; nz = 0; }
@@ -10643,16 +10878,168 @@ class Renderer {
     }
   }
 
-  // Decide how an item renders in 3D: 'cube', 'slab' or 'sprite'
+  // Shared block-local [0..1] shape geometry for target outlines, breaking cracks, and placement shadow previews
+  _getBlockShapeBoxes(id, meta = 0, world = null, wx = 0, wy = 0, wz = 0) {
+    const blk = BLOCKS.get(id);
+    if (!blk) return { boxes: [{ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 }] };
+    const sh = blk.shape;
+    const boxes = [];
+    let hinge = null;
+    if (sh === 'slab') {
+      const top = (meta & 8) !== 0;
+      boxes.push({ x0: 0, y0: top ? 0.5 : 0, z0: 0, x1: 1, y1: top ? 1 : 0.5, z1: 1 });
+    } else if (sh === 'stairs') {
+      const f = meta & 3;
+      boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 0.5, z1: 1 });
+      if (f === 0) boxes.push({ x0: 0, y0: 0.5, z0: 0.5, x1: 1, y1: 1, z1: 1 });
+      else if (f === 1) boxes.push({ x0: 0.5, y0: 0.5, z0: 0, x1: 1, y1: 1, z1: 1 });
+      else if (f === 2) boxes.push({ x0: 0, y0: 0.5, z0: 0, x1: 1, y1: 1, z1: 0.5 });
+      else boxes.push({ x0: 0, y0: 0.5, z0: 0, x1: 0.5, y1: 1, z1: 1 });
+    } else if (sh === 'trapdoor') {
+      const open = (meta & 4) !== 0;
+      const bottom = (meta & 8) !== 0;
+      const f = meta & 3;
+      if (open) {
+        if (f === 0) boxes.push({ x0: 0, y0: 0, z0: 0.82, x1: 1, y1: 1, z1: 1 });
+        else if (f === 1) boxes.push({ x0: 0.82, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 });
+        else if (f === 2) boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: 0.18 });
+        else boxes.push({ x0: 0, y0: 0, z0: 0, x1: 0.18, y1: 1, z1: 1 });
+      } else {
+        const y0 = bottom ? 0 : 0.82, y1 = bottom ? 0.18 : 1;
+        boxes.push({ x0: 0, y0, z0: 0, x1: 1, y1, z1: 1 });
+        const hy0 = bottom ? 0.02 : 0.84, hy1 = bottom ? 0.21 : 1.02;
+        if (f === 0) hinge = { x0: 0.04, y0: hy0, z0: 0.88, x1: 0.96, y1: hy1, z1: 1.01 };
+        else if (f === 1) hinge = { x0: 0.88, y0: hy0, z0: 0.04, x1: 1.01, y1: hy1, z1: 0.96 };
+        else if (f === 2) hinge = { x0: 0.04, y0: hy0, z0: -0.01, x1: 0.96, y1: hy1, z1: 0.12 };
+        else hinge = { x0: -0.01, y0: hy0, z0: 0.04, x1: 0.12, y1: hy1, z1: 0.96 };
+      }
+    } else if (sh === 'door') {
+      const open = (meta & 4) !== 0;
+      const f = (meta + (open ? 1 : 0)) & 3;
+      if (f === 0) boxes.push({ x0: 0, y0: 0, z0: 0.82, x1: 1, y1: 1, z1: 1 });
+      else if (f === 1) boxes.push({ x0: 0.82, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 });
+      else if (f === 2) boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: 0.18 });
+      else boxes.push({ x0: 0, y0: 0, z0: 0, x1: 0.18, y1: 1, z1: 1 });
+    } else if (id === B.LANTERN) {
+      const hanging = (meta & 1) !== 0;
+      const yo = hanging ? 0.125 : 0;
+      boxes.push({ x0: 0.3125, y0: yo, z0: 0.3125, x1: 0.6875, y1: yo + 0.4375, z1: 0.6875 });
+      boxes.push({ x0: 0.375, y0: yo + 0.4375, z0: 0.375, x1: 0.625, y1: yo + 0.5625, z1: 0.625 });
+      if (hanging) boxes.push({ x0: 0.4688, y0: yo + 0.5625, z0: 0.4688, x1: 0.5312, y1: 1.0, z1: 0.5312 });
+    } else if (sh === 'torch') {
+      const attach = meta & 7;
+      if (attach === 0) {
+        boxes.push({ x0: 0.4375, y0: 0, z0: 0.4375, x1: 0.5625, y1: 0.625, z1: 0.5625 });
+      } else if (attach === 1) {
+        boxes.push({ cx: 0.5, cy: 0.48, cz: 0.1825, sx: 0.125, sy: 0.64, sz: 0.125, pitch: 0.37, roll: 0 });
+      } else if (attach === 2) {
+        boxes.push({ cx: 0.5, cy: 0.48, cz: 0.8175, sx: 0.125, sy: 0.64, sz: 0.125, pitch: -0.37, roll: 0 });
+      } else if (attach === 3) {
+        boxes.push({ cx: 0.1825, cy: 0.48, cz: 0.5, sx: 0.125, sy: 0.64, sz: 0.125, pitch: 0, roll: -0.37 });
+      } else {
+        boxes.push({ cx: 0.8175, cy: 0.48, cz: 0.5, sx: 0.125, sy: 0.64, sz: 0.125, pitch: 0, roll: 0.37 });
+      }
+    } else if (sh === 'lever') {
+      const attach = (meta >> 1) & 7;
+      if (attach === 0) {
+        boxes.push({ x0: 0.3125, y0: 0, z0: 0.25, x1: 0.6875, y1: 0.1875, z1: 0.75 });
+        boxes.push({ x0: 0.44, y0: 0.14, z0: 0.40, x1: 0.56, y1: 0.62, z1: 0.60 });
+      } else if (attach === 5) {
+        boxes.push({ x0: 0.3125, y0: 0.8125, z0: 0.25, x1: 0.6875, y1: 1.0, z1: 0.75 });
+        boxes.push({ x0: 0.44, y0: 0.38, z0: 0.40, x1: 0.56, y1: 0.86, z1: 0.60 });
+      } else if (attach === 1) {
+        boxes.push({ x0: 0.3125, y0: 0.25, z0: 0, x1: 0.6875, y1: 0.75, z1: 0.1875 });
+        boxes.push({ x0: 0.44, y0: 0.44, z0: 0.14, x1: 0.56, y1: 0.62, z1: 0.62 });
+      } else if (attach === 2) {
+        boxes.push({ x0: 0.3125, y0: 0.25, z0: 0.8125, x1: 0.6875, y1: 0.75, z1: 1.0 });
+        boxes.push({ x0: 0.44, y0: 0.44, z0: 0.38, x1: 0.56, y1: 0.62, z1: 0.86 });
+      } else if (attach === 3) {
+        boxes.push({ x0: 0, y0: 0.25, z0: 0.3125, x1: 0.1875, y1: 0.75, z1: 0.6875 });
+        boxes.push({ x0: 0.14, y0: 0.44, z0: 0.44, x1: 0.62, y1: 0.62, z1: 0.56 });
+      } else {
+        boxes.push({ x0: 0.8125, y0: 0.25, z0: 0.3125, x1: 1.0, y1: 0.75, z1: 0.6875 });
+        boxes.push({ x0: 0.38, y0: 0.44, z0: 0.44, x1: 0.86, y1: 0.62, z1: 0.56 });
+      }
+    } else if (sh === 'button') {
+      const pressed = (meta & 1) !== 0;
+      const attach = (meta >> 1) & 7;
+      const h = pressed ? 0.06 : 0.13;
+      if (attach === 1) boxes.push({ x0: 0.30, y0: 0.36, z0: 0, x1: 0.70, y1: 0.64, z1: h });
+      else if (attach === 2) boxes.push({ x0: 0.30, y0: 0.36, z0: 1 - h, x1: 0.70, y1: 0.64, z1: 1 });
+      else if (attach === 3) boxes.push({ x0: 0, y0: 0.36, z0: 0.30, x1: h, y1: 0.64, z1: 0.70 });
+      else if (attach === 4) boxes.push({ x0: 1 - h, y0: 0.36, z0: 0.30, x1: 1, y1: 0.64, z1: 0.70 });
+      else if (attach === 5) boxes.push({ x0: 0.30, y0: 1 - h, z0: 0.36, x1: 0.70, y1: 1, z1: 0.64 });
+      else boxes.push({ x0: 0.30, y0: 0, z0: 0.36, x1: 0.70, y1: h, z1: 0.64 });
+    } else if (sh === 'ladder') {
+      const lf = meta & 3;
+      if (lf === 0) boxes.push({ x0: 0.05, y0: 0, z0: 0.86, x1: 0.95, y1: 1, z1: 0.99 });
+      else if (lf === 1) boxes.push({ x0: 0.86, y0: 0, z0: 0.05, x1: 0.99, y1: 1, z1: 0.95 });
+      else if (lf === 2) boxes.push({ x0: 0.05, y0: 0, z0: 0.01, x1: 0.95, y1: 1, z1: 0.14 });
+      else boxes.push({ x0: 0.01, y0: 0, z0: 0.05, x1: 0.14, y1: 1, z1: 0.95 });
+    } else if (sh === 'fence') {
+      boxes.push({ x0: 0.36, y0: 0, z0: 0.36, x1: 0.64, y1: 1, z1: 0.64 });
+      if (world) {
+        if (world.getBlock(wx + 1, wy, wz) !== 0) { boxes.push({ x0: 0.64, y0: 0.70, z0: 0.43, x1: 1, y1: 0.88, z1: 0.57 }); boxes.push({ x0: 0.64, y0: 0.34, z0: 0.43, x1: 1, y1: 0.50, z1: 0.57 }); }
+        if (world.getBlock(wx - 1, wy, wz) !== 0) { boxes.push({ x0: 0, y0: 0.70, z0: 0.43, x1: 0.36, y1: 0.88, z1: 0.57 }); boxes.push({ x0: 0, y0: 0.34, z0: 0.43, x1: 0.36, y1: 0.50, z1: 0.57 }); }
+        if (world.getBlock(wx, wy, wz + 1) !== 0) { boxes.push({ x0: 0.43, y0: 0.70, z0: 0.64, x1: 0.57, y1: 0.88, z1: 1 }); boxes.push({ x0: 0.43, y0: 0.34, z0: 0.64, x1: 0.57, y1: 0.50, z1: 1 }); }
+        if (world.getBlock(wx, wy, wz - 1) !== 0) { boxes.push({ x0: 0.43, y0: 0.70, z0: 0, x1: 0.57, y1: 0.88, z1: 0.36 }); boxes.push({ x0: 0.43, y0: 0.34, z0: 0, x1: 0.57, y1: 0.50, z1: 0.36 }); }
+      }
+    } else if (sh === 'fence_gate') {
+      const open = (meta & 4) !== 0;
+      const alongX = (meta & 1) === 0;
+      if (alongX) {
+        boxes.push({ x0: 0, y0: 0.12, z0: 0.42, x1: 0.16, y1: 0.96, z1: 0.58 });
+        boxes.push({ x0: 0.84, y0: 0.12, z0: 0.42, x1: 1, y1: 0.96, z1: 0.58 });
+        if (!open) boxes.push({ x0: 0.16, y0: 0.28, z0: 0.44, x1: 0.84, y1: 0.86, z1: 0.56 });
+        else { boxes.push({ x0: 0.02, y0: 0.28, z0: 0.56, x1: 0.14, y1: 0.86, z1: 0.98 }); boxes.push({ x0: 0.86, y0: 0.28, z0: 0.56, x1: 0.98, y1: 0.86, z1: 0.98 }); }
+      } else {
+        boxes.push({ x0: 0.42, y0: 0.12, z0: 0, x1: 0.58, y1: 0.96, z1: 0.16 });
+        boxes.push({ x0: 0.42, y0: 0.12, z0: 0.84, x1: 0.58, y1: 0.96, z1: 1 });
+        if (!open) boxes.push({ x0: 0.44, y0: 0.28, z0: 0.16, x1: 0.56, y1: 0.86, z1: 0.84 });
+        else { boxes.push({ x0: 0.56, y0: 0.28, z0: 0.02, x1: 0.98, y1: 0.86, z1: 0.14 }); boxes.push({ x0: 0.56, y0: 0.28, z0: 0.86, x1: 0.98, y1: 0.86, z1: 0.98 }); }
+      }
+    } else if (sh === 'bars') {
+      boxes.push({ x0: 0.44, y0: 0, z0: 0.44, x1: 0.56, y1: 1, z1: 0.56 });
+      if (world) {
+        if (world.getBlock(wx + 1, wy, wz) !== 0) boxes.push({ x0: 0.56, y0: 0, z0: 0.45, x1: 1, y1: 1, z1: 0.55 });
+        if (world.getBlock(wx - 1, wy, wz) !== 0) boxes.push({ x0: 0, y0: 0, z0: 0.45, x1: 0.44, y1: 1, z1: 0.55 });
+        if (world.getBlock(wx, wy, wz + 1) !== 0) boxes.push({ x0: 0.45, y0: 0, z0: 0.56, x1: 0.55, y1: 1, z1: 1 });
+        if (world.getBlock(wx, wy, wz - 1) !== 0) boxes.push({ x0: 0.45, y0: 0, z0: 0, x1: 0.55, y1: 1, z1: 0.44 });
+      }
+    } else if (sh === 'bamboo') {
+      boxes.push({ x0: 0.36, y0: 0, z0: 0.36, x1: 0.64, y1: 1, z1: 0.64 });
+    } else if (sh === 'campfire') {
+      boxes.push({ x0: 0.06, y0: 0, z0: 0.06, x1: 0.94, y1: 0.38, z1: 0.94 });
+    } else if (sh === 'enchant_table') {
+      boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 0.76, z1: 1 });
+    } else if (sh === 'pressure_plate') {
+      const pressed = (meta & 1) !== 0;
+      boxes.push({ x0: 0.08, y0: 0, z0: 0.08, x1: 0.92, y1: pressed ? 0.03 : 0.08, z1: 0.92 });
+    } else if (sh === 'carpet') {
+      boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 0.0625, z1: 1 });
+    } else if (sh === 'redstone') {
+      boxes.push({ x0: 0.1, y0: 0, z0: 0.1, x1: 0.9, y1: 0.04, z1: 0.9 });
+    } else if (sh === 'cross') {
+      boxes.push({ x0: 0.14, y0: 0, z0: 0.14, x1: 0.86, y1: 0.88, z1: 0.86 });
+    } else {
+      boxes.push({ x0: 0, y0: 0, z0: 0, x1: 1, y1: 1, z1: 1 });
+    }
+    return { boxes, hinge };
+  }
+
+  // Decide how an item renders in 3D: 'cube', 'slab', 'trapdoor', 'stairs', 'enchant_table' or 'sprite'
   _itemModel(id) {
     const it = ITEMS.get(id);
     if (!it) return { kind: 'sprite' };
     if (it.blockId && BLOCKS.get(it.blockId) && it.blockId === id) {
       const b = BLOCKS.get(it.blockId);
-      if (b.cross || ['torch', 'lever', 'redstone', 'ladder', 'bars', 'bamboo', 'campfire', 'door', 'carpet', 'button', 'pressure_plate'].includes(b.shape)) {
+      if (b.cross || ['torch', 'lever', 'redstone', 'ladder', 'bars', 'bamboo', 'campfire', 'door', 'carpet', 'button', 'pressure_plate', 'fence', 'fence_gate'].includes(b.shape)) {
         return { kind: 'sprite', emissive: b.light > 0 };
       }
-      if (b.shape === 'slab' || b.shape === 'trapdoor') return { kind: 'slab', blk: b, emissive: b.light > 0 };
+      if (b.shape === 'trapdoor') return { kind: 'trapdoor', blk: b, emissive: b.light > 0 };
+      if (b.shape === 'slab') return { kind: 'slab', blk: b, emissive: b.light > 0 };
+      if (b.shape === 'stairs') return { kind: 'stairs', blk: b, emissive: b.light > 0 };
+      if (b.shape === 'enchant_table') return { kind: 'enchant_table', blk: b, emissive: b.light > 0 };
       return { kind: 'cube', blk: b, emissive: b.light > 0 };
     }
     return { kind: 'sprite' };
@@ -10662,7 +11049,14 @@ class Renderer {
     const m = this._itemModel(id);
     if (m.kind === 'cube') this._pushBlockCube(m.blk, cx, cy, cz, size, size, size, R, a, m.emissive);
     else if (m.kind === 'slab') this._pushBlockCube(m.blk, cx, cy - size * 0.25, cz, size, size * 0.5, size, R, a, m.emissive);
-    else this._pushSprite(id, cx, cy, cz, size * 1.6, R, 1, 1, 1, a, m.emissive);
+    else if (m.kind === 'trapdoor') this._pushBlockCube(m.blk, cx, cy - size * 0.35, cz, size, size * 0.19, size, R, a, m.emissive);
+    else if (m.kind === 'enchant_table') this._pushBlockCube(m.blk, cx, cy - size * 0.12, cz, size, size * 0.76, size, R, a, m.emissive);
+    else if (m.kind === 'stairs') {
+      const bot = this._xform(cx, cy, cz, R, 0, -size * 0.25, 0);
+      const top = this._xform(cx, cy, cz, R, 0, size * 0.25, -size * 0.25);
+      this._pushBlockCube(m.blk, bot[0], bot[1], bot[2], size, size * 0.5, size, R, a, m.emissive);
+      this._pushBlockCube(m.blk, top[0], top[1], top[2], size, size * 0.5, size * 0.5, R, a, m.emissive);
+    } else this._pushSprite(id, cx, cy, cz, size * 1.6, R, 1, 1, 1, a, m.emissive);
   }
 
   _pushBlob(x, y, z, radius, alpha) {
@@ -11203,39 +11597,127 @@ class Renderer {
     gl.depthMask(true);
     gl.disable(gl.BLEND);
 
-    // 7. Target outline, crack overlay & placement ghost
+    // 7. Target outline, crack overlay & placement shadow ghost
     if (mining && mining.target && !cam.isMenu) {
       const t = mining.target;
-      const lp = this.lineProg;
-      gl.useProgram(lp);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.wireBuf);
-      this._useAttribs(1);
-      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-      gl.uniformMatrix4fv(this._u(lp, 'uVP'), false, this.vp);
-      gl.uniform3f(this._u(lp, 'uOffset'), t.x - camX - 0.003, t.y - camY - 0.003, t.z - camZ - 0.003);
-      gl.uniform3f(this._u(lp, 'uScale'), 1.006, 1.006, 1.006);
-      gl.uniform4f(this._u(lp, 'uColor'), 0.02, 0.02, 0.02, 0.75);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      gl.drawArrays(gl.LINES, 0, 24);
-      gl.disable(gl.BLEND);
+      const tMeta = world.getMeta(t.x, t.y, t.z);
+      const tShape = this._getBlockShapeBoxes(t.id, tMeta, world, t.x, t.y, t.z);
+      const drawWireBoxes = (wx, wy, wz, boxes, r, g, b, a) => {
+        const lp = this.lineProg;
+        gl.useProgram(lp);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.wireBuf);
+        this._useAttribs(1);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.uniformMatrix4fv(this._u(lp, 'uVP'), false, this.vp);
+        gl.uniform4f(this._u(lp, 'uColor'), r, g, b, a);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        const pad = 0.003;
+        for (const bx of boxes) {
+          let x0, y0, z0, sx, sy, sz;
+          if (bx.cx !== undefined) {
+            x0 = bx.cx - bx.sx * 0.5; y0 = bx.cy - bx.sy * 0.5; z0 = bx.cz - bx.sz * 0.5;
+            sx = bx.sx; sy = bx.sy; sz = bx.sz;
+          } else {
+            x0 = bx.x0; y0 = bx.y0; z0 = bx.z0;
+            sx = bx.x1 - bx.x0; sy = bx.y1 - bx.y0; sz = bx.z1 - bx.z0;
+          }
+          gl.uniform3f(this._u(lp, 'uOffset'), wx + x0 - camX - pad, wy + y0 - camY - pad, wz + z0 - camZ - pad);
+          gl.uniform3f(this._u(lp, 'uScale'), sx + pad * 2, sy + pad * 2, sz + pad * 2);
+          gl.drawArrays(gl.LINES, 0, 24);
+        }
+        gl.disable(gl.BLEND);
+      };
 
+      // Target wireframe fitted to actual block shape
+      drawWireBoxes(t.x, t.y, t.z, tShape.boxes, 0.02, 0.02, 0.02, 0.78);
+
+      // Breaking crack overlay fitted to actual block shape!
       if (mining.progress > 0.01) {
         const stage = Math.min(9, Math.floor(mining.progress * 10));
         const rec = this.itemSlots.get('crack' + stage);
         const pad = 0.5 / ITEM_ATLAS_PX;
         const u0 = rec.ox / ITEM_ATLAS_PX + pad, v0 = rec.oy / ITEM_ATLAS_PX + pad;
         const u1 = (rec.ox + ITEM_CELL) / ITEM_ATLAS_PX - pad, v1 = (rec.oy + ITEM_CELL) / ITEM_ATLAS_PX - pad;
-        this._pushOrientedBox(t.x + 0.5 - camX, t.y + 0.5 - camY, t.z + 0.5 - camZ, 1.004, 1.004, 1.004, this._rot(0, 0, 0), 1, 1, 1, 0.9,
-          () => ({ sel: 2, u0, v0, u1, v1 }));
+        const eps = 0.004;
+        for (const bx of tShape.boxes) {
+          let cx, cy, cz, sx, sy, sz, R;
+          if (bx.cx !== undefined) {
+            cx = t.x + bx.cx - camX; cy = t.y + bx.cy - camY; cz = t.z + bx.cz - camZ;
+            sx = bx.sx + eps; sy = bx.sy + eps; sz = bx.sz + eps;
+            R = this._rot(0, bx.pitch || 0, bx.roll || 0);
+          } else {
+            sx = (bx.x1 - bx.x0) + eps; sy = (bx.y1 - bx.y0) + eps; sz = (bx.z1 - bx.z0) + eps;
+            cx = t.x + (bx.x0 + bx.x1) * 0.5 - camX;
+            cy = t.y + (bx.y0 + bx.y1) * 0.5 - camY;
+            cz = t.z + (bx.z0 + bx.z1) * 0.5 - camZ;
+            R = this._rot(0, 0, 0);
+          }
+          this._pushOrientedBox(cx, cy, cz, sx, sy, sz, R, 1, 1, 1, 0.9, () => ({ sel: 2, u0, v0, u1, v1 }));
+        }
         this._flushBoxes(this.vp, { blend: true, noDepthWrite: true, polyOffset: true, unlit: true, cull: true });
       }
 
-      if (mining.heldBlockId) {
-        const px = t.x + t.nx, py = t.y + t.ny, pz = t.z + t.nz;
-        const pulse = 0.10 + Math.sin(this.time * 4) * 0.03;
-        this._pushBox(px + 0.5 - camX, py + 0.5 - camY, pz + 0.5 - camZ, 0.995, 0.995, 0.995, 0.75, 0.95, 1.0, pulse);
+      // Placement shadow / ghost preview matching exact block shape & chosen orientation!
+      const prev = mining.preview;
+      if (prev && prev.id) {
+        const pBlk = BLOCKS.get(prev.id);
+        const pulse = 0.5 + 0.5 * Math.sin(this.time * 4.2);
+        const alpha = prev.valid ? (0.34 + pulse * 0.12) : 0.24;
+        const tintR = prev.valid ? 0.58 : 1.0;
+        const tintG = prev.valid ? 0.84 : 0.34;
+        const tintB = prev.valid ? 0.96 : 0.34;
+        const pushGhostPart = (gx, gy, gz, gMeta, isTopDoor = false) => {
+          const shape = this._getBlockShapeBoxes(prev.id, gMeta, world, gx, gy, gz);
+          const texArr = pBlk ? pBlk.tex : [0, 0, 0];
+          const doorTex = isTopDoor && texArr[3] !== undefined ? texArr[3] : texArr[2];
+          const faceTiles = pBlk && pBlk.shape === 'door'
+            ? [texArr[0], texArr[1], doorTex, doorTex, doorTex, doorTex]
+            : [texArr[0], texArr[1], texArr[3] !== undefined ? texArr[3] : texArr[2], texArr[2], texArr[2], texArr[2]];
+          for (const bx of shape.boxes) {
+            let cx, cy, cz, sx, sy, sz, R;
+            if (bx.cx !== undefined) {
+              cx = gx + bx.cx - camX; cy = gy + bx.cy - camY; cz = gz + bx.cz - camZ;
+              sx = bx.sx; sy = bx.sy; sz = bx.sz;
+              R = this._rot(0, bx.pitch || 0, bx.roll || 0);
+            } else {
+              sx = bx.x1 - bx.x0; sy = bx.y1 - bx.y0; sz = bx.z1 - bx.z0;
+              cx = gx + (bx.x0 + bx.x1) * 0.5 - camX;
+              cy = gy + (bx.y0 + bx.y1) * 0.5 - camY;
+              cz = gz + (bx.z0 + bx.z1) * 0.5 - camZ;
+              R = this._rot(0, 0, 0);
+            }
+            if (pBlk && pBlk.shape === 'torch') {
+              this._pushOrientedBox(cx, cy, cz, sx, sy, sz, R, prev.valid ? 0.95 : 1.0, prev.valid ? 0.85 : 0.35, prev.valid ? 0.55 : 0.35, alpha + 0.14, null);
+            } else {
+              this._pushOrientedBox(cx, cy, cz, sx, sy, sz, R, tintR, tintG, tintB, alpha, (f) => {
+                const uv = this._tileUV(faceTiles[f]);
+                return uv;
+              });
+            }
+          }
+          if (shape.hinge && prev.valid) {
+            const h = shape.hinge;
+            this._pushBox(
+              gx + (h.x0 + h.x1) * 0.5 - camX,
+              gy + (h.y0 + h.y1) * 0.5 - camY,
+              gz + (h.z0 + h.z1) * 0.5 - camZ,
+              h.x1 - h.x0, h.y1 - h.y0, h.z1 - h.z0,
+              0.42, 1.0, 0.72, 0.72
+            );
+          }
+          return shape.boxes;
+        };
+        const ghostBoxes = pushGhostPart(prev.px, prev.py, prev.pz, prev.meta, false);
+        let topBoxes = null;
+        if (prev.isDoor) topBoxes = pushGhostPart(prev.px, prev.py + 1, prev.pz, prev.meta | 8, true);
         this._flushBoxes(this.vp, { blend: true, noDepthWrite: true, unlit: true });
+
+        // Subtle crisp outline around the placement shadow
+        const or = prev.valid ? 0.45 : 1.0, og = prev.valid ? 0.96 : 0.35, ob = prev.valid ? 0.85 : 0.35;
+        const oa = prev.valid ? (prev.multiOrient ? 0.72 : 0.42) : 0.65;
+        drawWireBoxes(prev.px, prev.py, prev.pz, ghostBoxes, or, og, ob, oa);
+        if (topBoxes) drawWireBoxes(prev.px, prev.py + 1, prev.pz, topBoxes, or, og, ob, oa);
       }
     }
 
@@ -11376,6 +11858,15 @@ class Renderer {
         const s = 0.31;
         if (model.kind === 'slab') {
           this._pushBlockCube(model.blk, bx, by - s * 0.22, bz, s, s * 0.5, s, R, 1, model.emissive);
+        } else if (model.kind === 'trapdoor') {
+          this._pushBlockCube(model.blk, bx, by - s * 0.32, bz, s, s * 0.19, s, R, 1, model.emissive);
+        } else if (model.kind === 'enchant_table') {
+          this._pushBlockCube(model.blk, bx, by - s * 0.10, bz, s, s * 0.76, s, R, 1, model.emissive);
+        } else if (model.kind === 'stairs') {
+          const bot = this._xform(bx, by, bz, R, 0, -s * 0.25, 0);
+          const top = this._xform(bx, by, bz, R, 0, s * 0.25, -s * 0.25);
+          this._pushBlockCube(model.blk, bot[0], bot[1], bot[2], s, s * 0.5, s, R, 1, model.emissive);
+          this._pushBlockCube(model.blk, top[0], top[1], top[2], s, s * 0.5, s * 0.5, R, 1, model.emissive);
         } else {
           this._pushBlockCube(model.blk, bx, by, bz, s, s, s, R, 1, model.emissive);
         }
@@ -12482,10 +12973,11 @@ class PlayerPhysics {
             continue;
           }
 
-          // Trapdoors (open passes freely; closed is upper thin deck)
+          // Trapdoors (open passes freely; closed is upper or lower thin deck)
           if (b.shape === 'trapdoor') {
             if (meta & 4) continue;
-            if (py0 < by + 1.0 && py1 > by + 0.80) return true;
+            const bottom = (meta & 8) !== 0;
+            if (bottom ? (py0 < by + 0.20 && py1 > by) : (py0 < by + 1.0 && py1 > by + 0.80)) return true;
             continue;
           }
 
@@ -13049,6 +13541,175 @@ class MiningSystem {
     this.drops = [];
     this.heldBlockId = 0;
     this.placeCooldown = 0;
+    this.placeOrientOffset = 0;
+    this._lastHeldBlockId = 0;
+    this.preview = null;
+  }
+
+  // Compute exact placement target, metadata, validity & orient cycling for shadow preview AND actual placement
+  computePlacementPreview(heldBlockId, tgt, p, orientOffset = 0) {
+    if (!tgt || !heldBlockId) return null;
+    const replaceTarget = (tgt.id === B.TALL_GRASS || tgt.id === B.DEAD_BUSH || tgt.id === B.SEAGRASS) && heldBlockId !== tgt.id;
+    const t = replaceTarget ? { ...tgt, y: tgt.y - 1, nx: 0, ny: 1, nz: 0 } : tgt;
+    const px = t.x + t.nx, py = t.y + t.ny, pz = t.z + t.nz;
+    const cur = this.world.getBlock(px, py, pz);
+    const blk = BLOCKS.get(heldBlockId);
+    if (!blk) return null;
+
+    let spaceOk = (cur === B.AIR || BLOCKS.get(cur).liquid || BLOCKS.get(cur).cross);
+    const isDoor = blk.shape === 'door';
+    if (spaceOk && isDoor) {
+      const above = this.world.getBlock(px, py + 1, pz);
+      if (above !== B.AIR && !BLOCKS.get(above).liquid && !BLOCKS.get(above).cross) spaceOk = false;
+    }
+
+    // Prevent placing solid block inside player AABB
+    if (spaceOk && blk.solid) {
+      const hw = p.width * 0.5;
+      const maxPlaceY = isDoor ? py + 2 : py + 1;
+      const overlapX = (p.x + hw > px) && (p.x - hw < px + 1);
+      const overlapY = (p.y + p.height > py) && (p.y < maxPlaceY);
+      const overlapZ = (p.z + hw > pz) && (p.z - hw < pz + 1);
+      if (overlapX && overlapY && overlapZ) spaceOk = false;
+    }
+
+    const deg = ((p.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    const baseFacing = deg < 45 || deg >= 315 ? 0 : deg < 135 ? 1 : deg < 225 ? 2 : 3;
+    const dirNames = ['South', 'East', 'North', 'West'];
+    const hitFracY = t.hy !== undefined ? (t.hy - Math.floor(t.hy)) : 0.5;
+
+    let meta = baseFacing;
+    let multiOrient = false;
+    let orientLabel = '';
+    let orientCount = 1;
+    let supportOk = true;
+
+    if (blk.shape === 'trapdoor') {
+      multiOrient = true;
+      // Default: bottom if clicked floor or lower half of side face; top if clicked ceiling or upper half
+      const defBottom = (t.ny === 1) ? true : (t.ny === -1) ? false : (hitFracY < 0.5);
+      // 8 closed orientations: 4 bottom (hinge N/E/S/W), 4 top (hinge N/E/S/W)
+      const baseIdx = (defBottom ? 0 : 4) + baseFacing;
+      const idx = ((baseIdx + orientOffset) % 8 + 8) % 8;
+      const isBottom = idx < 4;
+      const f = idx & 3;
+      meta = f | (isBottom ? 8 : 0);
+      orientCount = 8;
+      orientLabel = `${isBottom ? 'Bottom' : 'Top'} · Hinge ${dirNames[f]}`;
+    } else if (heldBlockId === B.TORCH) {
+      multiOrient = true;
+      // Collect all supported orientations (floor + 4 walls) at (px, py, pz)
+      let defAttach = -1;
+      if (t.ny === 1) defAttach = 0;
+      else if (t.nz === 1) defAttach = 1;
+      else if (t.nz === -1) defAttach = 2;
+      else if (t.nx === 1) defAttach = 3;
+      else if (t.nx === -1) defAttach = 4;
+      const candidates = [];
+      const attachNames = { 0: 'Floor', 1: 'North Wall', 2: 'South Wall', 3: 'West Wall', 4: 'East Wall' };
+      const order = defAttach >= 0 ? [defAttach, 0, 1, 2, 3, 4].filter((v, i, a) => a.indexOf(v) === i) : [0, 1, 2, 3, 4];
+      for (const att of order) {
+        if (this.world.hasBlockSupport(px, py, pz, B.TORCH, att)) candidates.push(att);
+      }
+      if (candidates.length > 0) {
+        orientCount = candidates.length;
+        const chosen = candidates[((orientOffset % candidates.length) + candidates.length) % candidates.length];
+        meta = chosen;
+        orientLabel = attachNames[chosen];
+      } else {
+        meta = defAttach >= 0 ? defAttach : 0;
+        supportOk = false;
+        orientLabel = 'No Support';
+      }
+    } else if (heldBlockId === B.LANTERN) {
+      multiOrient = true;
+      const defHang = (t.ny === -1) ? 1 : (t.ny === 1) ? 0 : (this.world.hasBlockSupport(px, py, pz, B.LANTERN, 0) ? 0 : 1);
+      const order = defHang ? [1, 0] : [0, 1];
+      const candidates = order.filter(m => this.world.hasBlockSupport(px, py, pz, B.LANTERN, m));
+      if (candidates.length > 0) {
+        orientCount = candidates.length;
+        meta = candidates[((orientOffset % candidates.length) + candidates.length) % candidates.length];
+        orientLabel = meta ? 'Hanging' : 'Standing';
+      } else {
+        meta = defHang;
+        supportOk = false;
+        orientLabel = 'No Support';
+      }
+    } else if (heldBlockId === B.LEVER || heldBlockId === B.STONE_BUTTON) {
+      multiOrient = true;
+      let defAttach = 0;
+      if (t.ny === 1) defAttach = 0;
+      else if (t.ny === -1) defAttach = 5;
+      else if (t.nz === 1) defAttach = 1;
+      else if (t.nz === -1) defAttach = 2;
+      else if (t.nx === 1) defAttach = 3;
+      else if (t.nx === -1) defAttach = 4;
+      const attachNames = { 0: 'Floor', 5: 'Ceiling', 1: 'North Wall', 2: 'South Wall', 3: 'West Wall', 4: 'East Wall' };
+      const order = [defAttach, 0, 5, 1, 2, 3, 4].filter((v, i, a) => a.indexOf(v) === i);
+      const candidates = order.filter(att => this.world.hasBlockSupport(px, py, pz, heldBlockId, att << 1));
+      if (candidates.length > 0) {
+        orientCount = candidates.length;
+        const chosen = candidates[((orientOffset % candidates.length) + candidates.length) % candidates.length];
+        meta = chosen << 1;
+        orientLabel = attachNames[chosen];
+      } else {
+        meta = defAttach << 1;
+        supportOk = false;
+        orientLabel = 'No Support';
+      }
+    } else if (blk.shape === 'ladder') {
+      multiOrient = true;
+      let defLf = -1;
+      if (t.ny === 0) {
+        if (t.nz === -1) defLf = 0;
+        else if (t.nx === -1) defLf = 1;
+        else if (t.nz === 1) defLf = 2;
+        else if (t.nx === 1) defLf = 3;
+      }
+      const lfNames = ['South Wall', 'East Wall', 'North Wall', 'West Wall'];
+      const order = defLf >= 0 ? [defLf, 0, 1, 2, 3].filter((v, i, a) => a.indexOf(v) === i) : [0, 1, 2, 3];
+      const candidates = order.filter(lf => this.world.hasBlockSupport(px, py, pz, B.LADDER, lf));
+      if (candidates.length > 0) {
+        orientCount = candidates.length;
+        meta = candidates[((orientOffset % candidates.length) + candidates.length) % candidates.length];
+        orientLabel = lfNames[meta];
+      } else {
+        meta = defLf >= 0 ? defLf : 0;
+        supportOk = false;
+        orientLabel = 'Needs Wall';
+      }
+    } else if (blk.shape === 'slab') {
+      multiOrient = true;
+      const defTop = (t.ny === -1) ? 1 : (t.ny === 1) ? 0 : (hitFracY >= 0.5 ? 1 : 0);
+      const top = ((defTop + orientOffset) % 2 + 2) % 2;
+      meta = baseFacing | (top ? 8 : 0);
+      orientCount = 2;
+      orientLabel = top ? 'Top Half' : 'Bottom Half';
+    } else if (blk.shape === 'stairs') {
+      multiOrient = true;
+      const f = ((baseFacing + orientOffset) % 4 + 4) % 4;
+      meta = f;
+      orientCount = 4;
+      orientLabel = `Facing ${dirNames[f]}`;
+    } else if (blk.shape === 'door') {
+      multiOrient = true;
+      const f = ((baseFacing + orientOffset) % 4 + 4) % 4;
+      meta = f;
+      orientCount = 4;
+      orientLabel = `Facing ${dirNames[f]}`;
+    } else if (blk.shape === 'fence_gate') {
+      multiOrient = true;
+      const f = ((baseFacing + orientOffset) % 2 + 2) % 2;
+      meta = f;
+      orientCount = 2;
+      orientLabel = f === 0 ? 'East–West' : 'North–South';
+    } else {
+      if (heldBlockId === B.REDSTONE_WIRE || heldBlockId === B.PRESSURE_PLATE || isSapling(heldBlockId)) meta = 0;
+      if (blk.isLeaf) meta = 4;
+    }
+
+    if (supportOk && !this.world.hasBlockSupport(px, py, pz, heldBlockId, meta)) supportOk = false;
+    return { px, py, pz, id: heldBlockId, meta, valid: spaceOk && supportOk, multiOrient, orientLabel, orientCount, isDoor };
   }
 
   getBlockColor(id) {
@@ -13251,6 +13912,16 @@ class MiningSystem {
     const held = p.inventory.getHeld();
     const heldIt = held ? ITEMS.get(held.id) : null;
     this.heldBlockId = (heldIt && heldIt.blockId) ? heldIt.blockId : 0;
+    if (this.heldBlockId !== this._lastHeldBlockId) {
+      this._lastHeldBlockId = this.heldBlockId;
+      this.placeOrientOffset = 0;
+    }
+    this.preview = this.heldBlockId ? this.computePlacementPreview(this.heldBlockId, this.target, p, this.placeOrientOffset) : null;
+    if (input.rotateJustPressed && this.preview && this.preview.multiOrient) {
+      this.placeOrientOffset++;
+      this.preview = this.computePlacementPreview(this.heldBlockId, this.target, p, this.placeOrientOffset);
+      this.audio.playSound('click');
+    }
     this.placeCooldown = Math.max(0, this.placeCooldown - dt);
 
     // Attack cooldown & Shield block raise blend
@@ -13950,86 +14621,18 @@ class MiningSystem {
       }
     }
 
-    // 6. Place Block (including 2-Block Doors & Wall-Attached Ladders!)
+    // 6. Place Block (uses exact same computePlacementPreview as the 3D shadow preview!)
     if (this.target && heldIt && heldIt.blockId) {
-      const tgt = this.target;
-      // Aiming at tall grass / dead bush / seagrass replaces it, like other sandbox games, instead of stacking
-      // beside it. The new block is then treated as placed on top of the block underneath the plant.
-      const replaceTarget = (tgt.id === B.TALL_GRASS || tgt.id === B.DEAD_BUSH || tgt.id === B.SEAGRASS) && heldIt.blockId !== tgt.id;
-      const t = replaceTarget ? { ...tgt, y: tgt.y - 1, nx: 0, ny: 1, nz: 0 } : tgt;
-      const px = t.x + t.nx, py = t.y + t.ny, pz = t.z + t.nz;
-      const cur = this.world.getBlock(px, py, pz);
-      if (cur !== B.AIR && !BLOCKS.get(cur).liquid && !BLOCKS.get(cur).cross) return;
-
+      const prev = this.computePlacementPreview(heldIt.blockId, this.target, p, this.placeOrientOffset);
+      if (!prev || !prev.valid) return;
+      const { px, py, pz, meta, isDoor } = prev;
       const blk = BLOCKS.get(heldIt.blockId);
-
-      // Door needs 2 vertical blocks!
-      if (blk.shape === 'door') {
-        const above = this.world.getBlock(px, py + 1, pz);
-        if (above !== B.AIR && !BLOCKS.get(above).liquid && !BLOCKS.get(above).cross) return;
-      }
-
-      // Prevent placing solid block inside player AABB
-      if (blk.solid) {
-        const hw = p.width * 0.5;
-        const maxPlaceY = blk.shape === 'door' ? py + 2 : py + 1;
-        const overlapX = (p.x + hw > px) && (p.x - hw < px + 1);
-        const overlapY = (p.y + p.height > py) && (p.y < maxPlaceY);
-        const overlapZ = (p.z + hw > pz) && (p.z - hw < pz + 1);
-        if (overlapX && overlapY && overlapZ) return;
-      }
-
-      // Compute directional facing meta (0=+Z, 1=+X, 2=-Z, 3=-X)
-      const deg = ((p.yaw * 180 / Math.PI) % 360 + 360) % 360;
-      let facing = deg < 45 || deg >= 315 ? 0 : deg < 135 ? 1 : deg < 225 ? 2 : 3;
-
-      // Wall/floor/ceiling attachment metadata for torches, lanterns, levers, buttons, ladders
-      let meta = facing;
-      if (blk.shape === 'ladder') {
-        if (t.ny !== 0) return; // Ladders must be placed on a side wall
-        if (t.nz === -1) meta = 0;      // clicked north face of block -> attach to +Z side of ladder cell
-        else if (t.nx === -1) meta = 1; // clicked west face -> attach to +X side
-        else if (t.nz === 1) meta = 2;  // clicked south face -> attach to -Z side
-        else if (t.nx === 1) meta = 3;  // clicked east face -> attach to -X side
-      } else if (heldIt.blockId === B.TORCH) {
-        if (t.ny === 1) meta = 0;       // floor
-        else if (t.nz === 1) meta = 1;  // -Z wall
-        else if (t.nz === -1) meta = 2; // +Z wall
-        else if (t.nx === 1) meta = 3;  // -X wall
-        else if (t.nx === -1) meta = 4; // +X wall
-        else return;                    // cannot place torch on ceiling
-      } else if (heldIt.blockId === B.LANTERN) {
-        if (t.ny === -1) meta = 1;      // hanging from ceiling
-        else if (t.ny === 1) meta = 0;  // standing on floor
-        else {
-          // Clicking side of a block: prefer floor if supported, else hang from ceiling if supported
-          if (this.world.hasBlockSupport(px, py, pz, B.LANTERN, 0)) meta = 0;
-          else if (this.world.hasBlockSupport(px, py, pz, B.LANTERN, 1)) meta = 1;
-          else return;
-        }
-      } else if (heldIt.blockId === B.LEVER || heldIt.blockId === B.STONE_BUTTON) {
-        let attach = 0;
-        if (t.ny === 1) attach = 0;       // floor
-        else if (t.ny === -1) attach = 5; // ceiling
-        else if (t.nz === 1) attach = 1;  // -Z wall
-        else if (t.nz === -1) attach = 2; // +Z wall
-        else if (t.nx === 1) attach = 3;  // -X wall
-        else if (t.nx === -1) attach = 4; // +X wall
-        meta = attach << 1;               // bit 0 = 0 (unpowered/unpressed)
-      } else {
-        if (blk.shape === 'slab' && t.ny < 0) meta |= 8;
-        if (heldIt.blockId === B.REDSTONE_WIRE || heldIt.blockId === B.PRESSURE_PLATE || isSapling(heldIt.blockId)) meta = 0;
-        if (blk.isLeaf) meta = 4; // player-placed leaves never decay
-      }
-
-      // Never allow placing support-dependent blocks floating in mid-air!
-      if (!this.world.hasBlockSupport(px, py, pz, heldIt.blockId, meta)) return;
 
       this.world.setBlock(px, py, pz, heldIt.blockId, meta, true);
       if (this.net && this.net.connected) this.net.sendBlockPlace(px, py, pz, heldIt.blockId, meta);
       if (heldIt.blockId === B.REDSTONE_WIRE) this.world.redstone.refreshAround(px, py, pz, this);
 
-      if (blk.shape === 'door') {
+      if (isDoor) {
         this.world.setBlock(px, py + 1, pz, heldIt.blockId, meta | 8, true);
         if (this.net && this.net.connected) this.net.sendBlockPlace(px, py + 1, pz, heldIt.blockId, meta | 8);
       }
@@ -14600,7 +15203,12 @@ class MobManager {
         continue;
       }
       if (b.shape === 'fence_gate') { if (meta & 4) continue; return false; }
-      if (b.shape === 'trapdoor') { if ((meta & 4) || ly < 0.75) continue; return false; }
+      if (b.shape === 'trapdoor') {
+        if (meta & 4) continue;
+        const bottom = (meta & 8) !== 0;
+        if (bottom ? ly > 0.25 : ly < 0.75) continue;
+        return false;
+      }
       if (b.shape === 'slab') { const top = (meta & 8) !== 0; if (top ? ly >= 0.5 : ly < 0.5) return false; continue; }
       if (b.shape === 'enchant_table') { if (ly < 0.76) return false; continue; }
       if (b.shape === 'campfire') { if (ly < 0.4) return false; continue; }
@@ -16735,6 +17343,7 @@ class InputManager {
     this.jumpJustPressed = false;
     this.dodgeJustPressed = false;
     this.torchJustPressed = false;
+    this.rotateJustPressed = false;
     this.doubleTapSprint = false;
     this.sprintToggled = false;
     this._lastForwardTap = 0;
@@ -16827,6 +17436,7 @@ class InputManager {
     this.jumpJustPressed = false;
     this.dodgeJustPressed = false;
     this.torchJustPressed = false;
+    this.rotateJustPressed = false;
   }
 
   pollGamepad(dt) {
@@ -17013,6 +17623,9 @@ class InputManager {
       if (e.code === k.torch && !e.repeat) {
         e.preventDefault(); this.torchJustPressed = true; return;
       }
+      if (e.code === (k.rotate || 'KeyR') && !e.repeat) {
+        e.preventDefault(); this.rotateJustPressed = true; return;
+      }
       if (e.code === k.dodge && !e.repeat) {
         e.preventDefault(); this.dodgeJustPressed = true; return;
       }
@@ -17178,6 +17791,8 @@ class UIManager {
     this._slotDragThrow = false;
     this._rightDragPainted = false;
     this.showCreativeCatalog = false;
+    this.recipeFilter = 'all'; // 'all' | 'craftable'
+    this.creativeCat = 'all';  // 'all' | 'blocks' | 'decor' | 'tools' | 'items'
     this.enchantTargetSlot = null;
     this.enchSlots = [null, null]; // [item, lapis]
     this.smithSlots = [null, null]; // [gear, material]
@@ -18188,6 +18803,20 @@ class UIManager {
     const el = this._el('lookAtHud');
     if (!el) return;
     const helperMode = this.engine.settings.data.hudHelpers || 'all';
+    // Update Placement Orientation HUD hint
+    const oHint = this._el('orientHint');
+    if (oHint) {
+      const prev = this.engine.mining && this.engine.mining.preview;
+      const showOrient = this.engine.state === 'playing' && prev && prev.multiOrient;
+      oHint.classList.toggle('active', !!showOrient);
+      if (showOrient) {
+        const rk = (this.engine.settings.data.keys.rotate || 'KeyR').replace(/^Key/, '');
+        this._el('orientKeyLbl').textContent = rk;
+        const valEl = this._el('orientValLbl');
+        valEl.textContent = prev.orientLabel + (prev.orientCount > 1 ? ` (${prev.orientCount} modes)` : '');
+        valEl.style.color = prev.valid ? '#96ff7e' : '#ff7b7b';
+      }
+    }
     if (helperMode === 'off' || this.engine.state !== 'playing') { el.classList.remove('active'); return; }
     const now = performance.now();
     if (this._lastLookT && now - this._lastLookT < 90) return;
@@ -18817,24 +19446,69 @@ class UIManager {
     if (type === 'inventory' || type === 'crafting') {
       const hasTable = (type === 'crafting');
       if (type === 'inventory') {
-        const armWrap = document.createElement('div');
-        armWrap.innerHTML = '<div class="section-label">Equipment &amp; Armor</div>';
-        const armRow = document.createElement('div');
-        armRow.style.display = 'flex'; armRow.style.gap = '4px';
-        const labels = ['Helm', 'Chest', 'Legs', 'Boots', 'Shld'];
-        for (let i = 0; i < 5; i++) {
+        const p = this.engine.player;
+        const charCard = document.createElement('div');
+        charCard.className = 'inv-char-card';
+
+        // Vertical Armor Column (Helm, Chest, Legs, Boots)
+        const armCol = document.createElement('div');
+        armCol.className = 'inv-armor-col';
+        const labels = ['Helm', 'Chest', 'Legs', 'Boots'];
+        for (let i = 0; i < 4; i++) {
           const sl = this._makeSlotEl(inv.armor[i], null, 'armor-slot', labels[i]);
           this._bindSlotEvents(sl, () => inv.armor[i], (v) => inv.armor[i] = v, {
             zone: 'armor',
             accept: (st) => { const it = ITEMS.get(st.id); return it && it.armorSlot === i; }
           });
-          armRow.appendChild(sl);
+          armCol.appendChild(sl);
         }
-        armWrap.appendChild(armRow);
-        top.appendChild(armWrap);
+        charCard.appendChild(armCol);
+
+        // Live 2D Character Paperdoll & Quick Stats
+        const dollBox = document.createElement('div');
+        dollBox.className = 'inv-paperdoll';
+        const dollCanvas = document.createElement('canvas');
+        dollCanvas.className = 'inv-doll-canvas';
+        dollCanvas.width = 42; dollCanvas.height = 57;
+        this._drawInventoryPaperdoll(dollCanvas, inv.armor);
+        dollBox.appendChild(dollCanvas);
+
+        let defTotal = 0;
+        for (let i = 0; i < 5; i++) {
+          const a = inv.armor[i];
+          if (a) { const it = ITEMS.get(a.id); if (it && it.defense) defTotal += it.defense; }
+        }
+        const stats = document.createElement('div');
+        stats.className = 'inv-stat-pills';
+        stats.innerHTML =
+          `<div class="inv-stat-pill" title="Health"><span style="color:#ff6b6b">♥</span>${Math.ceil(p.health)}/${p.maxHealth}</div>` +
+          `<div class="inv-stat-pill" title="Armor Defense"><span style="color:#7ec8ff">🛡</span>${defTotal}</div>` +
+          `<div class="inv-stat-pill" title="Hunger"><span style="color:#f5b041">🍖</span>${Math.ceil(p.hunger)}</div>` +
+          `<div class="inv-stat-pill" title="Experience Level"><span style="color:#8dff6b">★</span>Lv ${p.level || 0}</div>`;
+        dollBox.appendChild(stats);
+        charCard.appendChild(dollBox);
+
+        // Offhand / Shield Slot
+        const offCol = document.createElement('div');
+        offCol.className = 'inv-offhand-col';
+        const shSl = this._makeSlotEl(inv.armor[4], null, 'armor-slot', 'Shld');
+        this._bindSlotEvents(shSl, () => inv.armor[4], (v) => inv.armor[4] = v, {
+          zone: 'armor',
+          accept: (st) => { const it = ITEMS.get(st.id); return it && it.armorSlot === 4; }
+        });
+        offCol.appendChild(shSl);
+        charCard.appendChild(offCol);
+        top.appendChild(charCard);
       }
 
-      // Crafting Grid (2x2 or 3x3) + Output (supports Shift-Click Bulk Craft!)
+      // Crafting Station Card (2x2 or 3x3) + Output (supports Shift-Click Bulk Craft!)
+      const craftCard = document.createElement('div');
+      craftCard.className = 'inv-craft-card';
+      const cTitle = document.createElement('div');
+      cTitle.className = 'inv-craft-title';
+      cTitle.textContent = hasTable ? 'Crafting Table (3×3)' : 'Hand Crafting (2×2)';
+      craftCard.appendChild(cTitle);
+
       const craftWrap = document.createElement('div');
       craftWrap.className = 'craft-station';
       const grid = document.createElement('div');
@@ -18845,8 +19519,10 @@ class UIManager {
         this._bindSlotEvents(sl, () => this.craftGrid[i], (v) => this.craftGrid[i] = v, { zone: 'craft' });
         grid.appendChild(sl);
       }
-      const arrow = document.createElement('div'); arrow.className = 'arrow-icon'; arrow.textContent = '→';
       const match = CRAFTING.matchGrid(this.craftGrid.slice(0, n), hasTable);
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow-icon' + (match ? ' ready' : '');
+      arrow.textContent = '→';
       const outStack = match ? { id: match.outId, count: match.outCount } : null;
       const outEl = this._makeSlotEl(outStack);
       if (match) outEl.classList.add('selected');
@@ -18911,7 +19587,8 @@ class UIManager {
         }
       });
       craftWrap.appendChild(grid); craftWrap.appendChild(arrow); craftWrap.appendChild(outEl);
-      top.appendChild(craftWrap);
+      craftCard.appendChild(craftWrap);
+      top.appendChild(craftCard);
       this._renderSidePanel(hasTable);
     } else if (type === 'furnace' && this.containerRef) {
       const ent = this.containerRef.ent;
@@ -19235,8 +19912,59 @@ class UIManager {
     const hbG = this._el('modalHotbarGrid'); hbG.innerHTML = '';
     for (let i = 0; i < 9; i++) {
       const sl = this._makeSlotEl(inv.slots[i], i + 1);
+      if (i === inv.selected) sl.classList.add('active-hotbar');
       this._bindSlotEvents(sl, () => inv.slots[i], (v) => inv.slots[i] = v, { invIdx: i });
       hbG.appendChild(sl);
+    }
+  }
+
+  _drawInventoryPaperdoll(canvas, armor) {
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const f = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+    const colOf = (idx) => {
+      const st = armor[idx];
+      if (!st) return null;
+      const it = ITEMS.get(st.id);
+      return it && it.color ? it.color : '#a6b4c8';
+    };
+    const helmC = colOf(0), chestC = colOf(1), legsC = colOf(2), bootsC = colOf(3), shldC = colOf(4);
+
+    // Subtle ground shadow
+    f(11, 52, 20, 3, 'rgba(0,0,0,0.42)');
+    // Legs
+    f(14, 34, 6, 15, legsC || '#334d7a');
+    f(22, 34, 6, 15, legsC || '#2b426a');
+    // Boots
+    f(14, 46, 6, 6, bootsC || '#4a3a2c');
+    f(22, 46, 6, 6, bootsC || '#3d3024');
+    // Torso
+    f(13, 19, 16, 15, chestC || '#2c8a7c');
+    if (chestC) { f(15, 21, 12, 11, 'rgba(255,255,255,0.16)'); }
+    // Arms
+    f(8, 19, 5, 14, chestC || '#277a6e');
+    f(8, 30, 5, 4, '#d9a97c');
+    f(29, 19, 5, 14, chestC || '#236d62');
+    f(29, 30, 5, 4, '#c9986b');
+    // Head
+    f(14, 6, 14, 13, '#e2b386');
+    f(14, 6, 14, 4, '#4c3220'); // hair
+    f(17, 12, 2, 2, '#1f2937'); f(23, 12, 2, 2, '#1f2937'); // eyes
+    f(19, 16, 4, 1, '#9c6644'); // mouth
+    // Helmet overlay
+    if (helmC) {
+      f(13, 4, 16, 6, helmC);
+      f(13, 10, 2, 6, helmC);
+      f(27, 10, 2, 6, helmC);
+      f(19, 9, 4, 3, helmC);
+      f(15, 5, 12, 2, 'rgba(255,255,255,0.24)');
+    }
+    // Shield on offhand
+    if (shldC) {
+      f(30, 22, 8, 13, '#6b4728');
+      f(31, 23, 6, 11, shldC);
+      f(33, 25, 2, 7, 'rgba(255,255,255,0.28)');
     }
   }
 
@@ -19245,18 +19973,41 @@ class UIManager {
     const cGrid = this._el('creativeCatalog');
     const title = this._el('sidePanelTitle');
     const toggleBtn = this._el('btnToggleCreativeCatalog');
+    const filterBar = this._el('sideFilterBar');
+    const searchEl = this._el('recipeSearch');
     const isCreative = this.engine.player && this.engine.player.mode === 'creative';
     if (!isCreative) this.showCreativeCatalog = false;
 
+    filterBar.innerHTML = '';
     if (this.showCreativeCatalog) {
       title.textContent = 'Creative Catalog';
       toggleBtn.textContent = 'Recipes';
+      if (searchEl) searchEl.placeholder = 'Search blocks & items...';
+      const cats = [
+        ['all', 'All'], ['blocks', 'Blocks'], ['decor', 'Decor'], ['tools', 'Tools'], ['items', 'Items']
+      ];
+      for (const [key, lbl] of cats) {
+        const b = document.createElement('button');
+        b.className = 'side-filter-pill' + (this.creativeCat === key ? ' active' : '');
+        b.textContent = lbl;
+        b.onclick = () => { this.creativeCat = key; this._renderSidePanel(hasTable); };
+        filterBar.appendChild(b);
+      }
       rList.style.display = 'none';
       cGrid.style.display = 'grid';
       this._renderCreativeCatalog();
     } else {
       title.textContent = 'Recipe Book';
       toggleBtn.textContent = 'Catalog';
+      if (searchEl) searchEl.placeholder = 'Search recipes...';
+      const opts = [['all', 'All Recipes'], ['craftable', 'Craftable Only']];
+      for (const [key, lbl] of opts) {
+        const b = document.createElement('button');
+        b.className = 'side-filter-pill' + (this.recipeFilter === key ? ' active' : '');
+        b.textContent = lbl;
+        b.onclick = () => { this.recipeFilter = key; this._renderSidePanel(hasTable); };
+        filterBar.appendChild(b);
+      }
       cGrid.style.display = 'none';
       rList.style.display = 'flex';
       this._renderRecipeBook(hasTable);
@@ -19266,9 +20017,19 @@ class UIManager {
   _renderCreativeCatalog() {
     const grid = this._el('creativeCatalog');
     const q = (this._el('recipeSearch').value || '').toLowerCase().trim();
+    const cat = this.creativeCat || 'all';
     grid.innerHTML = '';
     for (const it of ITEMS.items.values()) {
       if (q && !it.name.toLowerCase().includes(q)) continue;
+      if (cat !== 'all') {
+        const blk = it.blockId ? BLOCKS.get(it.blockId) : null;
+        const isDecor = !!(blk && blk.shape && blk.shape !== 'cube');
+        const isTool = it.category === 'tool' || it.category === 'weapon' || it.category === 'armor';
+        if (cat === 'blocks' && (!blk || isDecor)) continue;
+        if (cat === 'decor' && !isDecor) continue;
+        if (cat === 'tools' && !isTool) continue;
+        if (cat === 'items' && (blk || isTool)) continue;
+      }
       const sl = this._makeSlotEl({ id: it.id, count: 1 });
       sl.title = `${it.name} (Click: 1 · Shift-Click: ${it.stack || 64})`;
       sl.addEventListener('mouseenter', () => {
@@ -19310,6 +20071,7 @@ class UIManager {
       if (!outIt) continue;
       if (q && !outIt.name.toLowerCase().includes(q)) continue;
       const can = CRAFTING.canCraftFromInventory(r, inv, hasTable);
+      if (this.recipeFilter === 'craftable' && !can) continue;
       const row = document.createElement('div');
       row.className = 'recipe-row' + (can ? ' can-craft' : '');
       const reqStr = r.ingredients.map(([id, cnt]) => {
