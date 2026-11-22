@@ -17458,6 +17458,10 @@ class SaveManager {
     });
   }
 
+  _isMultiplayerRecord(rec) {
+    return !rec || !!rec.multiplayer || rec.id === 'mp';
+  }
+
   async listWorlds() {
     const db = await this.init();
     if (!db) return [];
@@ -17465,7 +17469,16 @@ class SaveManager {
       const tx = db.transaction('worlds', 'readonly');
       const req = tx.objectStore('worlds').getAll();
       req.onsuccess = () => {
-        const list = (req.result || []).sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0));
+        const all = req.result || [];
+        const staleMp = all.filter(w => this._isMultiplayerRecord(w));
+        if (staleMp.length > 0) {
+          for (const w of staleMp) {
+            if (w && w.id !== undefined) this.deleteWorld(w.id);
+          }
+        }
+        const list = all
+          .filter(w => !this._isMultiplayerRecord(w))
+          .sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0));
         resolve(list);
       };
       req.onerror = () => resolve([]);
@@ -17473,6 +17486,7 @@ class SaveManager {
   }
 
   async saveWorld(meta, world, player, dayNight, weather) {
+    if (this._isMultiplayerRecord(meta)) return false;
     const db = await this.init();
     if (!db) return false;
     // Serialize ONLY modified block deltas (compact array of [chunkKey, [[idx, id, meta], ...]])
@@ -17538,12 +17552,16 @@ class SaveManager {
   }
 
   async loadWorld(id) {
+    if (!id || id === 'mp') return null;
     const db = await this.init();
     if (!db) return null;
     return new Promise((resolve) => {
       const tx = db.transaction('worlds', 'readonly');
       const req = tx.objectStore('worlds').get(id);
-      req.onsuccess = () => resolve(req.result || null);
+      req.onsuccess = () => {
+        const rec = req.result || null;
+        resolve(this._isMultiplayerRecord(rec) ? null : rec);
+      };
       req.onerror = () => resolve(null);
     });
   }
@@ -18051,6 +18069,22 @@ class UIManager {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     if (id) this._el(id).classList.add('active');
     this._el('hud').classList.toggle('active', !id || id === 'containerScreen');
+  }
+
+  resetSessionUI() {
+    this.containerType = null;
+    this.containerRef = null;
+    this.craftGrid.fill(null);
+    this.cursorStack = null;
+    this.enchSlots = [null, null];
+    this.smithSlots = [null, null];
+    this._drag = null;
+    this._slotDragThrow = false;
+    this._rightDragPainted = false;
+    this.hoveredSlot = null;
+    this._updateCursorEl();
+    if (this.chatOpen) this.closeChat();
+    this.setTabListVisible(false);
   }
 
   openAdvancements(fromPlay = false) {
@@ -20475,6 +20509,7 @@ class UIManager {
       this.closeDeleteWorldConfirm();
       await this.engine.saveMgr.deleteWorld(world.id);
       await this.refreshWorldList();
+      await this.refreshContinueButton();
       this.toast(`Deleted "${world.name || 'Untitled World'}"`);
     };
     this._el('deleteWorldModal').addEventListener('click', (e) => {
@@ -20488,6 +20523,10 @@ class UIManager {
       if (this.engine.isMultiplayer()) {
         this.engine.net.sendInventorySync();
         this.toast('Synced with server!');
+        return;
+      }
+      if (this.engine.isMultiplayerSession()) {
+        this.toast('Disconnected from server.');
         return;
       }
       const ok = await this.engine.saveCurrentWorld();
@@ -20515,7 +20554,7 @@ class UIManager {
       if (this.engine.isMultiplayer()) {
         this.engine.net.sendInventorySync();
         this.engine.disconnectMultiplayer();
-      } else {
+      } else if (!this.engine.isMultiplayerSession()) {
         await this.engine.saveCurrentWorld();
       }
       this.engine.returnToTitle();
@@ -20610,7 +20649,7 @@ class UIManager {
         this.engine.net.sendRespawn(outOfRange ? this.engine.player.spawnPoint : null);
         this.engine.net.sendInventorySync();
         this.engine.disconnectMultiplayer();
-      } else {
+      } else if (!this.engine.isMultiplayerSession()) {
         await this.engine.saveCurrentWorld();
       }
       this.engine.returnToTitle();
@@ -21309,10 +21348,16 @@ class GameEngine {
     window.addEventListener('beforeunload', (e) => {
       if (this.state === 'playing' || this.state === 'paused' || this.state === 'container') { e.preventDefault(); e.returnValue = ''; }
       if (this.isMultiplayer()) {
+        // Only sync inventory here; do NOT disconnect in beforeunload because the user may cancel leaving.
+        this.net.sendInventorySync();
+      } else if (!this.isMultiplayerSession() && this.world && this.player && this.state !== 'title') {
+        this.saveCurrentWorld();
+      }
+    });
+    window.addEventListener('pagehide', () => {
+      if (this.isMultiplayer()) {
         this.net.sendInventorySync();
         this.net.disconnect();
-      } else if (this.world && this.player && this.state !== 'title') {
-        this.saveCurrentWorld();
       }
     });
     requestAnimationFrame((t) => this._loop(t));
@@ -21320,6 +21365,7 @@ class GameEngine {
 
   isPlaying() { return this.state === 'playing' && !this.ui.chatOpen; }
   isMultiplayer() { return !!(this.net && this.net.connected); }
+  isMultiplayerSession() { return !!(this.isMultiplayer() || (this.worldMeta && (this.worldMeta.multiplayer || this.worldMeta.id === 'mp'))); }
 
   _initTitleWorld() {
     if (this.world) this.world.disposeAll();
@@ -21377,6 +21423,7 @@ class GameEngine {
   }
 
   enterMultiplayerWorld(msg) {
+    this.ui.resetSessionUI();
     if (this.world) this.world.disposeAll();
     this.worldMeta = { id: 'mp', name: msg.serverName || 'Multiplayer', seed: msg.seed, mode: msg.mode || 'survival', difficulty: msg.difficulty || 'normal', multiplayer: true };
     this.world = new World(msg.seed || 'voxelcraft-mp', this.renderer.gl);
@@ -21408,9 +21455,10 @@ class GameEngine {
     const saved = msg.player;
     // The server owns inventory, health, hunger and XP; we start from its copy
     if (saved) {
-      if (Array.isArray(saved.slots)) this.player.inventory.slots = saved.slots.slice(0, 36);
-      if (Array.isArray(saved.armor)) this.player.inventory.armor = saved.armor.slice(0, 5);
+      if (Array.isArray(saved.slots)) this.player.inventory.slots = saved.slots.slice(0, 36).concat(new Array(Math.max(0, 36 - saved.slots.length)).fill(null));
+      if (Array.isArray(saved.armor)) this.player.inventory.armor = saved.armor.slice(0, 5).concat(new Array(Math.max(0, 5 - saved.armor.length)).fill(null));
     }
+    this.net._lastInvJson = JSON.stringify(this.net._invPayload());
     this.player.serverStats = true;
     this.player.onLocalDamage = (dmg, reason) => this.net.sendSelfDamage(dmg, reason);
     if (saved && isFinite(saved.x) && isFinite(saved.y) && isFinite(saved.z) && saved.x !== null) {
@@ -21481,6 +21529,7 @@ class GameEngine {
 
   startNewWorld(meta) {
     this.disconnectMultiplayer();
+    this.ui.resetSessionUI();
     if (this.world) this.world.disposeAll();
     MAPSYS.clearCache();
     this.worldMeta = { ...meta, createdAt: Date.now() };
@@ -21521,6 +21570,7 @@ class GameEngine {
 
   async loadSavedWorld(id) {
     this.disconnectMultiplayer();
+    this.ui.resetSessionUI();
     const rec = await this.saveMgr.loadWorld(id);
     if (!rec || !rec.player || !isFinite(rec.player.x) || !isFinite(rec.player.y) || !isFinite(rec.player.z)) {
       this.ui.toast('Could not load saved world (the save data is missing or damaged).');
@@ -21659,7 +21709,7 @@ class GameEngine {
   }
 
   async saveCurrentWorld() {
-    if (this.isMultiplayer() || !this.worldMeta || !this.world || !this.player) return false;
+    if (this.isMultiplayerSession() || !this.worldMeta || !this.world || !this.player) return false;
     return this.saveMgr.saveWorld(this.worldMeta, this.world, this.player, this.dayNight, this.weather);
   }
 
@@ -21667,8 +21717,8 @@ class GameEngine {
     this.state = 'paused';
     this._pausedAt = performance.now();
     this.input.exitLock();
-    if (!this.isMultiplayer()) this.saveCurrentWorld();
-    const mp = this.isMultiplayer();
+    const mp = this.isMultiplayerSession();
+    if (!mp) this.saveCurrentWorld();
     document.getElementById('btnManualSave').textContent = mp ? 'Sync State Now' : 'Save World Now';
     document.getElementById('btnSaveQuit').textContent = mp ? 'Disconnect to Title' : 'Save & Quit to Title';
     this.ui.showScreen('pauseScreen');
@@ -21682,6 +21732,7 @@ class GameEngine {
 
   returnToTitle() {
     this.disconnectMultiplayer();
+    this.ui.resetSessionUI();
     this.state = 'title';
     this.input.exitLock();
     this.player = null;
@@ -21886,7 +21937,7 @@ class GameEngine {
         MAPSYS.updateMinimap(dt, this);
         this._updateAmbientEmitters(dt);
 
-        if (!this.isMultiplayer()) {
+        if (!this.isMultiplayerSession()) {
           this.autoSaveTimer -= dt;
           if (this.autoSaveTimer <= 0) {
             this.autoSaveTimer = 30;
