@@ -1,13 +1,16 @@
+# fly.toml app configuration file generated for dill-voxelcraft on 2026-11-22T00:07:07-05:00
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
 app = 'dill-voxelcraft'
 primary_region = 'ord'
 
 [build]
-
 [env]
+  DATA_DIR = '/data'
   HOST = '0.0.0.0'
   PORT = '8080'
-  DATA_DIR = '/data'
-  NO_CLIENT = '1'
   TRUST_PROXY = 'true'
   URL = 'https://play.dill.moe'
 

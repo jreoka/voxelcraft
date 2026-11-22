@@ -13,14 +13,15 @@ FROM debian:bookworm-slim AS runtime
 RUN mkdir -p /data
 
 COPY --from=builder /build/rust/app/target/release/server /usr/local/bin/server
+COPY index.html /app/index.html
 
 WORKDIR /data
 
 ENV HOST=0.0.0.0 \
     PORT=8080 \
     DATA_DIR=/data \
-    NO_CLIENT=1
+    CLIENT_HTML=/app/index.html
 
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/local/bin/server", "--no-console", "--no-client"]
+ENTRYPOINT ["/usr/local/bin/server", "--no-console"]
