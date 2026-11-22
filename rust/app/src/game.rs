@@ -2668,14 +2668,22 @@ impl ServerState {
 
     fn handle_feed(&mut self, pid: &str, msg: &Value) {
         let id = msg.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let is_food = matches!(id, IT::WHEAT_ITEM | IT::APPLE | IT::CARROT | IT::SWEET_BERRIES) || id == B::BAMBOO as i32;
-        let Some((shard_id, dead, survival, eye)) = self.players.get(pid).map(|p| (p.shard_id, p.pl.dead, p.is_survival(), p.eye())) else { return };
+        let is_food = voxelcraft_core::mobs::is_animal_food(id);
+        let Some((shard_id, dead, survival, eye, look)) = self.players.get(pid).map(|p| (p.shard_id, p.pl.dead, p.is_survival(), p.eye(), p.look())) else { return };
         if !is_food || dead { return; }
+        // Prefer the client's exact aim (it may differ slightly from our last 'move' yaw/pitch); fall back to ours
+        let dir = msg.get("dir").and_then(|v| v.as_array()).and_then(|a| {
+            if a.len() < 3 { return None; }
+            let (x, y, z) = (a[0].as_f64()?, a[1].as_f64()?, a[2].as_f64()?);
+            let len = (x * x + y * y + z * z).sqrt();
+            if !len.is_finite() || len < 0.5 { return None; }
+            Some((x / len, y / len, z / len))
+        }).unwrap_or(look);
         if survival && self.players.get_mut(pid).unwrap().ledger.remove(&format!("{}#", id), 1, None).is_none() {
             self.players[pid].send_inventory();
             return;
         }
-        let fed = self.shards.get_mut(&shard_id).unwrap().mobs.try_feed_animal(eye);
+        let fed = self.shards.get_mut(&shard_id).unwrap().mobs.try_feed_animal(eye, dir, id);
         if !fed && survival {
             self.players.get_mut(pid).unwrap().ledger.add(&ItemStack { id, count: 1, dur: None, enchant: None });
         }

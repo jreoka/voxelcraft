@@ -57,6 +57,25 @@ pub const MOB_TYPES: &[&str] = &[
     "fish", "zombie", "skeleton", "spider", "creeper", "slime", "magma", "stalker", "golem", "colossus",
 ];
 
+/// Which foods each animal follows and breeds on (mirrors ANIMAL_FOODS in index.html)
+pub fn animal_eats(kind: &str, item: i32) -> bool {
+    let bamboo = B::BAMBOO as i32;
+    match kind {
+        "cow" | "sheep" | "deer" => item == IT::WHEAT_ITEM || item == IT::APPLE,
+        "pig" => item == IT::CARROT || item == IT::POTATO || item == IT::APPLE,
+        "chicken" => item == IT::WHEAT_SEEDS || item == IT::WHEAT_ITEM,
+        "rabbit" => item == IT::CARROT,
+        "fox" => item == IT::SWEET_BERRIES,
+        "panda" => item == bamboo,
+        _ => false,
+    }
+}
+
+/// True if any animal eats this item
+pub fn is_animal_food(item: i32) -> bool {
+    ["cow", "pig", "chicken", "rabbit", "fox", "panda"].iter().any(|k| animal_eats(k, item))
+}
+
 pub fn mob_def_by_name(name: &str) -> Option<(usize, &'static MobDef)> {
     MOB_DEFS.iter().enumerate().find(|(_, d)| d.name == name)
 }
@@ -365,21 +384,29 @@ impl MobManager {
         true
     }
 
-    pub fn try_feed_animal(&mut self, eye: (f64, f64, f64)) -> bool {
+    /// Feed the animal under the player's crosshair (`dir` = unit look vector) with `food`.
+    /// Only animals that eat that food qualify; the nearest one in a ~37° cone within 4 blocks wins.
+    pub fn try_feed_animal(&mut self, eye: (f64, f64, f64), dir: (f64, f64, f64), food: i32) -> bool {
         let mut fed_idx = None;
-        for (i, m) in self.mobs.iter_mut().enumerate() {
-            if m.hostile || m.baby || m.love_timer > 0.0 || m.kind == "trader" {
+        let mut best_d = 4.0;
+        for (i, m) in self.mobs.iter().enumerate() {
+            if m.hostile || m.baby || m.dying || m.love_timer > 0.0 || !animal_eats(m.kind, food) {
                 continue;
             }
-            let dist = ((m.x - eye.0).powi(2) + (m.y + 0.7 - eye.1).powi(2) + (m.z - eye.2).powi(2)).sqrt();
-            if dist > 4.0 {
+            let h = MOB_DEFS[m.type_idx].h;
+            let (mx, my, mz) = (m.x - eye.0, m.y + h * 0.55 - eye.1, m.z - eye.2);
+            let dist = (mx * mx + my * my + mz * mz).sqrt();
+            if dist > best_d {
                 continue;
             }
-            m.love_timer = 25.0;
+            if (mx * dir.0 + my * dir.1 + mz * dir.2) / dist.max(1e-6) < 0.80 {
+                continue;
+            }
+            best_d = dist;
             fed_idx = Some(i);
-            break;
         }
         let Some(idx) = fed_idx else { return false };
+        self.mobs[idx].love_timer = 25.0;
         let (kind, mx, my, mz) = {
             let m = &self.mobs[idx];
             (m.kind, m.x, m.y, m.z)
@@ -648,9 +675,7 @@ impl MobManager {
                     }
                 } else {
                     let held = pl.inventory.get_held();
-                    let holding_food = !m.hostile && !def.trader && held.is_some_and(|h| {
-                        matches!(h.id, IT::WHEAT_ITEM | IT::APPLE | IT::CARROT) || h.id == B::BAMBOO as i32
-                    });
+                    let holding_food = !m.hostile && held.is_some_and(|h| animal_eats(m.kind, h.id));
                     if m.flee_timer > 0.0 {
                         m.target_yaw = (-dx).atan2(-dz);
                         move_spd = def.spd * 1.55;
