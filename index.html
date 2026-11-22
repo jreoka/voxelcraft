@@ -9577,7 +9577,86 @@ class World {
     this.loadedCount = this.chunks.size;
   }
 
-  // Fast 3D DDA Voxel Raycast (Amanatides & Woo)
+  // Sub-voxel AABBs for non-cube blocks so raycasting passes cleanly past torches, levers, buttons,
+  // slabs, etc. (e.g. standing in the same head block as a wall torch won't pop it when mining another block).
+  _getRaycastBoxes(id, meta) {
+    const blk = BLOCKS.get(id);
+    if (!blk) return null;
+    const sh = blk.shape;
+    if (sh === 'cube') return null;
+    if (id === B.LANTERN) {
+      const yo = (meta & 1) !== 0 ? 0.125 : 0;
+      return [[0.30, yo, 0.30, 0.70, yo + 0.62, 0.70]];
+    }
+    if (sh === 'torch') {
+      const attach = meta & 7;
+      if (attach === 0) return [[0.38, 0.0, 0.38, 0.62, 0.65, 0.62]];
+      if (attach === 1) return [[0.35, 0.16, 0.0, 0.65, 0.82, 0.38]];
+      if (attach === 2) return [[0.35, 0.16, 0.62, 0.65, 0.82, 1.0]];
+      if (attach === 3) return [[0.0, 0.16, 0.35, 0.38, 0.82, 0.65]];
+      return [[0.62, 0.16, 0.35, 1.0, 0.82, 0.65]];
+    }
+    if (sh === 'lever') {
+      const attach = (meta >> 1) & 7;
+      if (attach === 0) return [[0.28, 0.0, 0.25, 0.72, 0.62, 0.75]];
+      if (attach === 5) return [[0.28, 0.38, 0.25, 0.72, 1.0, 0.75]];
+      if (attach === 1) return [[0.28, 0.25, 0.0, 0.72, 0.75, 0.62]];
+      if (attach === 2) return [[0.28, 0.25, 0.38, 0.72, 0.75, 1.0]];
+      if (attach === 3) return [[0.0, 0.25, 0.28, 0.62, 0.75, 0.72]];
+      return [[0.38, 0.25, 0.28, 1.0, 0.75, 0.72]];
+    }
+    if (sh === 'button') {
+      const h = (meta & 1) !== 0 ? 0.08 : 0.15;
+      const attach = (meta >> 1) & 7;
+      if (attach === 1) return [[0.28, 0.34, 0.0, 0.72, 0.66, h]];
+      if (attach === 2) return [[0.28, 0.34, 1.0 - h, 0.72, 0.66, 1.0]];
+      if (attach === 3) return [[0.0, 0.34, 0.28, h, 0.66, 0.72]];
+      if (attach === 4) return [[1.0 - h, 0.34, 0.28, 1.0, 0.66, 0.72]];
+      if (attach === 5) return [[0.28, 1.0 - h, 0.34, 0.72, 1.0, 0.66]];
+      return [[0.28, 0.0, 0.34, 0.72, h, 0.66]];
+    }
+    if (sh === 'ladder') {
+      const lf = meta & 3;
+      if (lf === 0) return [[0.04, 0.0, 0.84, 0.96, 1.0, 1.0]];
+      if (lf === 1) return [[0.84, 0.0, 0.04, 1.0, 1.0, 0.96]];
+      if (lf === 2) return [[0.04, 0.0, 0.0, 0.96, 1.0, 0.16]];
+      return [[0.0, 0.0, 0.04, 0.16, 1.0, 0.96]];
+    }
+    if (sh === 'carpet') return [[0.0, 0.0, 0.0, 1.0, 0.08, 1.0]];
+    if (sh === 'redstone') return [[0.08, 0.0, 0.08, 0.92, 0.08, 0.92]];
+    if (sh === 'pressure_plate') return [[0.06, 0.0, 0.06, 0.94, 0.10, 0.94]];
+    if (sh === 'slab') {
+      const top = (meta & 8) !== 0;
+      return [[0.0, top ? 0.5 : 0.0, 0.0, 1.0, top ? 1.0 : 0.5, 1.0]];
+    }
+    if (sh === 'trapdoor') {
+      const open = (meta & 4) !== 0;
+      if (open) {
+        const f = meta & 3;
+        if (f === 0) return [[0.0, 0.0, 0.80, 1.0, 1.0, 1.0]];
+        if (f === 1) return [[0.80, 0.0, 0.0, 1.0, 1.0, 1.0]];
+        if (f === 2) return [[0.0, 0.0, 0.0, 1.0, 1.0, 0.20]];
+        return [[0.0, 0.0, 0.0, 0.20, 1.0, 1.0]];
+      }
+      const bottom = (meta & 8) !== 0;
+      return [[0.0, bottom ? 0.0 : 0.80, 0.0, 1.0, bottom ? 0.20 : 1.0, 1.0]];
+    }
+    if (sh === 'door') {
+      const open = (meta & 4) !== 0;
+      const f = (meta + (open ? 1 : 0)) & 3;
+      if (f === 0) return [[0.0, 0.0, 0.80, 1.0, 1.0, 1.0]];
+      if (f === 1) return [[0.80, 0.0, 0.0, 1.0, 1.0, 1.0]];
+      if (f === 2) return [[0.0, 0.0, 0.0, 1.0, 1.0, 0.20]];
+      return [[0.0, 0.0, 0.0, 0.20, 1.0, 1.0]];
+    }
+    if (sh === 'enchant_table') return [[0.0, 0.0, 0.0, 1.0, 0.76, 1.0]];
+    if (sh === 'campfire') return [[0.06, 0.0, 0.06, 0.94, 0.40, 0.94]];
+    if (sh === 'bamboo') return [[0.34, 0.0, 0.34, 0.66, 1.0, 0.66]];
+    if (sh === 'cross') return [[0.14, 0.0, 0.14, 0.86, 0.88, 0.86]];
+    return null;
+  }
+
+  // Fast 3D DDA Voxel Raycast (Amanatides & Woo) with sub-voxel AABB precision for non-cube blocks
   raycast(ox, oy, oz, dx, dy, dz, maxDist = 5.5, solidOnly = false) {
     let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
     const stepX = dx >= 0 ? 1 : -1;
@@ -9596,7 +9675,46 @@ class World {
       const id = this.getBlock(x, y, z);
       const blk = id !== B.AIR ? BLOCKS.get(id) : null;
       if (blk && !blk.liquid && (!solidOnly || blk.solid)) {
-        return { x, y, z, nx, ny, nz, id, dist: t, hx: ox + dx * t, hy: oy + dy * t, hz: oz + dz * t };
+        const boxes = this._getRaycastBoxes(id, this.getMeta(x, y, z));
+        if (!boxes) {
+          return { x, y, z, nx, ny, nz, id, dist: t, hx: ox + dx * t, hy: oy + dy * t, hz: oz + dz * t };
+        }
+        let bestT = Infinity, bnx = nx, bny = ny, bnz = nz;
+        for (let i = 0; i < boxes.length; i++) {
+          const b = boxes[i];
+          const x0 = x + b[0], y0 = y + b[1], z0 = z + b[2];
+          const x1 = x + b[3], y1 = y + b[4], z1 = z + b[5];
+          let tmin = -Infinity, tmax = Infinity;
+          let hnx = 0, hny = 0, hnz = 0;
+          if (dx !== 0) {
+            const tx1 = (x0 - ox) / dx, tx2 = (x1 - ox) / dx;
+            const lo = tx1 < tx2 ? tx1 : tx2, hi = tx1 < tx2 ? tx2 : tx1;
+            if (lo > tmin) { tmin = lo; hnx = dx > 0 ? -1 : 1; hny = 0; hnz = 0; }
+            if (hi < tmax) tmax = hi;
+          } else if (ox < x0 || ox > x1) { continue; }
+          if (dy !== 0) {
+            const ty1 = (y0 - oy) / dy, ty2 = (y1 - oy) / dy;
+            const lo = ty1 < ty2 ? ty1 : ty2, hi = ty1 < ty2 ? ty2 : ty1;
+            if (lo > tmin) { tmin = lo; hnx = 0; hny = dy > 0 ? -1 : 1; hnz = 0; }
+            if (hi < tmax) tmax = hi;
+          } else if (oy < y0 || oy > y1) { continue; }
+          if (dz !== 0) {
+            const tz1 = (z0 - oz) / dz, tz2 = (z1 - oz) / dz;
+            const lo = tz1 < tz2 ? tz1 : tz2, hi = tz1 < tz2 ? tz2 : tz1;
+            if (lo > tmin) { tmin = lo; hnx = 0; hny = 0; hnz = dz > 0 ? -1 : 1; }
+            if (hi < tmax) tmax = hi;
+          } else if (oz < z0 || oz > z1) { continue; }
+          if (tmax >= Math.max(0, tmin) && tmin <= maxDist) {
+            // If the eye starts inside a non-solid attachment's box (tmin < 0), let the ray pass through
+            // so standing in the same block as a torch/plant never intercepts mining another block.
+            if (tmin < 0 && !blk.solid) continue;
+            const hitT = tmin >= 0 ? tmin : 0;
+            if (hitT < bestT) { bestT = hitT; bnx = hnx; bny = hny; bnz = hnz; }
+          }
+        }
+        if (bestT <= maxDist) {
+          return { x, y, z, nx: bnx, ny: bny, nz: bnz, id, dist: bestT, hx: ox + dx * bestT, hy: oy + dy * bestT, hz: oz + dz * bestT };
+        }
       }
       if (tMaxX < tMaxY) {
         if (tMaxX < tMaxZ) { x += stepX; t = tMaxX; tMaxX += tDeltaX; nx = -stepX; ny = 0; nz = 0; }
@@ -15149,7 +15267,8 @@ class MobManager {
       const dist = Math.hypot(mx, my, mz);
       if (dist > bestD) continue;
       const dot = (mx * dir.x + my * dir.y + mz * dir.z) / (dist || 1);
-      if (dot > (def.boss ? 0.74 : 0.85)) { bestD = dist; best = m; }
+      const minDot = def.boss ? 0.74 : (dist < 2.2 ? 0.76 : 0.85);
+      if (dot > minDot) { bestD = dist; best = m; }
     }
     if (!best) return false;
     if ((best.hurtCooldown || 0) > 0) return true;

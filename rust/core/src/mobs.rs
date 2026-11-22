@@ -549,6 +549,9 @@ impl MobManager {
                 floor_div(mz.floor() as i32, CHUNK_SIZE),
             );
             if !world.chunks.contains_key(&ck) {
+                let m = &mut self.mobs[i];
+                if m.hurt_timer > 0.0 { m.hurt_timer = (m.hurt_timer - dt).max(0.0); }
+                if m.hurt_cooldown > 0.0 { m.hurt_cooldown = (m.hurt_cooldown - dt).max(0.0); }
                 continue;
             }
 
@@ -872,10 +875,17 @@ impl MobManager {
         }
         let biome = world.get_biome_at(wx, wz);
         let wy = world.get_surface_height(wx, wz);
+        let cx = floor_div(wx, CHUNK_SIZE);
+        let cz = floor_div(wz, CHUNK_SIZE);
 
         if hostile {
             if biome.no_hostiles { return; }
             if biome.id == 28 && wy > SEA_LEVEL {
+                if !world.chunks.contains_key(&(cx, floor_div(wy, CHUNK_SIZE), cz))
+                    || BLOCKS.get(world.get_block(wx, wy, wz)).solid
+                {
+                    return;
+                }
                 self.spawn_mob("magma", wx as f64 + 0.5, wy as f64, wz as f64 + 0.5, false, false);
                 return;
             }
@@ -884,6 +894,9 @@ impl MobManager {
                 let start_y = 40.min((pl.y + 10.0).floor() as i32);
                 let end_y = (pl.y - 16.0).floor() as i32;
                 for y in (end_y..=start_y).rev() {
+                    if !world.chunks.contains_key(&(cx, floor_div(y, CHUNK_SIZE), cz)) {
+                        continue;
+                    }
                     if world.get_block(wx, y, wz) == B::AIR
                         && world.get_block(wx, y + 1, wz) == B::AIR
                         && BLOCKS.get(world.get_block(wx, y - 1, wz)).solid
@@ -907,6 +920,11 @@ impl MobManager {
                 return;
             }
             if !day_night.is_night { return; }
+            if !world.chunks.contains_key(&(cx, floor_div(wy, CHUNK_SIZE), cz))
+                || BLOCKS.get(world.get_block(wx, wy, wz)).solid
+            {
+                return;
+            }
             let (_, blk) = world.get_light_at(wx, wy, wz);
             if blk > 7 || world.get_block(wx, wy - 1, wz) == B::WATER { return; }
             let pool: &[&str] = if biome.id == 5 || biome.id == 29 {
@@ -918,12 +936,19 @@ impl MobManager {
             self.spawn_mob(kind, wx as f64 + 0.5, wy as f64, wz as f64 + 0.5, false, false);
         } else {
             if biome.cat == "aquatic" || world.get_block(wx, SEA_LEVEL - 1, wz) == B::WATER {
-                if world.get_block(wx, SEA_LEVEL - 2, wz) == B::WATER {
+                if world.chunks.contains_key(&(cx, floor_div(SEA_LEVEL - 2, CHUNK_SIZE), cz))
+                    && world.get_block(wx, SEA_LEVEL - 2, wz) == B::WATER
+                {
                     self.spawn_mob("fish", wx as f64 + 0.5, (SEA_LEVEL - 2) as f64, wz as f64 + 0.5, false, false);
                 }
                 return;
             }
-            if wy <= SEA_LEVEL { return; }
+            if wy <= SEA_LEVEL
+                || !world.chunks.contains_key(&(cx, floor_div(wy, CHUNK_SIZE), cz))
+                || BLOCKS.get(world.get_block(wx, wy, wz)).solid
+            {
+                return;
+            }
             if rng.r#gen::<f64>() < 0.04 && !self.mobs.iter().any(|m| m.kind == "trader") {
                 self.spawn_mob("trader", wx as f64 + 0.5, wy as f64, wz as f64 + 0.5, false, false);
                 return;

@@ -818,7 +818,13 @@ impl ServerState {
         let Some(dst) = self.shards.get_mut(&dst_id) else { return };
         let dx = (&src.ox - &dst.ox).to_f64().unwrap_or(0.0);
         let dz = (&src.oz - &dst.oz).to_f64().unwrap_or(0.0);
-        for mut m in src.mobs.mobs { m.x += dx; m.z += dz; dst.mobs.mobs.push(m); }
+        for mut m in src.mobs.mobs {
+            m.id = dst.mobs.next_id;
+            dst.mobs.next_id += 1;
+            m.x += dx;
+            m.z += dz;
+            dst.mobs.mobs.push(m);
+        }
         for mut pr in src.mobs.projectiles { pr.x += dx; pr.z += dz; dst.mobs.projectiles.push(pr); }
         for (id, mut d) in src.drops { d.x += dx; d.z += dz; dst.drops.insert(id, d); }
         for mut q in src.tnt_queue { q.x += dx as i32; q.z += dz as i32; dst.tnt_queue.push(q); }
@@ -2716,7 +2722,7 @@ impl ServerState {
         let Some((shard_id, dead, last_hit, eye, dir, sprinting, on_ground)) = self.players.get(pid).map(|p| {
             (p.shard_id, p.pl.dead, p.last_mob_hit_ms, p.eye(), p.look(), p.pl.sprinting, p.pl.on_ground)
         }) else { return };
-        if dead || now - last_hit < 320 { return; }
+        if dead || now - last_hit < 220 { return; }
         let mob_info = self.shards.get(&shard_id).and_then(|sh| {
             sh.mobs.mobs.iter().enumerate().find(|(_, m)| m.id == mob_id).map(|(idx, m)| {
                 (idx, m.dying, m.hurt_cooldown, m.type_idx, m.x, m.y, m.z)
@@ -2740,15 +2746,19 @@ impl ServerState {
         let held = self.players[pid].held_stack(w_id);
         let crit = msg.get("crit").and_then(|v| v.as_bool()).unwrap_or(false) && !on_ground;
         let mut mob_events = MobEvents::default();
-        self.shards.get_mut(&shard_id).unwrap().mobs.apply_melee(
-            mob_idx,
-            Some(pid),
-            sprinting,
-            held.as_ref(),
-            dir,
-            crit,
-            &mut mob_events,
-        );
+        {
+            let sh = self.shards.get_mut(&shard_id).unwrap();
+            sh.core.ensure_chunk_at(mx.floor() as i32, my.floor() as i32, mz.floor() as i32, &mut self.world.tables);
+            sh.mobs.apply_melee(
+                mob_idx,
+                Some(pid),
+                sprinting,
+                held.as_ref(),
+                dir,
+                crit,
+                &mut mob_events,
+            );
+        }
         self.apply_mob_events(shard_id, mob_events);
     }
 
